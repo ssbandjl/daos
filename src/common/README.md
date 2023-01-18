@@ -1,13 +1,16 @@
 # DAOS Common Libraries
 
 Common functionality and infrastructure shared across all DAOS components are provided in external shared libraries. This includes the following features:
-- Hash and checksum routines
-- Event and event queue support for non-blocking operations
+
+外部共享库中提供了所有 DAOS 组件共享的通用功能和基础设施。 这包括以下功能：
+
+- Hash and checksum routines 哈希和校验和例程
+- Event and event queue support for non-blocking operations 事件和事件队列支持非阻塞操作
 - Logging and debugging infrastructure
-- Locking primitives
+- Locking primitives 锁定基元
 - Network transport
 
-## Task Scheduler Engine (TSE)
+## Task Scheduler Engine (TSE) 任务调度引擎
 
 The TSE is a generic library to create generic tasks with function callbacks,
 optionally add dependencies between those tasks, and schedule them in an engine
@@ -15,6 +18,13 @@ that is progressed to execute those tasks in an order determined by a dependency
 graph in which they were inserted in. The task dependency graph is the integral
 part of the scheduler to allow users to create several tasks and progress them
 in a non-blocking manner.
+
+TSE 是一个通用库，用于创建带有函数回调的通用任务，
+可选地添加这些任务之间的依赖关系，并在引擎中安排它们
+按照依赖关系确定的顺序执行这些任务
+它们被插入的图。任务依赖图是积分
+调度程序的一部分，允许用户创建多个任务并推进它们
+以非阻塞的方式。
 
 The TSE is not DAOS specific, but used to be part of the DAOS core and was later
 extracted into the common src as a standalone API. The API is generic and allows
@@ -27,17 +37,38 @@ tasks corresponding to a single API task and add a dependency on that task to
 track all those inflight "child" tasks. An example of that would be the Array
 API in the DAOS library and the object update with multiple replicas.
 
+TSE 不是 DAOS 特定的，但曾经是 DAOS 核心的一部分，后来被
+作为独立的 API 提取到公共 src 中。 API 是通用的并且允许
+在没有任何 DAOS 特定功能的引擎中创建任务。 道操作系统
+库确实提供了一个构建在 TSE 之上的任务 API。 更多
+有关信息，请参见 [此处](/src/client/api/README.md)。 此外，DAOS
+在内部使用 TSE 来跟踪和处理所有关联的 API 任务
+与 API 事件一起，在某些情况下，安排几个飞行中的“孩子”
+对应于单个 API 任务的任务，并将对该任务的依赖添加到
+跟踪所有那些飞行中的“子”任务。 一个例子就是数组
+DAOS 库中的 API 和具有多个副本的对象更新。
+
 ### Scheduler API
 
 The scheduler API allows a user to create a generic scheduler and add tasks to
 it. At the time of scheduler creation, the user can register a completion
 callback to be called when the scheduler is finalized.
 
+调度程序 API 允许用户创建通用调度程序并将任务添加到
+它。 在创建调度程序时，用户可以注册一个完成
+调度程序完成时调用的回调。
+
 The tasks that are added to the scheduler do not progress on their own. There
 has to be explicit calls to a progress function (daos_sched_progress) on the
 scheduler to make progress on the tasks in the engine. This progress function
 can be called by the user occasionally in their program, or a single thread can
 be forked that calls the progress function repeatedly.
+
+添加到调度程序的任务不会自行进行。 那里
+必须显式调用进度函数 (daos_sched_progress)
+调度程序在引擎中的任务上取得进展。 这个进度函数
+可以由用户偶尔在他们的程序中调用，或者单个线程可以
+被分叉重复调用进度函数。
 
 ### Task API
 
@@ -51,19 +82,41 @@ for the task that would be required to complete before the task can be scheduled
 to run. In addition, the user will be able to register preparation and
 completion callback on the task:
 
+任务 API 允许创建具有通用主体功能的任务并添加
+他们到一个调度程序。 一旦在调度程序中创建了一个任务，它就不会
+实际上计划在没有用户明确调用任务的情况下运行
+调度函数，除非它是任务依赖图的一部分
+在这种情况下，只需要对第一个任务进行显式调度调用
+图形。 创建任务后，用户可以注册任意数量的依赖
+对于在计划任务之前需要完成的任务
+跑步。 此外，用户将能够注册准备和
+任务完成回调：
+
 - Preparation Callbacks are executed when the task is ready to run but has not
   been executed yet, meaning the dependencies that the task was created with are
   done and the scheduler is ready to schedule the task. This is useful when the
   task to be scheduled needs information that is not available at the time of
   task creation but will be available after the dependencies of the task
   complete; for example setting some input parameters for the task body
-  function.
+  function. 
 
+- Preparation 回调在任务准备好运行但还没有运行时执行
+  尚未执行，这意味着创建任务的依赖项是
+  done 并且调度程序准备好调度任务。 这在
+  要安排的任务需要在执行时不可用的信息
+  任务创建，但在任务的依赖项之后可用
+  完全的; 例如为任务体设置一些输入参数
+  功能。
 - Completion Callbacks are executed when the task is finished executing and the
   user needs to do more work or handling when that happens. An example where
   this would be useful is setting the completion of a higher level event or
   request that is built on top of the TSE, or to track error status of multiple
-  tasks in a dependency list.
+  tasks in a dependency list. 
+- Completion Callbacks 在任务完成执行时执行，并且
+  发生这种情况时，用户需要做更多的工作或处理。 一个例子
+  这将有助于设置更高级别事件的完成或
+  构建在 TSE 之上的请求，或跟踪多个错误状态
+  依赖列表中的任务。
 
 Several other functionality on the task API exists to support:
 
@@ -75,6 +128,17 @@ Several other functionality on the task API exists to support:
 
 More detail about that functionality can be found in the TSE header in the DAOS
 code [here](/src/include/daos/tse.h).
+
+存在任务 API 的其他几个功能以支持：
+
+- 在任务本身上设置一些可以查询的私有数据。
+
+- 在没有数据复制的情况下向/从任务堆栈空间推送和弹出数据
+
+- 通用任务列表
+
+有关该功能的更多详细信息，请参见 DAOS 中的 TSE 标头
+代码 [此处](/src/include/daos/tse.h)。
 
 ## dRPC C API
 
@@ -148,7 +212,7 @@ executed, and populate a `Drpc__Response` based on the results.
 #### Basic Server Workflow
 
 1. Set up the Unix Domain Socket at a given path and create a listening context
-using a custom handler function:
+   using a custom handler function:
     ```
     void my_handler(Drpc__Call *call, Drpc__Response *resp) {
         /* Handle the message based on module/method IDs */
@@ -193,7 +257,7 @@ for incoming data.
     drpc_call_free(call);
     ```
 8. If the client has closed the connection, close the session context to free
-the pointer:
+   the pointer:
     ```
     drpc_close(session_ctx);
     ```
