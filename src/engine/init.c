@@ -245,7 +245,7 @@ modules_load(void)
  * passed in preferred number of threads.
  */
 static int
-dss_tgt_nr_get(unsigned int ncores, unsigned int nr, bool oversubscribe)
+dss_tgt_nr_get(unsigned int ncores /* 32 */, unsigned int nr /* 24 */, bool oversubscribe)
 {
 	int tgt_nr;
 
@@ -334,7 +334,7 @@ dss_topo_init()
 		return -DER_INVAL;
 	}
 
-	numa_obj = hwloc_get_obj_by_depth(dss_topo, depth, dss_numa_node);
+	numa_obj = hwloc_get_obj_by_depth(dss_topo, depth, dss_numa_node); // 获取numa节点
 	if (numa_obj == NULL) {
 		D_ERROR("NUMA node %d was not found in the topology",
 			dss_numa_node);
@@ -349,17 +349,19 @@ dss_topo_init()
 		return -DER_INVAL;
 	}
 
-	dss_num_cores_numa_node = 0;
+	dss_num_cores_numa_node = 0; // numa节点上的cpu核数
 	num_cores_visited = 0;
 
-	for (k = 0; k < dss_core_nr; k++) {
+	for (k = 0; k < dss_core_nr; k++) { // example: dss_core_nr = 64
 		corenode = hwloc_get_obj_by_depth(dss_topo, dss_core_depth, k);
 		if (corenode == NULL)
 			continue;
+		// 子位图在父位图里
 		if (hwloc_bitmap_isincluded(corenode->cpuset,
 					    numa_obj->cpuset) != 0) {
 			if (num_cores_visited++ >= dss_core_offset) {
 				hwloc_bitmap_set(core_allocation_bitmap, k);
+				// 将位图字符串化为新分配的字符串
 				hwloc_bitmap_asprintf(&cpuset,
 						      corenode->cpuset);
 			}
@@ -368,7 +370,7 @@ dss_topo_init()
 	}
 	hwloc_bitmap_asprintf(&cpuset, core_allocation_bitmap);
 	free(cpuset);
-
+	// nr_threads = 24, dss_num_cores_numa_node = 32
 	dss_tgt_nr = dss_tgt_nr_get(dss_num_cores_numa_node, nr_threads,
 				    tgt_oversub);
 	if (dss_core_offset >= dss_num_cores_numa_node) {

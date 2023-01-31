@@ -72,7 +72,7 @@
 #define DRPC_XS_NR	(1)
 /** Number of offload XS */
 unsigned int	dss_tgt_offload_xs_nr;
-/** Number of target (XS set) per engine */
+/** Number of target (XS set) per engine 每个引擎的目标个数 */
 unsigned int	dss_tgt_nr;
 /** Number of system XS */
 unsigned int	dss_sys_xs_nr = DAOS_TGT0_OFFSET + DRPC_XS_NR;
@@ -892,7 +892,7 @@ dss_start_xs_id(int xs_id)
 	D_DEBUG(DB_TRACE, "start xs_id called for %d.  ", xs_id);
 	/* if we are NUMA aware, use the NUMA information */
 	if (numa_obj) {
-		idx = hwloc_bitmap_first(core_allocation_bitmap);
+		idx = hwloc_bitmap_first(core_allocation_bitmap); // 计算位图中的第一个索引（最低有效位）
 		if (idx == -1) {
 			D_ERROR("No core available for XS: %d", xs_id);
 			return -DER_INVAL;
@@ -904,7 +904,7 @@ dss_start_xs_id(int xs_id)
 		 * the SWIM and DRPC XS will use separate core if enough cores
 		 */
 		if (xs_id > 1 || (xs_id == 0 && dss_core_nr > dss_tgt_nr))
-			hwloc_bitmap_clr(core_allocation_bitmap, idx);
+			hwloc_bitmap_clr(core_allocation_bitmap, idx); // 清除index
 
 		obj = hwloc_get_obj_by_depth(dss_topo, dss_core_depth, idx);
 		if (obj == NULL) {
@@ -1000,7 +1000,7 @@ dss_xstreams_init(void)
 	}
 
 	xstream_data.xd_xs_nr = DSS_XS_NR_TOTAL;
-	/* start system service XS */
+	/* start system service XS  example: 0,1 */
 	for (i = 0; i < dss_sys_xs_nr; i++) {
 		xs_id = i;
 		rc = dss_start_xs_id(xs_id);

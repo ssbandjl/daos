@@ -815,7 +815,7 @@ crt_corpc_req_hdlr(struct crt_rpc_priv *rpc_priv)
 
 	rc = crt_tree_get_children(co_info->co_grp_priv, co_info->co_grp_ver,
 				   rpc_priv->crp_flags &
-				   CRT_RPC_FLAG_FILTER_INVERT,
+				   CRT_RPC_FLAG_FILTER_INVERT,  // 仅将 CORPC 发送到 filter_ranks
 				   co_info->co_filter_ranks,
 				   co_info->co_tree_topo, co_info->co_root,
 				   co_info->co_grp_priv->gp_self,

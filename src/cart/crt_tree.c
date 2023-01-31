@@ -196,8 +196,16 @@ crt_tree_get_children(struct crt_grp_priv *grp_priv, uint32_t grp_ver,
 			D_GOTO(out, rc = -DER_GRPVER);
 		}
 	}
-
 	CRT_TREE_PARAMETER_CHECKING(grp_priv, tree_topo, root, self);
+	
+	// D_ASSERT(crt_tree_topo_valid(tree_topo)); 
+	// tree_type = crt_tree_type(tree_topo); 
+	// tree_ratio = crt_tree_ratio(tree_topo); 
+	// D_ASSERT(tree_type >= CRT_TREE_MIN && tree_type <= CRT_TREE_MAX); 
+	// D_ASSERT(tree_type == CRT_TREE_FLAT || (tree_ratio >= CRT_TREE_MIN_RATIO && tree_ratio <= CRT_TREE_MAX_RATIO)); 
+	// D_ASSERT(root != CRT_NO_RANK); 
+	// D_ASSERT(self != CRT_NO_RANK);
+
 	if (children_rank_list == NULL) {
 		D_ERROR("invalid parameter of NULL children_rank_list.\n");
 		D_GOTO(out, rc = -DER_INVAL);
