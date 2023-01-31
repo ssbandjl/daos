@@ -1,5 +1,5 @@
 
-# Versioning Object Store
+# Versioning Object Store 版本对象存储
 
 The Versioning Object Store (VOS) is responsible for providing and maintaining a persistent object store that supports byte-granular access and versioning for a single shard in a <a href="/docs/storage_model.md#DAOS_Pool">DAOS pool</a>.
 It maintains its metadata in persistent memory and may store data either in persistent memory or on block storage, depending on available storage and performance requirements.
@@ -7,9 +7,15 @@ It must provide this functionality with minimum overhead so that performance can
 Its internal data structures, in both persistent and non-persistent memory, must also support the highest levels of concurrency so that throughput scales over the cores of modern processor architectures.
 Finally, and critically, it must validate the integrity of all persisted object data to eliminate the possibility of silent data corruption, both in normal operation and under all possible recoverable failures.
 
+版本控制对象存储 (VOS) 负责提供和维护持久对象存储，支持 DAOS 池中单个分片的字节粒度访问和版本控制。 它在持久内存中维护其元数据，并可将数据存储在持久内存或块存储中，具体取决于可用存储和性能要求。 它必须以最小的开销提供此功能，以便性能可以尽可能接近底层硬件的理论性能，包括延迟和带宽。 它在持久内存和非持久内存中的内部数据结构还必须支持最高级别的并发性，以便吞吐量扩展到现代处理器架构的核心。 最后，也是至关重要的，它必须验证所有持久对象数据的完整性，以消除在正常操作和所有可能的可恢复故障下静默数据损坏的可能性
+
 This section provides the details for achieving the design goals discussed above in building a versioning object store for DAOS.
 
+本节提供了实现上面讨论的为 DAOS 构建版本控制对象存储的设计目标的详细信息。
+
 This document contains the following sections:
+
+本文档包含以下部分：
 
 - <a href="#62">Persistent Memory based Storage</a>
     - <a href="#63">In-Memory Storage</a>
@@ -47,6 +53,8 @@ The VOS is designed to use a persistent-memory storage model that takes advantag
 This enables a disruptive change in performance compared to conventional storage systems for application and system metadata and small, fragmented, and misaligned I/O.
 Direct access to byte-addressable low-latency storage opens up new horizons where metadata can be scanned in less than a second without bothering with seek time and alignment.
 
+VOS 旨在使用持久内存存储模型，该模型利用新的 NVRAM 技术可能实现的字节粒度、亚微秒级存储访问。 与应用程序和系统元数据以及小型、分散和未对齐的 I/O 的传统存储系统相比，这可以实现性能的颠覆性变化。 直接访问字节可寻址的低延迟存储开辟了新的视野，可以在不到一秒的时间内扫描元数据，而无需担心寻道时间和对齐。
+
 The VOS relies on a log-based architecture using persistent memory primarily to maintain internal persistent metadata indexes.
 The actual data can be stored either in persistent memory directly or in block-based NVMe storage.
 The DAOS service has two tiers of storage: Storage Class Memory (SCM) for byte-granular application data and metadata, and NVMe for bulk application data.
@@ -58,7 +66,11 @@ Please refer to the <a href="../bio/README.md">Blob I/O</a> (BIO) module for mor
 Special care is taken when developing and modifying the VOS layer because any software bug could corrupt data structures in persistent memory.
 The VOS, therefore, checksums its persistent data structures despite the presence of hardware ECC.
 
+VOS 依赖于基于日志的架构，该架构主要使用持久内存来维护内部持久元数据索引。 实际数据可以直接存储在持久内存中，也可以存储在基于块的 NVMe 存储中。 DAOS 服务有两层存储：用于字节粒度应用程序数据和元数据的存储级内存 (SCM)，以及用于批量应用程序数据的 NVMe。 类似于 PMDK 目前用于方便访问 SCM 的方式，存储性能开发工具包 (SPDK) 用于提供对 NVMe SSD 的无缝和高效访问。 当前的 DAOS 存储模型涉及每个核心三个 DAOS 服务器 xstream，以及每个核心一个映射到 NVMe SSD 设备的主 DAOS 服务器 xstream。 DAOS 存储分配可以在 SCM 上使用 PMDK pmemobj 池进行，也可以在 NVMe 上使用 SPDK blob 进行。 所有本地服务器元数据都将存储在 SCM 上的每个服务器 pmemobj 池中，并将包括所有当前和相关的 NVMe 设备、池和 xstream 映射信息。 有关 NVMe、SPDK 和每服务器元数据的更多信息，请参阅 Blob I/O (BIO) 模块。 在开发和修改 VOS 层时要特别小心，因为任何软件错误都可能破坏持久内存中的数据结构。 因此，尽管存在硬件 ECC，VOS 仍对其持久数据结构进行校验和。
+
 The VOS provides a lightweight I/O stack fully in user space, leveraging the <a href="pmem.io">PMDK</a> open-source libraries developed to support this programming model.
+
+VOS 完全在用户空间中提供轻量级 I/O 堆栈，利用为支持此编程模型而开发的 PMDK 开源库。
 
 <a id="64"></a>
 
@@ -73,6 +85,8 @@ It is worth noting that such transactions are different from the DAOS transactio
 Persistent memory transactions must guarantee consistency of VOS internal data structures when processing incoming requests, regardless of their epoch number.
 Transactions over persistent memory can be implemented in many different ways, e.g., undo logs, redo logs, a combination of both, or copy-on-write.
 
+因此，必须在持久内存之上实现事务接口，以保证内部 VOS 的一致性。 值得注意的是，此类交易不同于DAOS交易机制。 持久内存事务在处理传入请求时必须保证 VOS 内部数据结构的一致性，无论其纪元号如何。 持久内存上的事务可以通过许多不同的方式实现，例如，撤消日志、重做日志、两者的组合或写时复制。
+
 <a href="https://pmem.io">PMDK</a> is an open source collection of libraries for using persistent memory, optimized specifically for NVRAM.
 Among these is the libpmemobj library, which implements relocatable persistent heaps called persistent memory pools.
 This includes memory allocation, transactions, and general facilities for persistent memory programming.
@@ -80,13 +94,17 @@ The transactions are local to one thread (not multi-threaded) and rely on undo l
 Correct use of the API ensures that all memory operations are rolled back to the last committed state upon opening a pool after a server failure.
 VOS utilizes this API to ensure consistency of VOS internal data structures, even in the event of server failures.
 
+PMDK 是一个开源库集合，用于使用持久内存，专门针对 NVRAM 进行了优化。 其中包括 libpmemobj 库，它实现了称为持久内存池的可重定位持久堆。 这包括内存分配、事务和持久内存编程的通用设施。 事务对于一个线程（不是多线程）是本地的，并且依赖于撤消日志。 正确使用 API 可确保在服务器出现故障后打开池时所有内存操作都回滚到最后提交的状态。 VOS 利用此 API 来确保 VOS 内部数据结构的一致性，即使在服务器出现故障的情况下也是如此。
+
 <a id="71"></a>
-## VOS Concepts
+## VOS Concepts 概念
 
 The versioning object store provides object storage local to a storage target by initializing a VOS pool (vpool) as one shard of a DAOS pool.
 A vpool can hold objects for multiple object address spaces called containers.
 Each vpool is given a unique UID on creation, which is different from the UID of the DAOS pool.
 The VOS also maintains and provides a way to extract statistics like total space, available space, and number of objects present in a vpool.
+
+版本控制对象存储通过将 VOS 池 (vpool) 初始化为 DAOS 池的一个分片，为存储目标提供本地对象存储。 vpool 可以为称为容器的多个对象地址空间保存对象。 每个 vpool 在创建时都被赋予一个唯一的 UID，这与 DAOS 池的 UID 不同。 VOS 还维护并提供一种方法来提取统计数据，例如 vpool 中的总空间、可用空间和对象数。
 
 The primary purpose of the VOS is to capture and log object updates in arbitrary time order and integrate these into an ordered epoch history that can be traversed efficiently on demand.
 This provides a major scalability improvement for parallel I/O by correctly ordering conflicting updates without requiring them to be serialized in time.
@@ -265,6 +283,8 @@ This kind of ordering allows epochs of the same key to land in the same subtree,
 Conflict resolution and tracking is performed using <a href="#81">DTX</a> described later.
 DTX ensures that replicas are consistent, and failed or uncommitted updates are not visible externally.
 
+VOS 中的 KV 存储允许用户以随机顺序维护不同 KV 对的版本。 例如，一个更新可以发生在第 10 个时期，然后在第 5 个时期发生另一个更新，此时 HCE 小于 5。为了提供这种级别的灵活性，KV 存储中的每个键必须保持更新/打孔的时期以及 钥匙。 索引树中条目的排序首先基于键，然后基于纪元。 这种排序允许相同密钥的时期落在同一子树中，从而最大限度地减少搜索成本。 冲突解决和跟踪是使用稍后描述的 DTX 执行的。 DTX 确保副本是一致的，失败或未提交的更新在外部是不可见的。
+
 <a id="724"></a>
 
 ### Internal Data Structures
@@ -374,6 +394,8 @@ In the <a href="7f">above</a> example, there is significant overlap between diff
 VOS supports nearest-epoch access, which necessitates reading the latest value for any given extent range.
 For example, in the <a href="#7f">figure</a> above, if there is a read request for extent range 4 - 10 at epoch 10, the resulting read buffer should contain extent 7-10 from epoch 9, extent 5-7 from epoch 8, and extent 4-5 from epoch 1.
 VOS array objects also support punch over both partial and complete extent ranges.
+
+在上面的示例中，不同范围之间存在明显的重叠。 VOS 支持最近纪元访问，这需要读取任何给定范围内的最新值。 例如上图中，如果在第10个epoch有一个extent range 4-10的读请求，那么得到的read buffer应该包含第9个epoch的extent 7-10，第8个epoch的extent 5-7，以及第4- 5 来自纪元 1。VOS 数组对象还支持对部分和完整范围进行打孔。
 
 <a id="7g"></a>
 
