@@ -63,4 +63,5 @@ utils/githooks/*.d/*-user-*
 .prepare-commit-msg
 .pre-commit
 .DS_Store
+.vscode
 
