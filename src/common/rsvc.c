@@ -70,7 +70,7 @@ rsvc_client_fini(struct rsvc_client *client)
 }
 
 /**
- * Choose an \a ep for an RPC of \a client. Does not change \a ep->ep_group.
+ * Choose an \a ep for an RPC of \a client. Does not change \a ep->ep_group. 为客户端的 RPC 选择一个 ep。 不改变 ep->ep_group
  *
  * \param[in,out]	client	client state
  * \param[out]		ep	crt_endpoint_t for the RPC

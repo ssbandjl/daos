@@ -128,7 +128,7 @@ bulk_cb(const struct crt_bulk_cb_info *cb_info)
 /*
  * Transfer the pool map buffer to "remote_bulk". If the remote bulk buffer is
  * too small, then return -DER_TRUNC and set "required_buf_size" to the local
- * pool map buffer size.
+ * pool map buffer size. 将池映射缓冲区传输到“remote_bulk”。 如果远程批量缓冲区太小，则返回 -DER_TRUNC 并将“required_buf_size”设置为本地池映射缓冲区大小。
  */
 int
 ds_pool_transfer_map_buf(struct pool_buf *map_buf, uint32_t map_version,

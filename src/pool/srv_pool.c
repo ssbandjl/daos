@@ -127,7 +127,7 @@ write_map_buf(struct rdb_tx *tx, const rdb_path_t *kvs, struct pool_buf *buf,
 
 /*
  * Retrieve the pool map buffer address in persistent memory and the pool map
- * version into "map_buf" and "map_version", respectively.
+ * version into "map_buf" and "map_version", respectively. 将持久内存中的池映射缓冲区地址和池映射版本分别检索到“map_buf”和“map_version”
  */
 static int
 locate_map_buf(struct rdb_tx *tx, const rdb_path_t *kvs, struct pool_buf **buf,
@@ -3604,7 +3604,7 @@ out:
 }
 
 /**
- * Query the pool without holding a pool handle.
+ * Query the pool without holding a pool handle. 在不持有池句柄的情况下查询池
  *
  * \param[in]	pool_uuid		UUID of the pool
  * \param[in]	ps_ranks		Ranks of pool svc replicas

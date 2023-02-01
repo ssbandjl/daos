@@ -424,6 +424,7 @@ ds_mgmt_pool_list_cont(uuid_t uuid, d_rank_list_t *svc_ranks,
  *					   #pi_bits (DPI_ENGINES_ENABLED bit).
  *					   Note: ranks may be empty (i.e., *ranks->rl_nr may be 0).
  *					   The caller must free the list with d_rank_list_free().
+ ranks – 可选，返回此池中的存储排名。 如果#pool_info 为 NULL，则引擎具有禁用的目标。 如果传递#pool_info，则根据#pi_bits（DPI_ENGINES_ENABLED 位）启用或禁用目标的引擎。 注意：ranks 可能为空（即 *ranks->rl_nr 可能为 0）。 调用者必须使用 d_rank_list_free() 释放列表。
  * \param[in][out]	pool_info	   Query results
  * \param[in][out]	pool_layout_ver	   Pool global version
  * \param[in][out]	upgrade_layout_ver Latest pool global version this pool might be upgraded
