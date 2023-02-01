@@ -5,3 +5,68 @@ git@github.com:ssbandjl/daos.git
 vos: https://github.com/ssbandjl/daos/tree/xb/src/vos
 
 
+docker run --name centos -it eeb6ee3f44bd /bin/bash
+
+docker build . -f utils/docker/Dockerfile.centos.7base -t centos-with-pkg
+
+
+engine
+dss_srv_init
+  bio_nvme_init
+    bio_spdk_env_init
+      spdk_env_opts_init
+
+
+func (sb *spdkBackend) Scan
+  InitSPDKEnv
+    daos_spdk_init
+      spdk_env_opts_init
+
+
+
+spdk_nvme_ctrlr_alloc_io_qpair
+
+
+nvme_wipe_namespaces 擦除 NVMe 控制器命名空间 LBA-0。 删除任何数据容器结构，例如 blobstore
+
+
+
+wipe_ctrlrs
+  wipe_ctrlr
+    spdk_nvme_ns_cmd_write
+
+spdk_nvme_qpair_process_completions
+
+
+spdk_nvme_ns_cmd_read
+
+
+engine
+bio_xsctxt_alloc
+  init_bio_bdevs
+    create_bio_bdev
+      load_blobstore
+        spdk_bdev_create_bs_dev_ext
+
+
+spdk_bs_init
+
+
+写blob
+examples/blob/hello_world/hello_blob.c
+blob_write
+  spdk_malloc
+  spdk_bs_alloc_io_channel
+  spdk_blob_io_write write_complete -> read_blob
+
+
+read_blob
+  spdk_blob_io_read read_complete
+
+
+read_complete
+  内存比较
+  memcmp(hello_context->write_buff, hello_context->read_buff, hello_context->io_unit_size)
+  spdk_blob_close delete_blob -> spdk_bs_delete_blob
+
+卸载 blobstore。 它将所有易失性数据刷新到磁盘
