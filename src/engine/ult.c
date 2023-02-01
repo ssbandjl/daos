@@ -253,6 +253,7 @@ dss_task_collective_reduce(struct dss_coll_ops *ops,
  * Execute \a ULT(\a arg) collectively on all server xstreams. Can only be
  * called by ULTs. Can only execute tasklet-compatible functions. User specified
  * reduction functions for aggregation after collective
+ * 一般情况：在所有服务器 xstreams 上共同执行 ULT(arg)。 只能由 ULT 调用。 只能执行 tasklet 兼容的函数。 用户为集合后的聚合指定缩减函数
  *
  * \param[in] ops		All dss_collective ops to work on streams
  *				include \a func(\a arg) for collective on all
@@ -308,14 +309,13 @@ dss_task_collective(int (*func)(void *), void *arg, unsigned int flags)
 /**
  * Execute \a func(\a arg) collectively on all server xstreams. Can only be
  * called by ULTs. Can only execute tasklet-compatible functions.
- *
+ * 在所有服务器 xstreams 上共同执行 func(arg)。 只能由 ULT 调用。 只能执行 tasklet 兼容的函数
  * \param[in] func	function to be executed
  * \param[in] arg	argument to be passed to \a func
  * \param[in] flags	Flags from dss_ult_flags
  *
  * \return		number of failed xstreams or error code
  */
-
 int
 dss_thread_collective(int (*func)(void *), void *arg, unsigned int flags)
 {

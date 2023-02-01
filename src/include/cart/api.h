@@ -1202,6 +1202,7 @@ enum crt_tree_type {
  *                             should within the range of
  *                             [CRT_TREE_MIN_RATIO, CRT_TREE_MAX_RATIO], or
  *                             will be treated as invalid parameter.
+ * branch_ratio – 分支比率，对于 CRT_TREE_FLAT 将被忽略。 对于KNOMIAL树或KARY树，有效值应在[CRT_TREE_MIN_RATIO, CRT_TREE_MAX_RATIO]范围内，否则将被视为无效参数
  *
  * \return                     tree topology value on success,
  *                             negative value if error.
@@ -1433,7 +1434,7 @@ crt_group_rank_s2p(crt_group_t *subgrp, d_rank_t rank_in, d_rank_t *rank_out);
  * \param[in] tree_topo        tree topology for the collective propagation,
  *                             can be calculated by crt_tree_topo().
  *                             See \a crt_tree_type,
- *                             \a crt_tree_topo().
+ *                             \a crt_tree_topo(). 集合传播
  * \param req [out]            created collective RPC request
  *
  * \return                     DER_SUCCESS on success, negative value if error

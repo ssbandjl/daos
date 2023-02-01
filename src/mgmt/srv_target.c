@@ -181,7 +181,7 @@ tgt_kill_pool(void *args)
  *   - if rc == 0, the iteration continues;
  *   - if rc == 1, the iteration stops and returns 0;
  *   - otherwise, the iteration stops and returns rc.
- *
+ * 通过扫描存储来迭代在此节点上具有目标的池。 将使用每个池的 UUID 调用 cb。 当 cb 返回一个 rc 时， - 如果 rc == 0，迭代继续； - 如果 rc == 1，迭代停止并返回 0； - 否则，迭代停止并返回 rc
  * \param[in]	cb	callback called for each pool
  * \param[in]	arg	argument passed to each \a cb call
  */
@@ -259,7 +259,7 @@ struct dead_pool {
 	uuid_t		dp_uuid;
 };
 
-/* Remove leftover SPDK resources from pools not fully created/destroyed */
+/* Remove leftover SPDK resources from pools not fully created/destroyed 从未完全创建/销毁的池中删除剩余的 SPDK 资源*/
 static int
 cleanup_leftover_cb(uuid_t uuid, void *arg)
 {
@@ -674,7 +674,7 @@ out:
 static int tgt_destroy(uuid_t pool_uuid, char *path);
 
 /**
- * RPC handler for target creation
+ * RPC handler for target creation 用于目标创建的 RPC 处理程序
  */
 void
 ds_mgmt_hdlr_tgt_create(crt_rpc_t *tc_req)

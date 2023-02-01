@@ -174,6 +174,7 @@ ds_mgmt_create_pool(uuid_t pool_uuid, const char *group, char *tgt_dev,
 
 	/* Sanity check targets versus cart's current primary group members.
 	 * If any targets not in PG, flag error before MGMT_TGT_ corpcs fail.
+   完整性检查目标与cart的当前主要组成员如果有任何目标不在 PG 中，则在 MGMT_TGT_corpcs 失败之前标记错误
 	 */
 	rc = crt_group_ranks_get(NULL, &pg_ranks);
 	D_ASSERTF(rc == 0, ""DF_RC"\n", DP_RC(rc));
@@ -184,6 +185,7 @@ ds_mgmt_create_pool(uuid_t pool_uuid, const char *group, char *tgt_dev,
 
 	/* The pg_ranks and targets lists should overlap perfectly.
 	 * If not, fail early to avoid expensive corpc failures.
+   pg_ranks 和 targets 列表应该完美重叠。 如果没有，尽早失败以避免代价高昂的 corpc 失败
 	 */
 	d_rank_list_filter(pg_ranks, pg_targets, false /* exclude */);
 	if (!d_rank_list_identical(pg_targets, targets)) {
