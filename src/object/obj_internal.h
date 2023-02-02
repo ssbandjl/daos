@@ -128,6 +128,7 @@ struct shard_fetch_stat {
  *    match with it;
  * 2) For EC obj, split iod/recxs to each target, generate new sgl to match with
  *    it, create oiod/siod to specify each shard/tgt's IO req.
+ * 重组对象请求: 用户输入的iod/sql在发送给server之前可能需要在client进行重组，例如合并相邻的recx(记录)，或者对乱序的recx进行排序生成新的sql与之匹配，对于EC obj，split iod/recxs 到每个目标，生成新的 sql 来匹配它，创建 oiod(对象io描述)/siod(对象分片io描述) 来指定每个分片/tgt 的 IO 请求
  */
 struct obj_reasb_req {
 	/* object ID */
@@ -204,7 +205,7 @@ typedef int (*shard_io_cb_t)(struct dc_obj_shard *shard, enum obj_rpc_opc opc,
 			     uint32_t fw_cnt, tse_task_t *task);
 
 /* shard update/punch auxiliary args, must be the first field of
- * shard_rw_args and shard_punch_args.
+ * shard_rw_args and shard_punch_args. 分片更新/打孔的辅助参数,必须作为shard_rw_args和shard_punch_args的第一个字段
  */
 struct shard_auxi_args {
 	struct obj_auxi_args	*obj_auxi;

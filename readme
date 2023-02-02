@@ -1,6 +1,7 @@
 https://github.com/ssbandjl/daos/tree/xb
 git@github.com:ssbandjl/daos.git
 
+filter: *.go,*.c, *.h, *.md
 
 vos: https://github.com/ssbandjl/daos/tree/xb/src/vos
 
@@ -70,3 +71,4 @@ read_complete
   spdk_blob_close delete_blob -> spdk_bs_delete_blob
 
 卸载 blobstore。 它将所有易失性数据刷新到磁盘
+

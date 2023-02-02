@@ -389,7 +389,7 @@ typedef struct {
 } daos_iod_t;
 
 /**
- * I/O map flags -
+ * I/O map flags - IO映射标志
  * DAOS_IOMF_DETAIL	zero means only need to know the iom_recx_hi/lo.
  *			1 means need to retrieve detailed iom_recxs array, in
  *			that case user can either -
@@ -402,6 +402,25 @@ typedef struct {
  *			   iom_recxs array (#elements is iom_nr, and equals
  *			   iom_nr_out). User is responsible for free the
  *			   iom_recxs buffer after using.
+#define DAOS_IOMF_DETAIL (0x1U)
+I/O 映射标志 -
+DAOS_IOMF_DETAIL 零表示只需要知道iom_recx_hi/lo。
+1 表示需要检索详细的 iom_recxs 数组，在
+这种情况下用户可以 -
+提供分配的 iom_recxs 缓冲区（iom_nr 表示分配的元素），如果返回的 iom_nr_out 大于 iom_nr，iom_recxs 仍将被填充，但它将是一个截断的列表）。 提供 NULL iod_recxs 和零 iom_nr，在这种情况下，DAOS 将在内部为 iom_recxs 数组分配所需的缓冲区（#elements 是 iom_nr，等于 iom_nr_out）。 用户负责在使用后释放 iom_recxs 缓冲区
+
+添加 iom_flags 以允许用户指示是否需要 IOM 详细信息
+（iom_recxs 数组）。 当指定 DAOS_IOMF_DETAIL 且用户提供时
+NULL iom_recxs ptr，DAOS 将在内部分配所需的缓冲区
+（用户应该在使用后释放它）。 受益于-
+
+未设置 DAOS_IOMF_DETAIL 时保存 RPC 大小，
+dc_array 对 refetch 和 reprocess iom when 的复杂处理
+iom_recxs buffer not enough 可以避免。
+对于 EC obj fetch 的 IOM 处理，应该：
+
+将 VOS ext 翻译回 DAOS ext，并且
+合并来自不同分片的 IOM。
  */
 #define DAOS_IOMF_DETAIL		(0x1U)
 /**

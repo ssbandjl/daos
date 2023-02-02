@@ -160,7 +160,7 @@ enum obj_rpc_flags {
 	ORF_CPD_BULK		= (1 << 10),
 	/* Contain EC split req, only used on CPD leader locally. Obsolete - DAOS-10348. */
 	ORF_HAS_EC_SPLIT	= (1 << 11),
-	/* Checking the existence of the object/key. */
+	/* Checking the existence of the object/key. 检查对象/键的存在 */
 	ORF_CHECK_EXISTENCE	= (1 << 12),
 	/** Include the map details on fetch (daos_iom_t::iom_recxs) */
 	ORF_CREATE_MAP_DETAIL	= (1 << 13),
