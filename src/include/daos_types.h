@@ -184,6 +184,7 @@ struct daos_eq;
  * The handle type, uses the least significant 4-bits in the 64-bits hhash key.
  * The bit 0 is only used for D_HYTPE_PTR (pointer type), all other types MUST
  * set bit 0 to 1.
+ * DAOS 哈希表句柄类型 句柄类型使用 64 位哈希键中的最低有效 4 位。 位 0 仅用于 D_HYTPE_PTR（指针类型），所有其他类型必须将位 0 设置为 1
  */
 enum {
 	DAOS_HTYPE_EQ		= 1, /**< event queue */
@@ -193,7 +194,7 @@ enum {
 	DAOS_HTYPE_ARRAY	= 9, /**< array */
 	DAOS_HTYPE_TX		= 11, /**< transaction */
 	DAOS_HTYPE_KV		= 13, /**< KV */
-	/* Must enlarge D_HTYPE_BITS to add more types */
+	/* Must enlarge D_HTYPE_BITS to add more types 必须扩大 D_HTYPE_BITS 以添加更多类型 */
 };
 
 /**

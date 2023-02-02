@@ -960,7 +960,7 @@ daos_event_destroy_children(struct daos_event *ev, bool force)
 
 /**
  * Add the event to the event queue, and if there is parent, add
- * it to its child list as well.
+ * it to its child list as well. 将事件添加到事件队列中，如果有父事件，则将其也添加到其子列表中。
  */
 int
 daos_event_init(struct daos_event *ev, daos_handle_t eqh,
@@ -1004,7 +1004,7 @@ daos_event_init(struct daos_event *ev, daos_handle_t eqh,
 		evx->evx_sched	= parent_evx->evx_sched;
 		evx->evx_parent	= parent_evx;
 		parent_evx->evx_nchild++;
-	} else if (daos_handle_is_valid(eqh)) {
+	} else if (daos_handle_is_valid(eqh)) { // cookie = 1
 		/* if there is event queue */
 		evx->evx_eqh = eqh;
 		eqx = daos_eq_lookup(eqh);

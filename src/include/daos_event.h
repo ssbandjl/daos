@@ -115,7 +115,7 @@ daos_eq_query(daos_handle_t eqh, daos_eq_query_t query,
 	      unsigned int nevents, daos_event_t **events);
 
 /**
- * Initialize a new event for \a eq
+ * Initialize a new event for \a eq 为事件队列初始化一个新的事件
  *
  * \param ev [IN]	Event to initialize
  * \param eqh [IN]	Where the event to be queued on, it's ignored if
@@ -129,6 +129,7 @@ daos_eq_query(daos_handle_t eqh, daos_eq_query_t query,
  *			children. The parent event completion is meant to be
  *			just an easy way to combine multiple events completion
  *			status into 1.
+ “父”事件，如果没有父事件，它可以为 NULL。 如果它不是 NULL，调用者将永远不会看到此事件的完成，相反，只有当父级的所有子级都完成时，才会看到父级的完成。 然而，与父事件关联的操作可能会在其子事件之前启动或完成。 父事件完成只是一种将多个事件完成状态合并为 1 的简单方法
  *
  * \return		0		Success
  *			-DER_INVAL	Invalid parameter
