@@ -39,7 +39,7 @@
  *
  * \note DB_ALL is special in that it sets all bits in the bitfield. If one
  *       wants to always log, when any debug is enabled, use DB_ALL instead of
- *       DB_ANY.
+ *       DB_ANY. 用DB_ALL打印所有日志
  */
 #define D_FOREACH_GURT_DB(ACTION, arg)          \
 	/** Set all debug bits */               \

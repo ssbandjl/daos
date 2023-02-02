@@ -590,6 +590,7 @@ crt_hlc_epsilon_get(void);
 /**
  * Get the upper bound of the HLC timestamp of an event happened before
  * (through out of band communication) the event at \a hlc.
+ * 获取发生在 hlc 事件之前（通过带外通信）事件的 HLC 时间戳的上限。
  *
  * \param[in] hlc              HLC timestamp
  *
@@ -647,6 +648,7 @@ crt_ep_abort(crt_endpoint_t *ep);
 /**
  * CART provides a set of macros for RPC registration. Using the macro interface
  * to register RPCs is much simpler and reduces the opportunities for mistakes.
+ * CART 提供了一组用于 RPC 注册的宏。 使用宏接口注册 RPC 更简单，并减少出错的机会
  *
  * public macros:
  *
@@ -688,7 +690,7 @@ crt_ep_abort(crt_endpoint_t *ep);
  * CRT_RPC_DECLARE(my_rpc, CRT_ISEQ_MY_RPC, CRT_OSEQ_MY_RPC)
  * CRT_RPC_REGISTER(opcode, flags, my_rpc);
  *
- * these two macros above expands into:
+ * these two macros above expands into: 宏展开后
  *
  * struct my_rpc_in {
  *     int32_t           mr_arg_1;

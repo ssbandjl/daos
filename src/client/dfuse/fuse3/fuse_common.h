@@ -40,6 +40,7 @@ extern "C" {
  * concurrently open for the same file.  Generally, a client will create one
  * file handle per file descriptor, though in some cases multiple file
  * descriptors can share a single file handle.
+ * 文件句柄由 open、opendir 和 create 方法创建，由 release 和 releasedir 方法关闭。 同一个文件可以同时打开多个文件句柄。 通常，客户端将为每个文件描述符创建一个文件句柄，但在某些情况下，多个文件描述符可以共享一个文件句柄
  */
 struct fuse_file_info {
 	/** Open flags.	 Available in open() and release() */
@@ -647,7 +648,7 @@ enum fuse_buf_flags {
 	FUSE_BUF_IS_FD		= (1 << 1),
 
 	/**
-	 * Seek on the file descriptor
+	 * Seek on the file descriptor 在文件描述符上移动读取指针, seek() 方法用于移动文件读取指针到指定位置
 	 *
 	 * If this flag is set then the .pos field is valid and is
 	 * used to seek to the given offset before performing
@@ -711,7 +712,8 @@ enum fuse_buf_copy_flags {
  * Single data buffer
  *
  * Generic data buffer for I/O, extended attributes, etc...  Data may
- * be supplied as a memory pointer or as a file descriptor
+ * be supplied as a memory pointer or as a file descriptor 
+ * 通用数据缓冲区, 用于io,扩展属性等, 数据可能作为内存指针或文件描述符提供
  */
 struct fuse_buf {
 	/**
@@ -727,7 +729,7 @@ struct fuse_buf {
 	/**
 	 * Memory pointer
 	 *
-	 * Used unless FUSE_BUF_IS_FD flag is set.
+	 * Used unless FUSE_BUF_IS_FD flag is set. 没有设置FUSE_BUF_IS_FD
 	 */
 	void *mem;
 
@@ -747,10 +749,10 @@ struct fuse_buf {
 };
 
 /**
- * Data buffer vector
+ * Data buffer vector 数据缓冲向量
  *
  * An array of data buffers, each containing a memory pointer or a
- * file descriptor.
+ * file descriptor. 数据缓冲数组,每个元素包含一个指针或文件描述符
  *
  * Allocate dynamically to add more than one buffer.
  */
@@ -761,12 +763,12 @@ struct fuse_bufvec {
 	size_t count;
 
 	/**
-	 * Index of current buffer within the array
+	 * Index of current buffer within the array 数组内偏移
 	 */
 	size_t idx;
 
 	/**
-	 * Current offset within the current buffer
+	 * Current offset within the current buffer 缓冲内偏移
 	 */
 	size_t off;
 
@@ -776,7 +778,7 @@ struct fuse_bufvec {
 	struct fuse_buf buf[1];
 };
 
-/* Initialize bufvec with a single buffer of given size */
+/* Initialize bufvec with a single buffer of given size 使用给定大小的单个缓冲区初始化(设置size和flag=0)*/
 #define FUSE_BUFVEC_INIT(size__)				\
 	((struct fuse_bufvec) {					\
 		/* .count= */ 1,				\

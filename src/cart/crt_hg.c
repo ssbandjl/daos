@@ -1237,7 +1237,7 @@ crt_hg_req_send_cb(const struct hg_cb_info *hg_cbinfo)
 		  rpc_priv->crp_pub.cr_ep.ep_tag,
 		  DP_RC(crt_cbinfo.cci_rc));
 
-	rpc_priv->crp_complete_cb(&crt_cbinfo);
+	rpc_priv->crp_complete_cb(&crt_cbinfo); // 分片io -> daos_rpc_cb
 
 	rpc_priv->crp_state = state;
 

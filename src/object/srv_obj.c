@@ -1983,7 +1983,7 @@ obj_ioc_init_oca(struct obj_io_context *ioc, daos_obj_id_t oid)
 	return 0;
 }
 
-/* Various check before access VOS */
+/* Various check before access VOS  访问VOS前的各种检查 */
 static int
 obj_ioc_begin(daos_obj_id_t oid, uint32_t rpc_map_ver, uuid_t pool_uuid,
 	      uuid_t coh_uuid, uuid_t cont_uuid, uint32_t opc, uint32_t flags,
@@ -2443,7 +2443,10 @@ enum process_epoch_rc {
  * Process the epoch state of an incoming operation. Once this function
  * returns, the epoch state shall contain a chosen epoch. Additionally, if
  * the return value is PE_OK_LOCAL, the epoch can be used for local-RDG
- * operations without uncertainty.
+ * operations without uncertainty. 处理传入操作的纪元状态。 一旦这个功能
+返回时，纪元状态应包含一个选定的纪元。 此外，如果
+返回值为PE_OK_LOCAL，epoch可用于本地冗余组
+没有不确定性的操作
  */
 static int
 process_epoch(uint64_t *epoch, uint64_t *epoch_first, uint32_t *flags)
@@ -2466,6 +2469,7 @@ process_epoch(uint64_t *epoch, uint64_t *epoch_first, uint32_t *flags)
 	return PE_OK_LOCAL;
 }
 
+// 对象读写控制器 
 void
 ds_obj_rw_handler(crt_rpc_t *rpc)
 {
@@ -2487,7 +2491,7 @@ ds_obj_rw_handler(crt_rpc_t *rpc)
 	uint32_t			version = 0;
 	struct dtx_epoch		epoch = {0};
 	int				rc;
-	bool				need_abort = false;
+	bool				need_abort = false;  //默认无需终止
 
 	D_ASSERT(orw != NULL);
 	D_ASSERT(orwo != NULL);
@@ -2517,7 +2521,7 @@ ds_obj_rw_handler(crt_rpc_t *rpc)
 			   &orw->orw_flags);
 	if (rc == PE_OK_LOCAL)
 		orw->orw_flags &= ~ORF_EPOCH_UNCERTAIN;
-
+	// 读对象开始
 	if (obj_rpc_is_fetch(rpc)) {
 		struct dtx_handle	*dth;
 
@@ -2544,7 +2548,7 @@ ds_obj_rw_handler(crt_rpc_t *rpc)
 		}
 
 		D_GOTO(out, rc);
-	}
+	} // 读对象结束
 
 	tgts = orw->orw_shard_tgts.ca_arrays;
 	tgt_cnt = orw->orw_shard_tgts.ca_count;
@@ -2712,7 +2716,7 @@ out:
 			       DP_DTI(&orw->orw_dti), DP_RC(rc1));
 	}
 
-	obj_rw_reply(rpc, rc, epoch.oe_value, &ioc);
+	obj_rw_reply(rpc, rc, epoch.oe_value, &ioc); // 对象读写回复
 	obj_ec_split_req_fini(split_req);
 	D_FREE(mbs);
 	D_FREE(dti_cos);
@@ -3409,7 +3413,7 @@ ds_obj_punch_handler(crt_rpc_t *rpc)
 	uint32_t			version = 0;
 	struct dtx_epoch		epoch;
 	int				rc;
-	bool				need_abort = false;
+	bool				need_abort = false; // 默认无需终止
 
 	opi = crt_req_get(rpc);
 	D_ASSERT(opi != NULL);

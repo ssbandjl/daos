@@ -639,7 +639,7 @@ check:
 	dmi->dmi_dtx_batched_started = 0;
 }
 
-/* Return the epoch uncertainty upper bound. */
+/* Return the epoch uncertainty upper bound. 返回纪元不确定性上限 */
 static daos_epoch_t
 dtx_epoch_bound(struct dtx_epoch *epoch)
 {
@@ -651,12 +651,12 @@ dtx_epoch_bound(struct dtx_epoch *epoch)
 		 * still within the potential uncertainty window.
 		 */
 		return epoch->oe_value;
-
+	// 改进基于 epsilon 的 HLC 上界计算，特别是合并最大逻辑时间戳
 	limit = crt_hlc_epsilon_get_bound(epoch->oe_first);
 	if (epoch->oe_value >= limit)
 		/*
 		 * The epoch is already out of the potential uncertainty
-		 * window.
+		 * window. 时代已经脱离了潜在的不确定性窗口
 		 */
 		return epoch->oe_value;
 
@@ -737,6 +737,50 @@ dtx_handle_reinit(struct dtx_handle *dth)
 
 /**
  * Init local dth handle.
+ * DTX 重新同步后，重建逻辑将扫描本地以找出哪个需要在新目标上重建对象。 那个时候如果打一些未提交的 DTX，那么这样的 DTX 领导者将在其他 DAOS 目标上。在这种情况下，我们不会将 -DER_INPROGRESS 返回到重建逻辑，相反，跳过将由相关对象处理的相关对象在 DTX 领导者所在的 DAOS 目标上重建扫描
+ * 
+ * 本来，对于跨多个冗余组的分布式事务，我们会在所有参与者都“准备好”的情况下同步提交。 这种同步提交可能会为相关的分布式事务引入延迟
+ * 这个补丁调整了提交行为，类似于
+独立修改，'committable' DTX 将被缓存
+在领导者上，并将通过专用的 ULT 批量提交
+一段时间之后。 预计部分交易可能有
+一些参与者在相同的 DAOS 目标上，然后是批处理
+commit 可以保存一些 DTX commit RPCs
+
+在这种异步批量提交模式下，leader 上的 DTX 状态
+可能是“可承诺的”，但对非领导者是“准备好的”。 如果一些
+读取请求在非领导者（在 VOS 中）上命中这些“准备好的”DTX，
+然后相关的调用者（对象）将一起获得 -DER_INPROGRESS
+与相关的 DTX 信息（ID，领导者），然后是调用者
+将向相关 DTX leader 查询是否可提交
+或不。 如果是，回复非领导者，然后提交这样的DRX
+以免被其他人进一步检查。 引入“DTX_REFRESH”RPC
+为此目的
+
+另一个主要变化是 DTX 重新同步处理分布式
+丢失了整个冗余组的事务。 在这样的情况下
+情况下， DTX 重新同步逻辑无法决定是否
+提交或中止相关事务，因为任何一个都可能
+导致或数据丢失或破坏事务语义的错误。
+然后它会将 DTX 条目全局标记为“corrputed”。 那
+将通过以下方式防止针对此类 DTX 的后续读取操作
+返回 -DER_DATA_LOSS。 另一方面，“腐败”
+DTX只影响自己修改过的棋子，不影响其他棋子
+共享相同的目标（对象/键）。 附加的目标
+“损坏的”DTX 不会被 vos 聚合清除，
+但可能会被新的更新/打孔更新。 我们需要特殊工具
+处理（恢复或清理）那些“损坏的”DTX 条目
+在将来。
+
+该补丁还修复了当前混淆的“重建”意图
+DTX 可用性检查。 我们使用新的“DAOS_INTENT_MIGRATION”
+对于所有重建和迁移相关的逻辑。 DTX逻辑
+在 VOS 中需要对操作进行一些特殊处理
+这样的意图，例如，返回 'ALB_UNAVAILABLE'
+当击中“损坏的”DTX 条目时，“-DER_DATA_LOSS”。
+
+它还包含一些针对“enum obj_rpc_flags”的代码清理
+
  */
 static int
 dtx_handle_init(struct dtx_id *dti, daos_handle_t coh, struct dtx_epoch *epoch,
@@ -815,6 +859,26 @@ dtx_handle_init(struct dtx_id *dti, daos_handle_t coh, struct dtx_epoch *epoch,
 		return 0;
 
 	return vos_dtx_rsrvd_init(dth);
+	/*通过整合 API 简化时间戳缓存。 现在有一个
+用于检查冲突的 API 和一个用于更新读取时间戳的 API。
+这是为迭代添加更多读取时间戳更新的准备
+和查询 API 以及添加纪元不确定性检查。 更多简化
+可能需要，但这是朝着这个方向迈出的一步。
+
+更新 mvcc 测试以启用相同的事务测试。 一些变化是
+这个工作需要
+
+*更改代码，使其只调用 vts_dtx_begin/end/commit/abort 一次
+每个事务并使用序列号。
+*禁用需要打孔模型更改补丁的 5 个案例
+被重建错误阻止。
+*修复了清除时间戳缓存中的 uuid 的错误
+*禁用第一个操作是失败的条件更新的情况
+或在同一笔交易中打卡。 这些案例需要更多的工作
+*VOS支持
+*将vos_publish/cancel封装在vos_tx_end里面
+*延迟免费相同的交易覆盖
+*将完整的 dtx_id 添加到时间戳以进行比较*/
 }
 
 static int
@@ -1308,7 +1372,7 @@ out:
 }
 
 /**
- * Prepare the DTX handle in DRAM.
+ * Prepare the DTX handle in DRAM. 在内存中准备DTX句柄
  *
  * \param coh		[IN]	Container handle.
  * \param dti		[IN]	The DTX identifier.
@@ -1317,10 +1381,10 @@ out:
  *			[IN]	Sub modifications count.
  * \param pm_ver	[IN]	Pool map version for the DTX.
  * \param leader_oid	[IN]    The object ID is used to elect the DTX leader.
- * \param dti_cos	[IN]	The DTX array to be committed because of shared.
+ * \param dti_cos	[IN]	The DTX array to be committed because of shared. 由于共享而要提交的 DTX 数组
  * \param dti_cos_cnt	[IN]	The @dti_cos array size.
  * \param flags		[IN]	See dtx_flags.
- * \param mbs		[IN]	DTX participants information.
+ * \param mbs		[IN]	DTX participants information. 参与者信息
  * \param p_dth		[OUT]	Pointer to the DTX handle.
  *
  * \return			Zero on success, negative value if error.

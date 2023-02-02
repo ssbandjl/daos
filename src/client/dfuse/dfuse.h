@@ -70,7 +70,7 @@ struct dfuse_readdir_entry {
 	off_t	dre_next_offset;
 };
 
-/** what is returned as the handle for fuse fuse_file_info on create/open/opendir */
+/** what is returned as the handle for fuse fuse_file_info on create/open/opendir  对象控制器, 在 create/open/opendir 上作为 fuse fuse_file_info 的句柄返回 */
 struct dfuse_obj_hdl {
 	/** pointer to dfs_t */
 	dfs_t                           *doh_dfs;

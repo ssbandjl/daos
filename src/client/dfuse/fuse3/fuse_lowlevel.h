@@ -1784,7 +1784,7 @@ void *fuse_req_userdata(fuse_req_t req);
  * Get the context from the request
  *
  * The pointer returned by this function will only be valid for the
- * request's lifetime
+ * request's lifetime 从请求中获取上下文此函数返回的指针仅在请求的生命周期内有效
  *
  * @param req request handle
  * @return the context structure

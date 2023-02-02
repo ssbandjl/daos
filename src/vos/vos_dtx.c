@@ -2864,7 +2864,7 @@ vos_dtx_detach(struct dtx_handle *dth)
 	dth->dth_pinned = 0;
 }
 
-/** Allocate space for saving the vos reservations and deferred actions */
+/** Allocate space for saving the vos reservations and deferred actions 初始化dtx handle中vos reserve/cancel相关字段 */
 int
 vos_dtx_rsrvd_init(struct dtx_handle *dth)
 {

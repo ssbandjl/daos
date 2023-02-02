@@ -710,7 +710,7 @@ DAOS 服务器然后加载存储管理模块。该模块扫描节点上的本地
 | RAS                                                          | Reliability, Availability & Serviceability                   |
 | RDB                                                          | Replicated Database, containing pool metadata and maintained across DAOS servers using the Raft algorithm. |
 | RDMA/RMA                                                     | Remote (Direct) Memory Access                                |
-| RDG                                                          | Redundancy Group                                             |
+| RDG                                                          | Redundancy Group   冗余组                                          |
 | RPC                                                          | Remote Procedure Call                                        |
 | SCM                                                          | Storage-Class Memory                                         |
 | [SPDK](https://spdk.io/)                                     | Storage Performance Development Kit                          |

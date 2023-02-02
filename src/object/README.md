@@ -221,7 +221,7 @@ structures that represent the checksums (`dcs_iod_csums`). The checksums will
 be sent to the server as part of the IOD and the server will store in [VOS]
 (src/vos/README.md).
 
-#### Object Fetch - Server
+#### Object Fetch - Server 对象查询服务
 
 On handling an object fetch (`ds_obj_rw_handler`), the server will allocate
 memory for the checksums and iod checksum structures. Then during the
@@ -231,6 +231,8 @@ need to be compared to the requested extent and new checksums might need
 to be calculated. `ds_csum_add2iod` will look at the fetched bio_sglist and
 the iod request to determine if the stored checksums for the request
 are sufficient or if new ones need to be calculated.
+
+在处理对象提取 (ds_obj_rw_handler) 时，服务器将为校验和和 iod 校验和结构分配内存。 然后在 vos_fetch_begin 阶段，将从 VOS 中获取校验和。 对于数组值类型，需要将获取的范围与请求的范围进行比较，并且可能需要计算新的校验和。 ds_csum_add2iod 将查看获取的 bio_sglist 和 iod 请求，以确定存储的请求校验和是否足够，或者是否需要计算新校验和。
 
 
 ##### `cc_need_new_csum` Logic

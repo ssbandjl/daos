@@ -498,6 +498,7 @@ tse_task_prep_callback(tse_task_t *task)
  * and return false, meaning the task is not completed. All the remaining CBs
  * that haven't been executed remain attached, but the ones that have executed
  * already have been removed from the list at this point.
+ * 执行任务的回调，如果所有 CB 都已执行且不重新启动任务，则返回 true。 如果任务被用户重新初始化，这意味着它再次在飞行中，所以我们在当前重新初始化它的 CB 处中断，并返回 false，这意味着任务没有完成。 其余所有未执行的 CB 仍然附加，但已执行的 CB 此时已从列表中删除
  */
 static bool
 tse_task_complete_callback(tse_task_t *task)
@@ -517,7 +518,7 @@ tse_task_complete_callback(tse_task_t *task)
 
 		d_list_del(&dtc->dtc_list);
 		gen = dtp_generation_get(dtp);
-		ret = dtc->dtc_cb(task, dtc->dtc_arg);
+		ret = dtc->dtc_cb(task, dtc->dtc_arg);  // -> dc_rw_cb
 		if (task->dt_result == 0)
 			task->dt_result = ret;
 
