@@ -25,6 +25,7 @@ dfuse_cb_write(fuse_req_t req, fuse_ino_t ino, struct fuse_bufvec *bufv,
 	struct dfuse_projection_info	*fs_handle = fuse_req_userdata(req);
 	const struct fuse_ctx		*fc = fuse_req_ctx(req);
 	int				rc;
+	// dufuse事件
 	struct dfuse_event		*ev;
 	size_t				len = fuse_buf_size(bufv);
 	struct fuse_bufvec		ibuf = FUSE_BUFVEC_INIT(len);
@@ -69,7 +70,8 @@ dfuse_cb_write(fuse_req_t req, fuse_ino_t ino, struct fuse_bufvec *bufv,
 
 	/* Check for potentially using readahead on this file, ie_truncated
 	 * will only be set if caching is enabled so only check for the one
-	 * flag rather than two here
+	 * flag rather than two here 
+	 * 检查是否可能在此文件上使用预读，ie_truncated 仅在启用缓存时才会设置，因此此处仅检查一个标志而不是两个
 	 */
 	if (oh->doh_ie->ie_truncated) {
 		if (oh->doh_ie->ie_start_off == 0 &&

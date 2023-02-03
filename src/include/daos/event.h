@@ -87,7 +87,7 @@ daos_event_complete(daos_event_t *ev, int rc);
 int
 daos_event_launch(struct daos_event *ev);
 
-/** convert event error to positive errno instead of -DER on completion */
+/** convert event error to positive errno instead of -DER on completion  完成时将事件错误转换为正 errno 而不是 -DER */
 void
 daos_event_errno_rc(struct daos_event *ev);
 

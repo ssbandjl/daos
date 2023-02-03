@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-/** Range of contiguous records */
+/** Range of contiguous records  连续记录的范围 */
 typedef struct {
 	/** Index of the first record in the range */
 	daos_off_t		rg_idx;
@@ -27,7 +27,7 @@ typedef struct {
 	daos_size_t		rg_len;
 } daos_range_t;
 
-/** IO descriptor of ranges in a DAOS array object to access */
+/** IO descriptor of ranges in a DAOS array object to access 要访问的 DAOS 数组对象中范围的 IO 描述符 */
 typedef struct {
 	/** Number of entries in arr_rgs */
 	daos_size_t		arr_nr;
@@ -35,7 +35,7 @@ typedef struct {
 	daos_range_t	       *arr_rgs;
 	/** (on read only) the number of records that are short fetched from the largest dkey(s).
 	 * Helps for checking short reads. If nonzero, a short read is possible and should be
-	 * checked with daos_array_get_size() compared with the indexes being read.
+	 * checked with daos_array_get_size() compared with the indexes being read. 短读
 	 */
 	daos_size_t		arr_nr_short_read;
 	/** (on read only) the number of records that were actually read from the array */

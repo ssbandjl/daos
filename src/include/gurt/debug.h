@@ -134,6 +134,7 @@ extern void (*d_alt_assert)(const int, const char*, const char*, const int);
  *
  * The mask is combined with D_LOGFAC which the user should define before
  * including debug headers
+ * 在解析掩码时有条件地记录指针值和消息掩码与 D_LOGFAC 结合，用户应在包含调试标头之前定义它
  *
  * \param mask	The debug bits or priority mask
  * \param ptr	A pointer value that is put into the message

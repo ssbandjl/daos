@@ -1388,10 +1388,12 @@ out:
 	return rc;
 }
 
+// 客户端数组IO
 static int
 dc_array_io(daos_handle_t array_oh, daos_handle_t th,
 	    daos_array_iod_t *rg_iod, d_sg_list_t *user_sgl,
-	    daos_opc_t op_type, tse_task_t *task)
+	    daos_opc_t op_type /* DAOS_OPC_ARRAY_READ|DAOS_OPC_ARRAY_WRITE */, 
+		tse_task_t *task)
 {
 	struct dc_array *array = NULL;
 	daos_handle_t	oh;
@@ -1407,7 +1409,7 @@ dc_array_io(daos_handle_t array_oh, daos_handle_t th,
 	daos_size_t	num_ios;
 	d_list_t	io_task_list;
 	daos_size_t	tot_num_records = 0;
-	tse_task_t	*stask; /* task for short read and hole mgmt */
+	tse_task_t	*stask; /* task for short read and hole mgmt 短读和空洞管理*/
 	int		rc;
 
 	if (rg_iod == NULL) {
@@ -1448,6 +1450,7 @@ dc_array_io(daos_handle_t array_oh, daos_handle_t th,
 	 * are created in the next loop. The get size operation is scheduled
 	 * only when a short read is possible (This check is done in the prep
 	 * callback of that task).
+	 * 对于字节数组的读取，为短读取处理创建一个 get_size 任务，它将依赖于在下一个循环中创建的所有 dkey IO 任务。 仅当可以进行短读取时才安排获取大小操作（此检查在该任务的准备回调中完成）
 	 */
 	if (op_type == DAOS_OPC_ARRAY_READ && array->byte_array) {
 		rc = daos_task_create(DAOS_OPC_ARRAY_GET_SIZE, tse_task2sched(task), 0, NULL,
@@ -1461,6 +1464,7 @@ dc_array_io(daos_handle_t array_oh, daos_handle_t th,
 	 * ranges that belong to the same dkey. If the user gives ranges that
 	 * are not increasing in offset, they probably won't be combined unless
 	 * the separating ranges also belong to the same dkey.
+	 * 遍历每个范围，但同时组合属于同一 dkey 的连续范围。 如果用户给出的范围不增加偏移量，则它们可能不会合并，除非分隔范围也属于同一个 dkey
 	 */
 	while (u < rg_iod->arr_nr) {
 		daos_iod_t	*iod;
@@ -1752,7 +1756,7 @@ dc_array_io(daos_handle_t array_oh, daos_handle_t th,
 	/*
 	 * If this is a byte array, schedule the get_size task with a prep
 	 * callback that decides if the get size is necessary for short read
-	 * handling. The prep callback also handles the hole management.
+	 * handling. The prep callback also handles the hole management. 准备回调还处理孔管理
 	 */
 	if (op_type == DAOS_OPC_ARRAY_READ && array->byte_array) {
 		if (head == NULL) {

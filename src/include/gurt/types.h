@@ -59,7 +59,7 @@ struct d_uuid {
 	uuid_t		uuid;
 };
 
-/** iovec for memory buffer */
+/** iovec for memory buffer 内存缓冲io向量 */
 typedef struct {
 	/** buffer address */
 	void		*iov_buf;
@@ -115,6 +115,7 @@ struct d_string_buffer_t {
 	char	*str;
 };
 
+// 将buf设置到iov上
 static inline void
 d_iov_set(d_iov_t *iov, void *buf, size_t size)
 {

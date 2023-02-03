@@ -57,7 +57,7 @@
 	/** Test debug stream */                \
 	ACTION(DB_TEST,  test,  test,  0, arg)
 
-/** A few internal macros for argument manipulation */
+/** A few internal macros for argument manipulation 一些用于参数操作的内部宏 */
 #define DD_CONCAT_CACHE(x, y) x ##_cache
 #define DD_CONCAT_FLAG(x, y) DD_FLAG_## x ##_## y
 #define DD_CONCAT(x, y, op) op(x, y)

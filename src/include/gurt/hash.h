@@ -462,7 +462,7 @@ void d_hash_rec_addref(struct d_hash_table *htable, d_list_t *link);
 /**
  * Decrease the refcount of the record.
  * The record will be freed if hop_decref() returns true and the EPHEMERAL bit
- * is set.
+ * is set. 减少记录的引用计数。 如果 hop_decref() 返回 true 并且设置了 EPHEMERAL(短暂的)位，则记录将被释放。
  *
  * \param[in] htable		Pointer to the hash table
  * \param[in] link		Chain link of the hash record

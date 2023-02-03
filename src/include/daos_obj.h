@@ -425,7 +425,7 @@ iom_recxs buffer not enough 可以避免。
 #define DAOS_IOMF_DETAIL		(0x1U)
 /**
  * A I/O map represents the physical extent mapping inside an array for a
- * given range of indices.
+ * given range of indices. I/O 映射代表给定索引范围内数组内的物理范围映射
  */
 typedef struct {
 	/** type of akey value (SV or AR)*/

@@ -134,7 +134,8 @@ tse_sched_register_comp_cb(tse_sched_t *sched,
  * the tasks they depend on were completed. Note that task completion using
  * tse_task_complete() must be done by the engine user to push progress on
  * the engine. In DAOS tse_task_complete is called by the completion CB of the
- * RPC request that is sent to the server.
+ * RPC request that is sent to the server. 
+ * 在调度程序上取得进展。 运行在它们所依赖的任务完成后准备执行的任务。 请注意，使用 tse_task_complete() 完成的任务必须由引擎用户完成以推动引擎上的进度。 在 DAOS 中，tse_task_complete 由发送到服务器的 RPC 请求的完成 CB 调用
  *
  * \param sched	[IN]	Scheduler to make progress on.
  *
@@ -265,12 +266,13 @@ tse_task_set_priv(tse_task_t *task, void *priv);
 /**
  * Register dependency tasks that will be required to be completed before the
  * the task can be scheduled. The dependency tasks cannot be in progress.
+ * 注册依赖任务, 需要先完成依赖任务, 主线任务才能执行
  *
  * \param task	[IN]	Task to add dependencies for.
  * \param num_deps [IN]	Number of tasks in the task array.
  * \param dep_tasks [IN]
  *			Task array for all the tasks that are required to
- *			complete before the task can scheduled.
+ *			complete before the task can scheduled. 依赖任务
  *
  * \return		0 if success.
  *			negative errno if it fails.

@@ -513,7 +513,7 @@ d_hlist_add_after(d_hlist_node_t *n, d_hlist_node_t *prev)
 
 #ifndef d_list_for_each_entry_safe
 /**
- * Iterate over a list of given type safe against removal of list entry
+ * Iterate over a list of given type safe against removal of list entry 遍历给定类型的列表以防止删除列表条目
  *
  * \param[in] pos	the type * to use as a loop counter.
  * \param[in] n		another type * to use as temporary storage

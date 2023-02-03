@@ -4284,7 +4284,7 @@ dfs_write(dfs_t *dfs, dfs_obj_t *obj, d_sg_list_t *sgl, daos_off_t off,
 
 	if (dfs == NULL || !dfs->mounted)
 		return EINVAL;
-	if (dfs->amode != O_RDWR)
+	if (dfs->amode != O_RDWR) //  Open for reading and writing
 		return EPERM;
 	if (obj == NULL || !S_ISREG(obj->mode))
 		return EINVAL;

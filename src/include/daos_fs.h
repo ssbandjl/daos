@@ -532,7 +532,7 @@ dfs_readx(dfs_t *dfs, dfs_obj_t *obj, dfs_iod_t *iod, d_sg_list_t *sgl,
  * \param[in]	sgl	Scatter/Gather list for data buffer.
  * \param[in]	off	Offset into the file to write to.
  * \param[in]	ev	Completion event, it is optional and can be NULL.
- *			Function will run in blocking mode if \a ev is NULL.
+ *			Function will run in blocking mode if \a ev is NULL. 完成事件，可选，可以为NULL。 如果 ev 为 NULL，函数将以阻塞模式运行。
  *
  * \return		0 on success, errno code on failure.
  */

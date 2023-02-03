@@ -1345,11 +1345,11 @@ crt_progress_cond(crt_context_t crt_ctx, int64_t timeout,
 
 	/**
 	 * Invoke the callback once first, in case the condition is met before
-	 * calling progress
+	 * calling progress 防止在执行progress前已经满足条件, 所以先调用一次条件回调函数
 	 */
-	rc = cond_cb(arg);
+	rc = cond_cb(arg); // -> eq_progress_cb
 	if (rc > 0)
-		/** exit as per the callback request */
+		/** exit as per the callback request 根据回调请求退出 */
 		return 0;
 	if (unlikely(rc < 0))
 		/** something wrong happened during the callback execution */
@@ -1373,7 +1373,7 @@ crt_progress_cond(crt_context_t crt_ctx, int64_t timeout,
 		return rc;
 	}
 
-	/** loop until callback returns non-null value */
+	/** loop until callback returns non-null value 循环直到条件回调返回非空值 */
 	while ((rc = cond_cb(arg)) == 0) {
 		crt_context_timeout_check(ctx);
 		timeout = crt_exec_progress_cb(ctx, timeout);

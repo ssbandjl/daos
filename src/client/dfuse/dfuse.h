@@ -34,6 +34,7 @@ struct dfuse_info {
 	bool				di_wb_cache;
 };
 
+// dfuse项目信息
 struct dfuse_projection_info {
 	struct dfuse_info		*dpi_info;
 	/** Hash table of open inodes, this matches kernel ref counts */
@@ -44,7 +45,7 @@ struct dfuse_projection_info {
 	ATOMIC uint64_t			dpi_ino_next;
 	/* Event queue for async events */
 	daos_handle_t			dpi_eq;
-	/** Semaphore to signal event waiting for async thread */
+	/** Semaphore to signal event waiting for async thread  信号量以指示等待异步线程的事件 */
 	sem_t				dpi_sem;
 	pthread_t			dpi_thread;
 	bool				dpi_shutdown;
@@ -505,6 +506,7 @@ struct dfuse_inode_entry {
 	/** stat structure for this inode.
 	 * This will be valid, but out-of-date at any given moment in time,
 	 * mainly used for the inode number and type.
+	 * 这将是有效的，但在任何给定时刻都已过时，主要用于 inode 编号和类型。
 	 */
 	struct stat              ie_stat;
 
