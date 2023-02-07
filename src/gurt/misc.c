@@ -69,7 +69,7 @@ d_asprintf(char **strp, const char *fmt, ...)
 	int	rc;
 
 	va_start(ap, fmt);
-	rc = vasprintf(strp, fmt, ap);
+	rc = vasprintf(strp, fmt, ap); // 分配足够大的字符串,包含终止符'\0'
 	va_end(ap);
 
 	return rc;

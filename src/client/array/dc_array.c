@@ -1409,7 +1409,7 @@ dc_array_io(daos_handle_t array_oh, daos_handle_t th,
 	daos_size_t	num_ios;
 	d_list_t	io_task_list;
 	daos_size_t	tot_num_records = 0;
-	tse_task_t	*stask; /* task for short read and hole mgmt 短读和空洞管理*/
+	tse_task_t	*stask; /* task for short read and hole mgmt 短读和空洞管理 short_task */
 	int		rc;
 
 	if (rg_iod == NULL) {
@@ -1572,6 +1572,7 @@ dc_array_io(daos_handle_t array_oh, daos_handle_t th,
 		 * Create the IO descriptor for this dkey. If the entire range
 		 * fits in the dkey, continue to the next range to see if we can
 		 * combine it fully or partially in the current dkey IOD.
+		 * 为此 dkey 创建 IO 描述符。 如果整个范围都适合dkey，则继续下一个范围，看看我们是否可以将其全部或部分组合在当前dkey IOD中
 		 */
 		do {
 			daos_off_t	old_array_idx;
@@ -1599,7 +1600,7 @@ dc_array_io(daos_handle_t array_oh, daos_handle_t th,
 			 * if the current range is bigger than what the dkey can
 			 * hold, update the array index and number of records in
 			 * the current range and break to issue the I/O on the
-			 * current dkey.
+			 * current dkey. 达到dkey最大,中断循环,并发送io
 			 */
 			if (records > num_records) {
 				array_idx += num_records;
@@ -1699,13 +1700,13 @@ dc_array_io(daos_handle_t array_oh, daos_handle_t th,
 			io_arg->iods	= iod;
 			io_arg->sgls	= sgl;
 
-			/** if this is a byte array, add ioms for hole mgmt */
+			/** if this is a byte array, add ioms for hole mgmt 如果这是一个字节数组，为 hole mgmt 添加 ioms */
 			if (array->byte_array) {
 				iom->iom_nr = 0;
 				iom->iom_recxs = NULL;
 				iom->iom_flags = DAOS_IOMF_DETAIL;
 				io_arg->ioms = iom;
-				rc = tse_task_register_deps(stask, 1, &io_task);
+				rc = tse_task_register_deps(stask, 1, &io_task); // 为stask创建依赖io任务(io_task)
 				if (rc) {
 					tse_task_complete(io_task, rc);
 					D_GOTO(err_iotask, rc);

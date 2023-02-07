@@ -635,9 +635,11 @@ int crt_internal_rpc_register(bool server);
 int crt_rpc_common_hdlr(struct crt_rpc_priv *rpc_priv);
 int crt_req_send_internal(struct crt_rpc_priv *rpc_priv);
 
+// 请求超时
 static inline bool
 crt_req_timedout(struct crt_rpc_priv *rpc_priv)
 {
+	// rpc是以下状态,且不在超时binheap中
 	return (rpc_priv->crp_state == RPC_STATE_REQ_SENT ||
 		rpc_priv->crp_state == RPC_STATE_URI_LOOKUP ||
 		rpc_priv->crp_state == RPC_STATE_ADDR_LOOKUP ||

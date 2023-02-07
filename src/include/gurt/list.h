@@ -90,7 +90,7 @@ d_list_add_tail(d_list_t *newe, d_list_t *head)
 
 /**
  * Delete a list entry by making the prev/next entries
- * point to each other.
+ * point to each other. 将中间的entry挤掉
  *
  * \param[in] prev	previous entry
  * \param[in] next	next entry

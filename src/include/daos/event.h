@@ -138,7 +138,8 @@ daos_event_is_priv(daos_event_t *ev);
  * the task with the input event \a ev.
  *
  * If the input scheduler is NULL, the task will attach on the internal
- * scheduler of event/EQ.
+ * scheduler of event/EQ. 
+ * 使用输入的调度程序sched创建一个新任务，并关联输入事件 ev 的任务。如果输入调度程序为 NULL，则任务将附加到事件/EQ 的内部调度程序
  */
 int
 dc_task_create(tse_task_func_t func, tse_sched_t *sched, daos_event_t *ev,

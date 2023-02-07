@@ -373,12 +373,13 @@ d_list_t *d_hash_rec_find_insert(struct d_hash_table *htable,
  *
  * If \p exclusive is true, it can succeed only if the key is unique, otherwise
  * this function returns error.
+ * 插入一个新的键和它的记录链链接到哈希表中。 哈希表在成功插入的记录上持有一个引用计数，它在删除记录时释放引用计数。 如果 exclusive 为真，则只有键唯一才能成功，否则此函数返回错误
  *
  * \param[in] htable		Pointer to the hash table
  * \param[in] key		The key to be inserted
  * \param[in] ksize		Size of the key
  * \param[in] link		The link chain of the record being inserted
- * \param[in] exclusive		The key has to be unique if it is true.
+ * \param[in] exclusive		The key has to be unique if it is true. 唯一的
  *
  * \return			0 on success, negative value on error
  */

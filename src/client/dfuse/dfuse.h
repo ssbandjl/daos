@@ -581,6 +581,8 @@ extern char *duns_xattr_name;
  * Take the sequence parts of both the hi and lo object id and put them in
  * different parts of the inode, then or in the inode number of the root
  * of this dfs object, to avoid conflicts across containers.
+ * 生成用于此 dfs 对象的 inode。 这是从三个 64 位数字生成单个 64 位数字，因此并不完美，但确实避免了大多数冲突。
+将hi和lo object id的sequence部分分别放在inode的不同部分，然后放在这个dfs object的root的inode number中，避免跨容器冲突。
  */
 static inline void
 dfuse_compute_inode(struct dfuse_cont *dfs,

@@ -161,6 +161,7 @@ tse_sched_check_complete(tse_sched_t *sched);
  * the task will be added to the dep list of the dependent
  * task, once the dependent task is done, then the task will
  * be added to the scheduler list.
+ * 初始化 tse_task。 该任务会被添加到调度器任务列表中，稍后被调度，如果提供了依赖任务，则该任务将被添加到依赖任务的dep列表中，一旦依赖任务完成，则添加该任务 到调度列表
  *
  * \param task_func [input]	the function to be executed when
  *                              the task is executed.

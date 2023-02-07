@@ -590,6 +590,8 @@ dc_tx_get_dti(daos_handle_t th, struct dtx_id *dti)
  * If the parameter @ptx is not NULL, then the transaction handle pointer to
  * the "dc_tx" will be returned via it, with dc_tx.tx_lock locked, and then the
  * caller can directly use it without dc_tx_hdl2ptr() again.
+ * 检查池映射版本：如果（客户端已知的）最新池映射版本比 TX 已知池映射版本更新，那么来自 TX 之前的提取/列表/查询的数据可能会过时。 另一方面，即使相关数据仍然有效，但相关的读取时间戳（用于 MVCC）可能会留在被逐出集群的服务器上。 那么我们必须在这种情况下重新启动交易。 
+ * 如果参数@ptx不为NULL，则通过它返回指向“dc_tx”的事务句柄指针，并锁定dc_tx.tx_lock，然后调用者可以直接使用它而无需再次使用dc_tx_hdl2ptr()。
  */
 static int
 dc_tx_check_pmv_internal(daos_handle_t th, struct dc_tx **ptx)

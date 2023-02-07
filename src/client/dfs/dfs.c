@@ -77,6 +77,7 @@
 /*
  * END IDX for layout V2 (2.0) is at the current offset where we store the mtime nsec, but also need
  * to account for the atime which is not stored anymore, but was stored (as a time_t) in layout V2.
+ * 布局 V2 (2.0) 的 END IDX 位于我们存储 mtime nsec 的当前偏移量处，但还需要考虑不再存储但在布局 V2 中存储（作为 time_t）的 atime
  */
 #define END_L2_IDX	(MTIME_NSEC_IDX + sizeof(time_t))
 
@@ -372,6 +373,7 @@ oid_gen(dfs_t *dfs, daos_oclass_id_t oclass, bool file, daos_obj_id_t *oid)
 	return 0;
 }
 
+// concat 连接两个字符串(通过vasprintf)
 static char *
 concat(const char *s1, const char *s2)
 {
@@ -384,6 +386,11 @@ concat(const char *s1, const char *s2)
 	return result;
 }
 
+/*
+fetch_entry 获取条目
+@param xnr 属性个数
+@param name dkey
+*/
 static int
 fetch_entry(dfs_layout_ver_t ver, daos_handle_t oh, daos_handle_t th, const char *name, size_t len,
 	    bool fetch_sym, bool *exists, struct dfs_entry *entry, int xnr, char *xnames[],
@@ -470,7 +477,7 @@ fetch_entry(dfs_layout_ver_t ver, daos_handle_t oh, daos_handle_t th, const char
 	d_iov_set(&sg_iovs[i++], &entry->oclass, sizeof(daos_oclass_id_t));
 
 	if (ver <= 2) {
-		recx.rx_nr = END_L2_IDX;
+		recx.rx_nr = END_L2_IDX; // DAOS HLC 从 2021 年开始，这意味着用户将无法在此之前对文件设置 mtime。 修复 DFS 中的 mtime 设置以使用 timespec（更改布局以添加纳秒粒度）而不是 HLC 以支持旧日期
 	} else {
 		d_iov_set(&sg_iovs[i++], &entry->mtime_nano, sizeof(uint64_t));
 		d_iov_set(&sg_iovs[i++], &entry->ctime_nano, sizeof(uint64_t));
@@ -3699,6 +3706,7 @@ dfs_lookup_rel(dfs_t *dfs, dfs_obj_t *parent, const char *name, int flags,
 				  0, NULL, NULL, NULL);
 }
 
+//  lookup entry + fetch xattrs 查询条目并获取属性
 int
 dfs_lookupx(dfs_t *dfs, dfs_obj_t *parent, const char *name, int flags,
 	    dfs_obj_t **obj, mode_t *mode, struct stat *stbuf, int xnr,

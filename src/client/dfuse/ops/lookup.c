@@ -148,6 +148,7 @@ out_err:
  * This function will check for and configure a inode as
  * a new entry point of possible, and modify the inode
  * as required.
+ * 检查并设置统一命名空间入口点。 此函数将检查并配置一个 inode 作为可能的新入口点，并根据需要修改 inode
  *
  * On failure it will return error.
  *

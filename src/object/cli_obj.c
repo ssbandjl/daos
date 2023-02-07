@@ -2813,7 +2813,7 @@ obj_req_fanout(struct dc_object *obj, struct obj_auxi_args *obj_auxi,
 	if (daos_handle_is_valid(obj_auxi->th) && !dtx_epoch_chosen(epoch))
 		require_shard_task = true;
 
-	/* for retried obj IO, reuse the previous shard tasks and resched it */
+	/* for retried obj IO, reuse the previous shard tasks and resched it 对于重试io,重用分片任务,重新调度 */
 	if (obj_auxi->io_retry) {
 		switch (obj_auxi->opc) {
 		case DAOS_OBJ_RPC_FETCH:
@@ -2827,9 +2827,10 @@ obj_req_fanout(struct dc_object *obj, struct obj_auxi_args *obj_auxi,
 		case DAOS_OBJ_RPC_PUNCH_AKEYS:
 			/* For distributed transaction, check whether TX pool
 			 * map is stale or not, if stale, restart the TX.
+			 对于分布式事务，检查TX pool map是否陈旧，如果陈旧，重启TX
 			 */
 			if (daos_handle_is_valid(obj_auxi->th)) {
-				rc = dc_tx_check_pmv(obj_auxi->th);
+				rc = dc_tx_check_pmv(obj_auxi->th); // 在客户端缓存未提交的修改
 				if (rc != 0)
 					goto out_task;
 			}
@@ -2839,6 +2840,37 @@ obj_req_fanout(struct dc_object *obj, struct obj_auxi_args *obj_auxi,
 		}
 	}
 
+/*
+对于分布式事务，在客户端触发提交之前，修改将缓存在客户端。 好处就是如果分布式事务需要重启
+因为（潜在的）与他人的冲突，我们只需要
+在不与客户端交谈的情况下删除客户端上的缓存修改
+相关的 daos 服务器。 另一方面，如果分布式
+事务所有者（应用程序进程或客户端）崩溃
+在提交分布式事务之前，服务器需要
+没有清理相关的分布式事务。
+
+但是在客户端缓存修改并不是免费的，尤其是
+考虑应用程序可能想要修改的情况
+通过分布式事务处理大量数据。 在这种情况下，
+如果我们将应用程序缓冲区复制到缓存中，它将
+不仅浪费大量CPU周期，还消耗客户端
+DRAM 非常多。 为了避免这样的麻烦，DAOS TX open API
+允许应用程序告诉 DTX 逻辑是否需要
+是否复制应用程序缓冲区。 如果 DAOS_TF_ZERO_COPY 是
+在打开TX时指定，则DTX逻辑将直接
+引用相关指针到应用程序缓冲区时
+缓存。 在这种情况下，应用程序需要保证
+在 TX 之前既不重用也不释放相关缓冲区
+坚定的; 否则，相关的未提交修改
+会被覆盖或丢失
+
+另一个要提到的是，在提交 DTX 之前，
+它的客户端缓存对任何其他人都是不可见的，包括
+DTX 发起人本身，意味着如果 DTX 发起人想要
+要看到它的修改，它必须首先触发 DTX 提交。
+*/
+
+
 	/*
 	 * We mark the RPC as RESEND although @io_retry does not
 	 * guarantee that the RPC has ever been sent. It may cause
@@ -2847,11 +2879,12 @@ obj_req_fanout(struct dc_object *obj, struct obj_auxi_args *obj_auxi,
 	 * On the other hand, the client may resend the RPC to new
 	 * shard if leader switched. That is why the resend logic
 	 * is handled at object layer rather than shard layer.
+	 * 我们将 RPC 标记为 RESEND，尽管 @io_retry 不保证 RPC 已经发送。 它可能会在服务器端造成一些开销，但不会出现正确性问题。 另一方面，如果领导者切换，客户端可能会重新发送 RPC 到新的分片。 这就是为什么重发逻辑在对象层而不是分片层处理的原因
 	 */
 	if (obj_auxi->io_retry)
 		obj_auxi->flags |= ORF_RESEND;
 
-	/* for retried obj IO, reuse the previous shard tasks and resched it */
+	/* for retried obj IO, reuse the previous shard tasks and resched it 不是新分片任务 */
 	if (obj_auxi->io_retry && obj_auxi->args_initialized &&
 	    !obj_auxi->new_shard_tasks) {
 		/* if with shard task list, reuse it and re-schedule */
@@ -2922,7 +2955,7 @@ obj_req_fanout(struct dc_object *obj, struct obj_auxi_args *obj_auxi,
 
 	D_ASSERT(d_list_empty(task_list));
 
-	/* for multi-targets, schedule it by tse sub-shard-tasks */
+	/* for multi-targets, schedule it by tse sub-shard-tasks 多个目标,通过tse调度分片子任务 */
 	for (i = 0; i < tgts_nr; i++) {
 		if (tgt->st_rank == DAOS_TGT_IGNORE)
 			goto next;
@@ -5110,7 +5143,8 @@ out:
 
 /* pre-process for cond_fetch -
  * for multiple-akeys case, split obj task to multiple sub-tasks each for one akey. For this
- * case return 1 to indicate wait sub-tasks' completion.
+ * case return 1 to indicate wait sub-tasks' completion. 
+ * cond_fetch 的预处理，对于 multiple-akeys 情况，将 obj 任务拆分为多个子任务，每个子任务对应一个 akey。 对于这种情况，返回 1 表示等待子任务完成
  */
 static int
 obj_cond_fetch_prep(tse_task_t *task, struct obj_auxi_args *obj_auxi)

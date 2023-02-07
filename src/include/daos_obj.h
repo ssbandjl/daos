@@ -343,9 +343,9 @@ typedef struct {
 typedef enum {
 	/** is a dkey */
 	DAOS_IOD_NONE		= 0,
-	/** one indivisible value update atomically */
+	/** one indivisible value update atomically 一个不可分割的值 */
 	DAOS_IOD_SINGLE		= 1,
-	/** an array of records where each record is update atomically */
+	/** an array of records where each record is update atomically 每个记录通过原子更新 */
 	DAOS_IOD_ARRAY		= 2,
 } daos_iod_type_t;
 
@@ -762,6 +762,7 @@ daos_obj_query(daos_handle_t oh, struct daos_obj_attr *oa, d_rank_list_t *ranks,
  *			(if asked for). If the extents don't fit in the io_map,
  *			the number required is set on the fetch in
  *			\a ioms[]::iom_nr for that particular iod.
+ *			io_map
  *
  * \param[in]	ev	Completion event, it is optional and can be NULL.
  *			Function will run in blocking mode if \a ev is NULL.

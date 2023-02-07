@@ -279,7 +279,7 @@ struct dtx_epoch {
 /* dtx_epoch.oe_flags */
 #define DTX_EPOCH_UNCERTAIN	(1U << 0)	/**< oe_value is uncertain */
 
-/** Does \a epoch contain a chosen TX epoch? */
+/** Does \a epoch contain a chosen TX epoch? epoch是否包含一个选择的tx epoch*/
 static inline bool
 dtx_epoch_chosen(struct dtx_epoch *epoch)
 {

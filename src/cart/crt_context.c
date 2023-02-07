@@ -1098,7 +1098,7 @@ crt_context_req_untrack(struct crt_rpc_priv *rpc_priv)
 	D_MUTEX_LOCK(&epi->epi_mutex);
 
 	/* Prevent simultaneous untrack from progress thread and
-	 * main rpc execution thread.
+	 * main rpc execution thread. 防止进度线程和主 rpc 执行线程同时取消跟踪
 	 */
 	if (rpc_priv->crp_ctx_tracked == 0) {
 		RPC_TRACE(DB_NET, rpc_priv,
@@ -1115,7 +1115,7 @@ crt_context_req_untrack(struct crt_rpc_priv *rpc_priv)
 		epi->epi_req_num--;
 	}
 	D_ASSERT(epi->epi_req_num >= epi->epi_reply_num);
-
+	// 没有超时, 取消跟踪, 超时让timeout去处理
 	if (!crt_req_timedout(rpc_priv)) {
 		D_MUTEX_LOCK(&crt_ctx->cc_mutex);
 		crt_req_timeout_untrack(rpc_priv);
@@ -1137,6 +1137,7 @@ crt_context_req_untrack(struct crt_rpc_priv *rpc_priv)
 	inflight = epi->epi_req_num - epi->epi_reply_num;
 	D_ASSERT(inflight >= 0 && inflight <= crt_gdata.cg_credit_ep_ctx);
 	credits = crt_gdata.cg_credit_ep_ctx - inflight;
+	// 等待队列不为空
 	while (credits > 0 && !d_list_empty(&epi->epi_req_waitq)) {
 		D_ASSERT(epi->epi_req_wait_num > 0);
 		tmp_rpc = d_list_entry(epi->epi_req_waitq.next,

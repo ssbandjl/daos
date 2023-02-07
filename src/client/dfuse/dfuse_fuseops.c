@@ -256,7 +256,7 @@ df_ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 
 	parent_inode = container_of(rlink, struct dfuse_inode_entry, ie_htl);
 
-	parent_inode->ie_dfs->dfs_ops->lookup(req, parent_inode, name);
+	parent_inode->ie_dfs->dfs_ops->lookup(req, parent_inode, name); // -> dfuse_cb_lookup
 
 	d_hash_rec_decref(&fs_handle->dpi_iet, rlink);
 	return;
