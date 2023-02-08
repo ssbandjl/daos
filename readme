@@ -72,3 +72,9 @@ read_complete
 
 卸载 blobstore。 它将所有易失性数据刷新到磁盘
 
+比较不同分支的同一个文件
+git diff xb..master -- src/object/cli_obj.c
+
+
+
+
