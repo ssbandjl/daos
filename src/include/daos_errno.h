@@ -24,7 +24,7 @@ extern "C" {
  * be defined for each non-contiguous range
  */
 
-/** Preprocessor macro defining GURT errno values and internal definition of d_errstr */
+/** Preprocessor macro defining GURT errno values and internal definition of d_errstr 预处理器宏定义 GURT errno 值和 d_errstr 的内部定义(错误码) */
 #define D_FOREACH_GURT_ERR(ACTION)					\
 	/** no permission */						\
 	ACTION(DER_NO_PERM,		(DER_ERR_GURT_BASE + 1),	\
