@@ -247,7 +247,7 @@ df_ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 	struct dfuse_inode_entry	*parent_inode;
 	d_list_t			*rlink;
 	int rc;
-
+	// 父节点inode缓存在hash表中
 	rlink = d_hash_rec_find(&fs_handle->dpi_iet, &parent, sizeof(parent));
 	if (!rlink) {
 		DFUSE_TRA_ERROR(fs_handle, "Failed to find inode %#lx", parent);

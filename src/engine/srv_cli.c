@@ -27,6 +27,7 @@
  * Client APIs may need to acquire some global pthread lock, that could block
  * the whole xstream unexpectedly, we need to revise the client APIs to make
  * sure the global pthread locks are not used when they are called on server.
+ * 客户端 API 可能需要获取一些全局 pthread 锁，这可能会意外阻塞整个 xstream，我们需要修改客户端 API 以确保在服务器上调用时不使用全局 pthread 锁
  */
 static void
 dsc_progress(void *arg)

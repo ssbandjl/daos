@@ -661,16 +661,16 @@ eq_progress_cb(void *arg)
 	d_list_for_each_entry_safe(evx, tmp, &eq->eq_comp, evx_link) {
 		D_ASSERT(eq->eq_n_comp > 0);
 
-		/** don't poll out a parent if it has inflight events */
+		/** don't poll out a parent if it has inflight events 有子任务在运行时,不处理该父任务 */
 		if (evx->evx_nchild_running > 0)
 			continue;
 
 		eq->eq_n_comp--;
 
-		d_list_del_init(&evx->evx_link);
+		d_list_del_init(&evx->evx_link); // 将该位置的item移除
 		D_ASSERT(evx->evx_status == DAOS_EVS_COMPLETED ||
 			 evx->evx_status == DAOS_EVS_ABORTED);
-		evx->evx_status = DAOS_EVS_READY;
+		evx->evx_status = DAOS_EVS_READY; // 重新启用
 
 		if (epa->events != NULL) {
 			ev = daos_evx2ev(evx);
@@ -731,9 +731,9 @@ daos_eq_poll(daos_handle_t eqh, int wait_running, int64_t timeout,
 	epa.count	= 0;
 
 	/* pass the timeout to crt_progress() with a conditional callback */
-	rc = crt_progress_cond(epa.eqx->eqx_ctx, timeout, eq_progress_cb, &epa);
+	rc = crt_progress_cond(epa.eqx->eqx_ctx, timeout, eq_progress_cb /*cond_cb*/, &epa);
 
-	/* drop ref grabbed in daos_eq_lookup() */
+	/* drop ref grabbed in daos_eq_lookup() 释放在lookup中增加的引用计数 */
 	daos_eq_putref(epa.eqx);
 
 	if (rc != 0 && rc != -DER_TIMEDOUT) {

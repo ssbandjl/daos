@@ -78,6 +78,7 @@ tse_task_buf_size(int size)
  * keeps giving an addition pointer to the big pre-allcoated buffer. previous
  * way doesn't work well for public use.
  * We should make this simpler now and more generic as the comment below.
+ * 获取任务的嵌入式缓冲区，用户可以使用它来携带功能参数。 任务的嵌入式缓冲区有大小限制，如果 buf_size 大于限制，此函数将返回 NULL。 用户应通过 tse_task_set_priv() 使用私有数据来传递大参数。 MSC - 我将其更改为只是一个缓冲区，而不是像以前那样, 不断给一个额外的指针指向大的预涂层缓冲区。 以前的方式不适用于公共用途。我们现在应该使它更简单，更通用，如下面的评论
  */
 void *
 tse_task_buf_embedded(tse_task_t *task, int size)
@@ -85,8 +86,8 @@ tse_task_buf_embedded(tse_task_t *task, int size)
 	struct tse_task_private	*dtp = tse_task2priv(task);
 	uint32_t		 avail_size;
 
-	/** Let's assume dtp_buf is always enough at the moment */
-	/** MSC - should malloc if size requested is bigger */
+	/** Let's assume dtp_buf is always enough at the moment 假设此时 dtp_buf 总是足够的 */
+	/** MSC - should malloc if size requested is bigger 如果请求的大小更大，应该 malloc */
 	size = tse_task_buf_size(size);
 	D_ASSERT(size < UINT16_MAX);
 	avail_size = sizeof(dtp->dtp_buf) - dtp->dtp_stack_top;

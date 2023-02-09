@@ -14,6 +14,7 @@
  * This thread is started at launch time with an event queue and blocks
  * on a semaphore until a asynchronous event is created, at which point
  * the thread wakes up and busy polls in daos_eq_poll() until it's complete.
+ * 异步进度线程，该线程在启动时使用事件队列启动，并阻塞在信号量上，直到创建异步事件，此时线程唤醒并在 daos_eq_poll() 中忙于轮询直到完成
  */
 static void *
 dfuse_progress_thread(void *arg)

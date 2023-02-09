@@ -73,6 +73,8 @@ struct tse_task_private {
 	 *
 	 * The sum of dtp_stack_top and dtp_embed_top should not exceed
 	 * TSE_TASK_ARG_LEN.
+	 * 保留缓冲区供用户分配嵌入式参数，它也可以用作任务堆栈空间，可以压入/弹出参数以方便 I/O 处理, embedded 参数从下往上使用buffer，栈空间从上往下增长
+dtp_stack_top 和 dtp_embed_top 之和不能超过 TSE_TASK_ARG_LEN
 	 */
 	uint16_t			 dtp_stack_top;
 	uint16_t			 dtp_embed_top;

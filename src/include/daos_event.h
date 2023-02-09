@@ -190,6 +190,7 @@ daos_event_next(daos_event_t *parent, daos_event_t *child);
 int
 daos_event_test(struct daos_event *ev, int64_t timeout, bool *flag);
 
+// 函数指针：指向函数(首地址)的指针变量，即本质是一个指针变量, 声明格式：类型说明符 (*函数名)(参数)
 typedef int (*daos_event_comp_cb_t)(void *, daos_event_t *, int);
 
 /**

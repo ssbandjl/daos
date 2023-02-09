@@ -354,7 +354,8 @@ d_list_t *d_hash_rec_find(struct d_hash_table *htable, const void *key,
  * Lookup \p key in the hash table, if there is a matched record, it should be
  * returned, otherwise \p link will be inserted into the hash table. In the
  * later case, the returned link chain is the input \p link.
- *
+ * 哈希表中的查找键，如果有匹配的记录则返回，否则将链接插入到哈希表中。 在后一种情况下，返回的链接链是输入链接
+ * 
  * \param[in] htable		Pointer to the hash table
  * \param[in] key		The key to be inserted
  * \param[in] ksize		Size of the key

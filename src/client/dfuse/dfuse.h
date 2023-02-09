@@ -499,9 +499,9 @@ struct fuse_lowlevel_ops dfuse_ops;
  * Inode handle.
  *
  * Describes any entry in the projection that the kernel knows about, may
- * be a directory, file, symbolic link or anything else.
+ * be a directory, file, symbolic link or anything else. 
+ * 描述内核知道的投影中的任何条目，可以是目录、文件、符号链接或其他任何内容
  */
-
 struct dfuse_inode_entry {
 	/** stat structure for this inode.
 	 * This will be valid, but out-of-date at any given moment in time,

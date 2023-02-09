@@ -5,17 +5,18 @@ features that DAOS exposes:
 - Management API: pool and target management
 - Pool Client API: pool access
 - Container API: container management and access, container snapshots
-- Transaction API: transaction model and concurrency control
-- Object, Array and KV APIs: object and data management and access
-- Event, Event Queue, and Task API: non-blocking operations
-- Addons API: array and KV operations built over the DAOS object API
-- DFS API: DAOS file system API to emulate a POSIX namespace over DAOS
+- Transaction API: transaction model and concurrency control 事务模型和并发控制
+- Object, Array and KV APIs: object and data management and access 对象和数据管理和访问
+- Event, Event Queue, and Task API: non-blocking operations 非阻塞操作
+- Addons API: array and KV operations built over the DAOS object API 基于 DAOS 对象 API 构建的数组和 KV 操作
+- DFS API: DAOS file system API to emulate a POSIX namespace over DAOS, DAOS 文件系统 API，用于通过 DAOS 模拟 POSIX 名称空间
 - DUNS API: DAOS unified namespace API for integration with an existing system
-  namespace.
+  namespace. 用于与现有系统命名空间集成的 DAOS 统一命名空间 API
 
 Each of those components have associated README.md files that provide more
 details about the functionality they support except for APIs to support
 non-blocking operations which is discussed here.
+这些组件中的每一个都有关联的 README.md 文件，这些文件提供了有关它们支持的功能的更多详细信息，但支持非阻塞操作的 API 除外，下面即将讨论了这一点。
 
 The libdaos API is available under [/src/include/daos\_\*](/src/include/) and
 associated man pages under [/docs/man/man3/](/docs/man/man3/).

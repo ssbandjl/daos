@@ -19,6 +19,7 @@
 static struct daos_task_args *
 task_ptr2args(tse_task_t *task)
 {
+	// 客户端堆栈清理, 获取嵌入式缓冲区
 	return tse_task_buf_embedded(task, sizeof(struct daos_task_args));
 }
 
@@ -46,6 +47,9 @@ task_comp_event(tse_task_t *task, void *data)
  *
  * NB: task created by this function can only be scheduled by calling
  * dc_task_sched_ev(), otherwise the event will never be completed.
+ * 创建一个新任务并将其与输入事件相关联。 如果事件为NULL，将采取私人事件
+注意：这个函数创建的任务只能通过调用 dc_task_sched_ev()来调度，否则事件永远不会完成
+ * 
  */
 int
 dc_task_create(tse_task_func_t func, tse_sched_t *sched, daos_event_t *ev,
@@ -67,7 +71,7 @@ dc_task_create(tse_task_func_t func, tse_sched_t *sched, daos_event_t *ev,
 	rc = tse_task_create(func, sched, NULL, &task);
 	if (rc)
 		return rc;
-
+	// task已经有值了
 	args = task_ptr2args(task);
 	args->ta_magic = DAOS_TASK_MAGIC;
 	if (ev) {

@@ -116,12 +116,13 @@ daos_eqx2eq(struct daos_eq_private *eqx)
  * cases in cmocka may fail in the middle of I/O operation, then in this
  * test case's teardown func can reset the ev_thpriv to avoid it affects
  * next test case due to dirty ev_thpriv status.
+ * 重置每个线程的私有事件，可以在 daos_event_launch() 调用 ev_thpriv 之后和完成之前的失败情况下使用。 例如cmocka中的一些同步测试用例可能会在I/O操作中间失败，那么在这个测试用例的teardown func中可以重置ev_thpriv以避免它由于肮脏的ev_thpriv状态而影响下一个测试用例
  */
 int
 daos_event_priv_reset(void);
 
 /**
- * Retrieve the private per-thread event
+ * Retrieve the private per-thread event 获取每个线程私有的事件
  *
  * \param ev [OUT]	per-thread event.
  */

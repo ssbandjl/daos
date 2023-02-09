@@ -121,6 +121,7 @@ d_list_del(d_list_t *entry)
 
 /**
  * Remove an entry from the list it is currently in and reinitialize it.
+ * 从当前所在的列表中删除一个条目并重新初始化它
  *
  * \param[in] entry	the entry to remove.
  */
@@ -237,7 +238,7 @@ d_list_splice_init(d_list_t *list, d_list_t *head)
 }
 
 /**
- * Get the container of a list
+ * Get the container of a list 从链表中获取容器
  * \param[in] ptr	the embedded list.
  * \param[in] type	the type of the struct this is embedded in.
  * \param[in] member	the member name of the list within the struct.
@@ -258,7 +259,7 @@ d_list_splice_init(d_list_t *list, d_list_t *head)
 /**
  * Iterate over a list
  * Behavior is undefined if \p pos is removed from the list in the body of the
- * loop.
+ * loop. 遍历列表 如果 pos 在循环体中从列表中移除，则行为未定义
  *
  * \param[in] pos	the iterator
  * \param[in] head	the list to iterate over
@@ -537,7 +538,7 @@ d_hlist_add_after(d_hlist_node_t *n, d_hlist_node_t *prev)
  * removal of list entry.
  *
  * \param[in] pos	the type * to use as a loop cursor.
- * \param[in] n		another type * to use as temporary storage
+ * \param[in] n		another type * to use as temporary storage 临时存储
  * \param[in] head	the head for your list.
  * \param[in] member	the name of the list_struct within the struct.
  */

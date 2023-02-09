@@ -396,8 +396,8 @@ fetch_entry(dfs_layout_ver_t ver, daos_handle_t oh, daos_handle_t th, const char
 	    bool fetch_sym, bool *exists, struct dfs_entry *entry, int xnr, char *xnames[],
 	    void *xvals[], daos_size_t *xsizes)
 {
-	d_sg_list_t	l_sgl, *sgl;
-	d_iov_t		sg_iovs[INODE_AKEYS];
+	d_sg_list_t	l_sgl, *sgl; // 指针
+	d_iov_t		sg_iovs[INODE_AKEYS]; //数组
 	daos_iod_t	l_iod, *iod;
 	daos_recx_t	recx;
 	daos_key_t	dkey;
@@ -492,7 +492,7 @@ fetch_entry(dfs_layout_ver_t ver, daos_handle_t oh, daos_handle_t th, const char
 	sgl->sg_iovs	= sg_iovs;
 
 	rc = daos_obj_fetch(oh, th, DAOS_COND_DKEY_FETCH, &dkey, xnr + 1, iods ? iods : iod,
-			    sgls ? sgls : sgl, NULL, NULL);
+			    sgls ? sgls : sgl, NULL, NULL); // map和ev均为空
 	if (rc == -DER_NONEXIST) {
 		*exists = false;
 		D_GOTO(out, rc = 0);
@@ -3583,9 +3583,9 @@ dfs_lookup_rel_int(dfs_t *dfs, dfs_obj_t *parent, const char *name, int flags,
 	oid_cp(&obj->oid, entry.oid);
 	obj->mode = entry.mode;
 
-	/** if entry is a file, open the array object and return */
+	/** if entry is a file, open the array object and return  S_IFMT:类型屏蔽字 */
 	switch (entry.mode & S_IFMT) {
-	case S_IFREG:
+	case S_IFREG: // 普通文件
 		rc = daos_array_open_with_attr(dfs->coh, entry.oid,
 					       DAOS_TX_NONE, daos_mode, 1,
 					       entry.chunk_size ?
@@ -3612,7 +3612,7 @@ dfs_lookup_rel_int(dfs_t *dfs, dfs_obj_t *parent, const char *name, int flags,
 			stbuf->st_blocks = (stbuf->st_size + (1 << 9) - 1) >> 9;
 		}
 		break;
-	case S_IFLNK:
+	case S_IFLNK: // 符号链接
 		if (flags & O_NOFOLLOW) {
 			/* Create a truncated version of the string */
 			D_STRNDUP(obj->value, entry.value, entry.value_len + 1);
@@ -3643,7 +3643,7 @@ dfs_lookup_rel_int(dfs_t *dfs, dfs_obj_t *parent, const char *name, int flags,
 			D_GOTO(out, rc);
 		}
 		break;
-	case S_IFDIR:
+	case S_IFDIR: // 目录
 		rc = daos_obj_open(dfs->coh, entry.oid, daos_mode, &obj->oh,
 				   NULL);
 		if (rc) {

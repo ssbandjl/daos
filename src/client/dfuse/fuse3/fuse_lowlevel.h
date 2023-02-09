@@ -168,6 +168,32 @@ struct fuse_forget_data {
  * interrupted, and the reply discarded.  For example if
  * fuse_reply_open() return -ENOENT means, that the release method for
  * this file will not be called.
+ * 
+ * 低级文件系统操作
+
+大多数方法（init 和 destroy 除外）
+接收一个请求句柄（fuse_req_t）作为他们的第一个参数。
+此句柄必须传递给指定的回复函数之一。
+
+这可以在方法调用内部完成，也可以在调用之后完成
+已经回来了。 请求句柄有效，直到回复之一
+函数被调用。
+
+其他指针参数（名称、fuse_file_info 等）无效
+在电话返回后，如果以后需要他们，他们的
+必须复制内容。
+
+一般而言，所有方法都应执行任何必要的操作
+权限检查。 但是，文件系统可以委托此任务
+通过将“default_permissions”挂载选项传递给内核
+`fuse_session_new()`。 在这种情况下，只有在以下情况下才会调用方法
+内核权限检查成功。
+
+文件系统有时需要处理 -ENOENT 的返回值
+来自回复功能，这意味着请求是
+被打断，答复被丢弃。 例如，如果
+fuse_reply_open() return -ENOENT 意味着，释放方法
+这个文件不会被调用。
  */
 struct fuse_lowlevel_ops {
 	/**
@@ -183,6 +209,7 @@ struct fuse_lowlevel_ops {
 	 * values set in this handler.
 	 *
 	 * There's no reply to this function
+	 * 初始化文件系统 当 libfuse 与 FUSE 内核模块建立通信时调用此函数。 文件系统应该使用这个模块来检查和/或修改 `conn` 结构中提供的连接参数。 请注意，某些参数可能会被传递给 fuse_session_new() 的选项覆盖，这些选项优先于此处理程序中设置的值。 这个功能没有回复
 	 *
 	 * @param userdata the user data passed to fuse_session_new()
 	 */
@@ -208,6 +235,7 @@ struct fuse_lowlevel_ops {
 	 *   fuse_reply_entry
 	 *   fuse_reply_err
 	 *
+	 * 按名称查找目录条目并获取其属性。 有效回复：fuse_reply_entry fuse_reply_err
 	 * @param req request handle
 	 * @param parent inode number of the parent directory
 	 * @param name the name to look up

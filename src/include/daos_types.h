@@ -204,6 +204,12 @@ enum {
  *
  * See daos_obj.h for more details
  * It is put here because it's almost used by everyone.
+ * 一个对象的ID，128位 daos_obj_id_t::hi的高32位是为DAOS保留的，其余由用户提供，并假定在容器内是唯一的。
+详情见 daos_obj.h 放在这里是因为几乎每个人都在用
+-----------------------
+高32位(保留)    低96位
+127 126 ...96  95 ... 0 
+---------------------->
  */
 typedef struct {
 	/** least significant (low) bits of object ID */
