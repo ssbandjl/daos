@@ -96,6 +96,9 @@ dc_task_create(tse_task_func_t func, tse_sched_t *sched, daos_event_t *ev,
  * found by testing event or polling on EQ.
  *
  * The task will be executed immediately if \a instant is true.
+ * 调度由 dc_task_create_ev() 创建的任务，如果关联事件是私有事件，这个函数会等到完成，否则它立即返回，它的完成将是通过测试事件或 EQ 轮询发现
+   如果立即标志为真，任务将立即执行
+ * 
  */
 int
 dc_task_schedule(tse_task_t *task, bool instant)
@@ -120,7 +123,7 @@ dc_task_schedule(tse_task_t *task, bool instant)
 		/** user is responsible for completing event with error */
 		D_GOTO(out, rc = 0); /* error has been reported to event */
 	}
-
+// 如果关联事件是私有事件，这个函数会等到完成，否则它立即返回
 out:
 	if (daos_event_is_priv(ev)) {
 		int rc2;

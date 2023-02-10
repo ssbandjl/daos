@@ -499,6 +499,7 @@ struct ev_progress_arg {
 	struct daos_event_private	*evx;
 };
 
+// 事件进度回调
 static int
 ev_progress_cb(void *arg)
 {
@@ -523,6 +524,12 @@ ev_progress_cb(void *arg)
 	/** Change status of event to INIT only if event is not in EQ and get out. */
 	if (daos_handle_is_inval(evx->evx_eqh)) {
 		D_MUTEX_LOCK(&evx->evx_lock);
+		/* https://daosio.atlassian.net/browse/DAOS-10756 
+		DAOS-10756 event: check before setting the event to READY 事件：在将事件设置为 READY 之前检查
+		在进度循环中获取锁后，在重置为 READY 之前检查事件是否仍处于完成/中止状态。
+	    在再次调用 init 之前完成线程私有事件，以避免在未销毁的互斥量上调用 pthread_mutex_init
+		事件是已完成或已终止才设置状态为准备好(复用备用)
+		*/
 		if (evx->evx_status == DAOS_EVS_COMPLETED || evx->evx_status == DAOS_EVS_ABORTED)
 			evx->evx_status = DAOS_EVS_READY;
 		D_MUTEX_UNLOCK(&evx->evx_lock);
@@ -1039,7 +1046,7 @@ daos_event_init(struct daos_event *ev, daos_handle_t eqh,
 /**
  * Unlink events from various list, parent_list, child list,
  * and event queue hash list, and destroy all of the child
- * events
+ * events 从各种列表、parent_list、子列表和事件队列哈希列表中取消事件，并销毁所有子事件
  **/
 int
 daos_event_fini(struct daos_event *ev)
@@ -1228,7 +1235,7 @@ daos_event_priv_get(daos_event_t **ev)
 	int			   rc;
 
 	D_ASSERT(*ev == NULL);
-
+	// 如果事件没有初始化, 则初始化
 	if (!ev_thpriv_is_init) {
 		rc = daos_event_init(&ev_thpriv, DAOS_HDL_INVAL, NULL);
 		if (rc)
@@ -1262,7 +1269,7 @@ daos_event_priv_wait()
 	epa.evx = evx;
 	epa.eqx = NULL;
 
-	/* Wait on the event to complete */
+	/* Wait on the event to complete 不是READY就一直轮训事件队列 */
 	while (evx->evx_status != DAOS_EVS_READY) {
 		rc = crt_progress_cond(evx->evx_ctx, 0, ev_progress_cb, &epa);
 
@@ -1283,7 +1290,7 @@ daos_event_priv_wait()
 		/** other progress failure; op should fail with that err. */
 		break;
 	}
-
+	// 如果重置私有事件失败但是progress成功,则返回失败的错误码
 	rc2 = daos_event_priv_reset();
 	if (rc2) {
 		if (rc == 0)
