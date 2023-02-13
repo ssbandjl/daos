@@ -38,6 +38,8 @@ To avoid this imbalance, widely distributed striped objects may be placed with "
 
 Note that after all spare targets in a gap have become rebuild targets, further failures can still be handled by selecting rebuild targets immediately prior to the first member of RDGs affected by failure, albeit at the expense of load balance. This also means that multiple shards of a same object can possibly be stored on the same target. To distinguish these collocated shards from a same object, DSR can construct DSM object ID by appending object shard index to DSR object ID.
 
+请注意，在间隙中的所有备用目标都成为重建目标之后，仍然可以通过在受故障影响的第一个 RDG 成员之前立即选择重建目标来处理进一步的故障，尽管是以负载平衡为代价的。 这也意味着同一对象的多个分片可能存储在同一目标上。 为了将这些并置分片与同一个对象区分开来，DSR 可以通过将对象分片索引附加到 DSR 对象 ID 来构造 DSM 对象 ID
+
 On very small DAOS pools with relatively few fault domains, it may not be possible to allocate "gaps" of spare rebuild targets at all, because the proportion of gaps and performance loss may be unacceptably high. However, on large DAOS pools with many fault domains, sufficiently large gaps needed to ensure balanced I/O after many failures could be spaced widely and therefore occupy a sufficiently small proportion of the ring to ensure good performance.
 
 <a id="10.2.3.2.2"></a>

@@ -344,7 +344,7 @@ pl_obj_shard2grp_index(struct daos_obj_shard_md *shard_md,
 
 /** serialize operations on pl_htable */
 static pthread_rwlock_t		pl_rwlock = PTHREAD_RWLOCK_INITIALIZER;
-/** hash table for placement maps */
+/** hash table for placement maps 放置映射表 */
 static struct d_hash_table	pl_htable;
 
 /**

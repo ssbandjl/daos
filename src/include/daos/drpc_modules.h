@@ -14,8 +14,8 @@
  * to appropriate handlers. They are populated in the Drpc__Call structure.
  *
  * dRPC module IDs must be unique. This is a list of all DAOS dRPC modules.
+ * DAOS dRPC 模块，dRPC 模块用于通过 Unix 域套接字将通信多路复用到适当的处理程序。 它们填充在 Drpc__Call 结构中。dRPC 模块 ID 必须是唯一的。 这是所有 DAOS dRPC 模块的列表。
  */
-
 enum drpc_module {
 	DRPC_MODULE_TEST		= 0,	/* Reserved for testing */
 	DRPC_MODULE_SEC_AGENT		= 1,	/* daos_agent security */

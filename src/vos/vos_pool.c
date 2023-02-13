@@ -42,7 +42,6 @@ vos_pool_settings_init(void)
 	enum pobj_arenas_assignment_type	atype;
 
 	atype = POBJ_ARENAS_ASSIGNMENT_GLOBAL;
-
 	rc = pmemobj_ctl_set(NULL, "heap.arenas_assignment_type", &atype);
 	if (rc != 0)
 		D_ERROR("Could not configure PMDK for global arena: %s\n",

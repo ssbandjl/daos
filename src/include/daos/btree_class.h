@@ -52,7 +52,7 @@ int dbtree_uv_open_tree(daos_handle_t tree, const uuid_t uuid,
 int dbtree_uv_destroy_tree(daos_handle_t tree, const uuid_t uuid);
 int dbtree_uv_destroy(daos_handle_t tree, const uuid_t uuid);
 
-/* epoch-count: ordered keys */
+/* epoch-count: ordered keys 纪元计数,有序keys */
 #define DBTREE_CLASS_EC (DBTREE_DSM_BEGIN + 2)
 extern btr_ops_t dbtree_ec_ops;
 int dbtree_ec_update(daos_handle_t tree, uint64_t epoch, const uint64_t *count);
@@ -90,6 +90,7 @@ extern btr_ops_t dbtree_recx_ops;
  * The key is a uint64_t integer: 32-bits rank + 32-bits VOS tag.
  * The value is the array of DTX IDs.
  * The dbtree is usually in the volatile memory for classifying DTX IDs.
+ * 密钥是一个 uint64_t 整数：32 位等级 + 32 位 VOS 标签。 该值是 DTX ID 数组。 dbtree 通常在易失性内存中，用于对 DTX ID 进行分类
  */
 #define DBTREE_CLASS_DTX_CF (DBTREE_DSM_BEGIN + 6)
 

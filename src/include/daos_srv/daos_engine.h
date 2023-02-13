@@ -438,6 +438,9 @@ struct dss_module_metrics {
  * For instance, the dmg module reports a "sm_name" of "daos_mgmt_srv", the
  * actual library filename is libdaos_mgmt_srv.so and it defines a dss_module
  * structure called daos_mgmt_srv_module.
+ * 每个模块都应该提供一个定义模块接口的 dss_module 结构。 分配的结构的名称必须是库名称（不带“.so”扩展名）后缀为“module”。 加载模块库时会自动查找此符号，如果找不到则失败。
+例如，dmg 模块报告“daos_mgmt_srv”的“sm_name”，实际库文件名为 libdaos_mgmt_srv.so，它定义了一个名为 daos_mgmt_srv_module 的 dss_module 结构
+如: vos_srv_module
  */
 struct dss_module {
 	/* Name of the module */

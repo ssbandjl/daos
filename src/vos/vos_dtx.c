@@ -441,7 +441,7 @@ static btr_ops_t dtx_committed_btr_ops = {
 	.to_rec_fetch	= dtx_cmt_ent_fetch,
 	.to_rec_update	= dtx_cmt_ent_update,
 };
-
+// 为容器表注册btree类，在vos_init()中调用
 int
 vos_dtx_table_register(void)
 {

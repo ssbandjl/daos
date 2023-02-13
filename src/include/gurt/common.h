@@ -124,7 +124,7 @@ char *d_realpath(const char *path, char *resolved_path);
 		D_CHECK_ALLOC(malloc, true, ptr, #ptr, size,		\
 			      count, #count, 0);			\
 	} while (0)
-
+// 拷贝s的n个字节, 将返回的指针设置给ptr
 #define D_STRNDUP(ptr, s, n)						\
 	do {								\
 		(ptr) = d_strndup(s, n);				\

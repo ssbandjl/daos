@@ -1197,6 +1197,7 @@ enum crt_tree_type {
 
 /*
  * Calculate the tree topology. Can only be called on the server side.
+ 计算树形拓扑。 只能在服务器端调用
  *
  * \param[in] tree_type        tree type
  * \param[in] branch_ratio     branch ratio, be ignored for CRT_TREE_FLAT.
@@ -1214,7 +1215,7 @@ crt_tree_topo(enum crt_tree_type tree_type, uint32_t branch_ratio)
 {
 	if (tree_type < CRT_TREE_MIN || tree_type > CRT_TREE_MAX)
 		return -DER_INVAL;
-
+	// 0000 0011 1111 1111 1111 1111
 	return (tree_type << CRT_TREE_TYPE_SHIFT) |
 	       (branch_ratio & ((1U << CRT_TREE_TYPE_SHIFT) - 1));
 }

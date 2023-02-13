@@ -472,25 +472,26 @@ embedded_key_decode(d_iov_t *key, daos_anchor_t *anchor)
  * For example, VOS can use bits to indicate the type of key comparison used
  * for user supplied key.   In general, using the upper bits is safer to avoid
  * conflicts in the future.
+ * 特征作为 64 位无符号整数传递。 只有下面的位是保留的。 一个特定的类可以定义它自己的位来定制行为。 例如，VOS 可以使用位来指示用于用户提供的密钥的密钥比较类型。 一般来说，使用高位比较安全，避免以后发生冲突
  */
 enum btr_feats {
-	/** Key is an unsigned integer.  Implies no hash or key callbacks */
+	/** Key is an unsigned integer.  Implies no hash or key callbacks 密钥是一个无符号整数。 暗示没有散列或密钥回调 */
 	BTR_FEAT_UINT_KEY		= (1 << 0),
 	/** Key is not hashed or stored by library.  User must provide
-	 * to_key_cmp callback
+	 * to_key_cmp callback 密钥不会被库散列或存储。 用户必须提供 to_key_cmp 回调
 	 */
 	BTR_FEAT_DIRECT_KEY		= (1 << 1),
 	/** Root is dynamically sized up to tree order.  This bit is set for a
 	 *  tree class
 	 */
 	BTR_FEAT_DYNAMIC_ROOT		= (1 << 2),
-	/** Skip rebalance leaf when delete some record from the leaf. */
+	/** Skip rebalance leaf when delete some record from the leaf. 从叶子中删除一些记录时跳过重新平衡叶子*/
 	BTR_FEAT_SKIP_LEAF_REBAL	= (1 << 3),
 
 	/** Put new entries above this line */
-	/** Convenience entry for calculating mask for all feats */
+	/** Convenience entry for calculating mask for all feats  将新条目放在此行上方用于计算所有专长的掩码的便捷条目 */
 	BTR_FEAT_HELPER,
-	/** Mask for all feats */
+	/** Mask for all feats 比如15: 1111*/
 	BTR_FEAT_MASK			= ((BTR_FEAT_HELPER - 1) << 1) - 1,
 };
 

@@ -103,6 +103,7 @@ dss_module_load(const char *modname)
 
 	/* lookup the dss_module structure defining the module interface */
 	sprintf(name, "%s_module", modname);
+	// 获取共享对象或可执行文件中符号的地址
 	smod = (struct dss_module *)dlsym(handle, name);
 
 	/* check for errors */
@@ -235,6 +236,7 @@ close_mod:
 	return rc;
 }
 
+/* 如果首先从 libfabric 调用 dlopen，我们会在某些平台上遇到 rpath 问题。 如果我们在初始化购物车之前加载我们的模块，我们可以避免这个问题。 为此，这会拆分加载函数，因此我们在 cart init 之前调用 dlopen，在之后调用 module init */
 int
 dss_module_init_all(uint64_t *mod_facs)
 {
@@ -246,6 +248,8 @@ dss_module_init_all(uint64_t *mod_facs)
 	/*
 	 * first register global tls accessible to all modules,
 	 * it'll be first initialized and last finialized.
+	 * 首先注册所有模块都可以访问的全局tls，它将首先初始化并最后完成
+	 * 所有服务器模块都可以访问 srv TLS，因此它可以被某些模块 TLS init/fini 函数使用。 让我们首先注册 srv TLS，这样它就会先初始化，最后完成, 池模块清理函数应该释放池启动时持有的所有 ds_pool 池模块 TLS fini 函数不应该清除池子缓存，池子缓存应该在池模块清理函数中被清除（在 TLS fini 之前调用）
 	 */
 	dss_register_key(&daos_srv_modkey);
 

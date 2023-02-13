@@ -64,6 +64,7 @@ typedef enum _Drpc__Status {
 
 /*
  * Call describes a function call to be executed over the dRPC channel.
+ Call 描述了通过 dRPC 通道执行的函数调用
  */
 struct  _Drpc__Call
 {

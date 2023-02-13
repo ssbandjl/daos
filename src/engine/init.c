@@ -149,6 +149,7 @@ hlc_recovery_end(uint64_t bound)
 /*
  * Register the dbtree classes used by native server-side modules (e.g.,
  * ds_pool, ds_cont, etc.). Unregistering is currently not supported.
+ * 注册本机服务器端模块使用的 dbtree 类（例如，ds_pool、ds_cont 等）。 目前不支持注销
  */
 static int
 register_dbtree_classes(void)
@@ -207,12 +208,12 @@ modules_load(void)
 	char		*sep;
 	char		*run;
 	int		 rc = 0;
-
+	// 64+1, 拷贝modules数组的65个元素
 	D_STRNDUP(sep, modules, MAX_MODULE_OPTIONS + 1);
 	if (sep == NULL)
 		return -DER_NOMEM;
 	run = sep;
-
+	/* 从run中提取',', 如果 *stringp 为 NULL，则 strsep() 函数返回 NULL 并且不执行任何其他操作。 否则，此函数会在字符串 *stringp 中找到第一个标记，该标记由字符串 delim 中的一个字节分隔。 此标记通过用空字节 ('\0') 覆盖定界符来终止，并且 *stringp 被更新为指向标记之后。 如果没有找到定界符，则将令牌视为整个字符串 *stringp，并将 *stringp 设置为 NULL*/
 	mod = strsep(&run, ",");
 	while (mod != NULL) {
 		if (strcmp(mod, "object") == 0)
@@ -226,7 +227,7 @@ modules_load(void)
 			mod = "mgmt";
 		else if (strcmp(mod, "vos") == 0)
 			mod = "vos_srv";
-
+		// 遍历并加载模块
 		rc = dss_module_load(mod);
 		if (rc != 0) {
 			D_ERROR("Failed to load module %s: %d\n", mod, rc);
@@ -477,6 +478,7 @@ abt_init(int argc, char *argv[])
 	 * less than nrequired. We may then hit Argobots assertion failures
 	 * because xstream_data.xd_mutex's internal queue has fewer slots than
 	 * some xstreams' rank numbers need.
+	 * 将 ABT_MAX_NUM_XSTREAMS 设置为 nrequested 和 nrequired 中的较大者。 如果我们不这样做，Argobots 可能会使用小于 nrequired 的默认值或请求值。 然后我们可能会遇到 Argobots 断言失败，因为 xstream_data.xd_mutex 的内部队列的插槽少于某些 xstreams 的排名数字所需的插槽。
 	 */
 	rc = set_abt_max_num_xstreams(max(nrequested, nrequired));
 	if (rc != 0)
@@ -631,6 +633,7 @@ server_init(int argc, char *argv[])
 	/*
 	 * Begin the HLC recovery as early as possible. Do not read the HLC
 	 * before the hlc_recovery_end call below.
+	 * 尽早开始 HLC 恢复。 在下面的 hlc_recovery_end 调用之前不要读取 HLC
 	 */
 	bound = hlc_recovery_begin();
 
@@ -714,11 +717,13 @@ server_init(int argc, char *argv[])
 	}
 	/* server-side uses D_HTYPE_PTR handle */
 	d_hhash_set_ptrtype(daos_ht.dht_hhash);
-
+	// 在即将到来的 PMIx-less 引导模式中，加载模块时，daos_io_server 可能还有一个自排序。 因此，dss_module.sm_init 实现应避免调用 crt_group_rank
 	ds_iv_init();
 
 	/* load modules. Split load and init so first call to dlopen()
 	 * is from the engine to avoid DAOS-4557
+	 在 ds_iv_init() 之后调用 modules_load() 以避免在任何模块加载失败时在 server_init() 期间出现 SEGV 错误路径
+	 在解析参数中已经加载所有模块: sprintf(modules, "%s", MODULE_LIST);
 	 */
 	rc = modules_load();
 	if (rc)
@@ -730,8 +735,13 @@ server_init(int argc, char *argv[])
 	 * End the HLC recovery so that module init callbacks (e.g.,
 	 * vos_mod_init) invoked by the dss_module_init_all call below can read
 	 * the HLC.
+	 * 结束 HLC 恢复，以便下面的 dss_module_init_all 调用调用的模块初始化回调（例如 vos_mod_init）可以读取 HLC
 	 */
+	/* 当前的引擎化身从 0 开始递增。当引擎重新启动时，它的化身会重置并再次从 0 开始递增，从而有效地重用以前的化身编号。 尽管最近对游泳鲁棒性的改进（即，当一个成员发现其他人认为自己被怀疑或死亡时，它开始一个新的化身）可以缓解这个问题，但它仍然使推理变得复杂。 此补丁使用 HLC 实现化身编号，这些化身编号在引擎重启期间恢复，因此相同的化身编号将不再被不同的化身重复使用。
+	在引擎中，HLC 通常只在 server_init 中的 HLC 恢复完成后才被读取，因此即使在引擎重新启动时，任何 HLC 读数都高于之前的所有读数。 为了符合要求，此补丁将 HLC 恢复移到 dss_module_init_all（对于 vos_mod_init）和 dss_srv_init（对于 crt_swim_init）之前。
+	化身可以帮助 daos 订购一个 SWIM DEAD 事件和一个 JoinReq，这本质上是一个 SWIM ALIVE 事件。 此补丁通过新的 crt_self_incarnation_get 方法和 crt_event_cb 的新化身参数向 daos 公开化身 */
 	hlc_recovery_end(bound);
+	// 启动纪元(当前时间戳)
 	dss_set_start_epoch();
 
 	/* init modules */
@@ -1066,7 +1076,7 @@ daos_register_sighand(int signo, void (*handler) (int, siginfo_t *, void *))
 	act.sa_flags = SA_SIGINFO;
 	act.sa_sigaction = handler;
 
-	/* register new and save old handler */
+	/* register new and save old handler  sigaction 系统调用用于更改进程在收到特定信号时采取的操作 */
 	rc = sigaction(signo, &act, &old_handlers[signo]);
 	if (rc != 0) {
 		D_ERROR("sigaction() failure registering new and reading "
@@ -1156,7 +1166,7 @@ print_backtrace(int signo, siginfo_t *info, void *p)
 int
 main(int argc, char **argv)
 {
-	sigset_t	set;
+	sigset_t	set; // 这个信号集表示当前屏蔽(阻塞)了哪些信号
 	int		sig;
 	int		rc;
 
@@ -1164,6 +1174,9 @@ main(int argc, char **argv)
 	 * Disable transparent huge pages (THP) early before any allocations
 	 * see https://github.com/pmodels/argobots/issues/369 for more
 	 * information
+	 * 在任何分配之前尽早禁用透明大页面 (THP) 有关详细信息，请参阅 https://github.com/pmodels/argobots/issues/369
+	 * 透明大页面 (THP) 似乎在某些操作中引入了抖动，如这张票中所述：pmodels/argobots#369
+	 * 标准大页管理是预分配的方式，而透明大页管理则是动态分配的方式
 	 */
 	rc = prctl(PR_SET_THP_DISABLE, 1, 0, 0, 0);
 	if (rc < 0) {
@@ -1176,7 +1189,7 @@ main(int argc, char **argv)
 	if (rc)
 		exit(EXIT_FAILURE);
 
-	/** block all possible signals but faults */
+	/** block all possible signals but faults 除了故障, 阻止所有其他信号 */
 	sigfillset(&set);
 	sigdelset(&set, SIGILL);
 	sigdelset(&set, SIGFPE);
@@ -1184,7 +1197,7 @@ main(int argc, char **argv)
 	sigdelset(&set, SIGSEGV);
 	/** also allow abort()/assert() to trigger */
 	sigdelset(&set, SIGABRT);
-
+	// 检查和更改阻塞信号的掩码
 	rc = pthread_sigmask(SIG_BLOCK, &set, NULL);
 	if (rc) {
 		perror("failed to mask signals");

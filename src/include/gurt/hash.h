@@ -271,10 +271,10 @@ int  d_hash_table_create(uint32_t feats, uint32_t bits, void *priv,
 /**
  * Initialize an inplace hash table.
  *
- * Does not allocate the htable pointer itself
+ * Does not allocate the htable pointer itself 初始化一个就地哈希表。 不分配 htable 指针本身
  *
  * \note Please be careful while using rwlock and refcount at the same time,
- * see \ref d_hash_feats for the details.
+ * see \ref d_hash_feats for the details. 同时使用 rwlock 和 refcount 时请小心，详情请参阅 d_hash_feats。
  *
  * \param[in] feats		Feature bits, see D_HASH_FT_*
  * \param[in] bits		power2(bits) is the size of hash table

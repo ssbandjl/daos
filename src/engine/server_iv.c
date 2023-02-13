@@ -880,7 +880,13 @@ ds_iv_init()
 {
 	D_INIT_LIST_HEAD(&ds_iv_ns_list);
 	D_INIT_LIST_HEAD(&ds_iv_class_list);
-	ds_iv_ns_tree_topo = crt_tree_topo(CRT_TREE_KNOMIAL, 4);
+	/*
+1.通过IV关闭容器，统一容器开/关。
+2.故障注入过程中关闭容器。
+3.缩小iv树的宽度(32->4)，因为我们已经支持cart group update来重新计算cart tree，然后跳过失败的节点。
+4.通过IV关闭容器，如果打开容器失败，否则容器可能无法销毁。 并且还添加测试来验证它。
+	*/
+	ds_iv_ns_tree_topo = crt_tree_topo(CRT_TREE_KNOMIAL /* 3 */, 4);
 }
 
 void
