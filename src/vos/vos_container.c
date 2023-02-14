@@ -621,7 +621,17 @@ vos_cont_decref(struct vos_container *cont)
 /**
  * Internal Usage API
  * For use from container APIs and int APIs
+ * /*
+使用哈希表实现了所有 VOS 容器 API
+测试和 vos 池 API 修复和清理
+- 实现的功能：vos_co_create、vos_co_destroy、
+           vos_co_open、vos_co_close 和 vos_co_query。
+- 使用 daos_common 中的 daos_hhash 来维护通用句柄
+- 修改 vos_pool 函数以使用 hhash 实现来存储和检索池句柄
+- 修复了各种 checkpatch.pl 问题和格式问题
+*/
  */
+
 
 int
 vos_cont_tab_register()

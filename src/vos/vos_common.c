@@ -471,10 +471,20 @@ vos_mod_init(void)
 		D_ERROR("DTX btree initialization error\n");
 		return rc;
 	}
+	/**
+	 * Registering the class for OI btree 使用 TLS 和模块初始化 API 来维护 VOS API。 VOS handle hash 和 object cache 是每个线程的，并且在线程本地存储中。 VOS 对象索引 btree 类初始化应该是跨线程全局的，并且它当前存在于模块 init 中
+	 * and KV btree
+   *  1）在PMEM中启用KV并与vos对象缓存集成。
+      2) 移动特定于每个池的全局属性。
+      3) 修改 vos_ctl 以测试此集成。
+      4) 删除某些内部函数并使用 obj_reference 来保存引用
+      5) 修改池测试以检查多个池创建
+	 */
 
 	/**
 	 * Registering the class for OI btree
 	 * and KV btree
+   * 
 	 */
 	rc = vos_obj_tab_register();
 	if (rc) {

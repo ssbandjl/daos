@@ -612,7 +612,18 @@ vos_ilog_fetch_finish(struct vos_ilog_info *info)
 {
 	ilog_fetch_finish(&info->ii_entries);
 }
-
+/* 初始化化身日志全局变量 
+全冲模型实现
+1.更新对象树以使用化身日志
+2.修复了处理进行中更新的许多错误。 现在仅当 DTX 可用性检查返回该值时才返回 DER_INPROGRESS。 这删除了第一次写入对象和键的同步提交。
+3.化身日志修改
+    A。 更新需要受范围限制，以便我们在对象被打孔时插入一个新的键条目。
+    b. 修改fetch缓存日志，只有变化时才更新缓存。
+    C。 添加通用 vos 包装器以减少 ilog 解释代码。
+4.更新打孔模型测试
+5. 删除了 COS 功能 - 仍然需要一些清理工作
+6. 从 btree 中删除 MATCHED
+*/
 int
 vos_ilog_init(void)
 {
