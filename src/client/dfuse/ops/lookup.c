@@ -242,7 +242,7 @@ dfuse_cb_lookup(fuse_req_t req, struct dfuse_inode_entry *parent,
 
 	ie->ie_parent = parent->ie_stat.st_ino;
 	ie->ie_dfs = parent->ie_dfs;
-
+	// 这为取消对 UNS 入口点使用 FIFO 做准备, 生成ie_obj
 	rc = dfs_lookupx(parent->ie_dfs->dfs_ns, parent->ie_obj, name,
 			 O_RDWR | O_NOFOLLOW, &ie->ie_obj, NULL, &ie->ie_stat,
 			 1, &duns_xattr_name, (void **)&outp, &attr_len);

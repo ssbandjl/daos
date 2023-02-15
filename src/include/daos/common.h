@@ -854,6 +854,7 @@ void daos_hhash_link_putref(struct d_hlink *hlink);
 bool daos_hhash_link_delete(struct d_hlink *hlink);
 #define daos_hhash_hlink_init(hlink, ops)	d_hhash_hlink_init(hlink, ops)
 #define daos_hhash_link_empty(hlink)		d_hhash_link_empty(hlink)
+/* 将hlink绑定到key上 */
 #define daos_hhash_link_key(hlink, key)		d_hhash_link_key(hlink, key)
 
 /* daos_recx_t overlap detector */

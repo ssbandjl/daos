@@ -989,6 +989,7 @@ typedef struct {
  * an object then update that object with a dependency inserted on the update
  * to the open task.
  * For a simpler workflow, users can use the event based API instead of tasks.
+ * 创建一个异步任务并将其与 daos 客户端操作相关联。 对于同步操作，请为该操作使用特定的 API。 通常，此 API 用于需要将一系列 daos 操作排队到 DAOS 异步引擎中的用例，这些任务之间的执行顺序具有特定的依赖性。 例如，用户可以创建任务来打开一个对象，然后使用插入到打开任务更新中的依赖项来更新该对象。 对于更简单的工作流程，用户可以使用基于事件的 API 而不是任务
  *
  * \param opc	[IN]	Operation Code to identify the daos op to associate with
  *			the task,

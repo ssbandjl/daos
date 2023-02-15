@@ -186,10 +186,11 @@ tse_task_create(tse_task_func_t task_func, tse_sched_t *sched, void *priv,
  * be called immediately as part of this function, \a instant should be set to
  * true; otherwise if false task would be in the scheduler init list and
  * progressed when the scheduler is progressed.
+ * 将任务添加到它初始化的调度程序。 如果作为该函数的一部分应立即调用任务主体函数，则应将 instant 设置为 true； 否则，如果 false 任务将在调度程序初始化列表中并在调度程序进行时进行
  *
  * \param task [input]		task to be scheduled.
  * \param instant [input]	flag to indicate whether task should be
- *				executed immediately.
+ *				executed immediately. 立即的
  *
  * \return			0 if success negative errno if fail.
  */

@@ -101,6 +101,7 @@ array_decref(struct dc_array *array)
 	daos_hhash_link_putref(&array->hlink);
 }
 
+/* DKEY 0 将保存元数据。 用户数据将从 DKEY 1 */
 static daos_handle_t
 array_ptr2hdl(struct dc_array *array)
 {
@@ -652,7 +653,10 @@ open_handle_cb(tse_task_t *task, void *data)
 
 	if (daos_obj_id2type(args->oid) == DAOS_OT_ARRAY_BYTE)
 		array->byte_array = true;
-
+	/* DAOS-1794 插件：更新数组对象句柄以正确使用 gurt 哈希表
+- 更新购物车版本以从 gurt 中提取新类型。
+- 现在修复在 CART 中触发错误的 NULL 批量句柄
+- 从计划中删除 tse_task_complete，因为即使出现错误，用户也应该完成任务 */
 	array_hdl_link(array);
 	*args->oh = array_ptr2hdl(array);
 
@@ -755,7 +759,7 @@ dc_array_open(tse_task_t *task)
 
 	/** if this is an open_with_attr call, just add the handle CB */
 	if (args->open_with_attr) {
-		/** The upper task completes when the open task completes */
+		/** The upper task completes when the open task completes open_task是task的依赖任务, 需要先完成打开任务,再完成查询任务 */
 		rc = tse_task_register_deps(task, 1, &open_task);
 		if (rc != 0) {
 			D_ERROR("Failed to register dependency "DF_RC"\n", DP_RC(rc));

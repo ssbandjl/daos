@@ -163,6 +163,7 @@ daos_array_open(daos_handle_t coh, daos_obj_id_t oid, daos_handle_t th,
  * is updated in the object, and the API just returns an OH to the user. If the
  * array was accessed with different cell_size and chunk_size before, accessing
  * it again will introduce corruption in the array data.
+ * 使用用户指定的数组属性打开一个数组对象。 这与对象不存在时的创建调用相同，只是对象中没有任何更新，API 只是向用户返回一个 OH。 如果之前使用不同的 cell_size 和 chunk_size 访问数组，再次访问它会导致数组数据损坏
  *
  * \param[in]	coh	Container open handle.
  * \param[in]	oid	Object ID. It is required that the object type to be
