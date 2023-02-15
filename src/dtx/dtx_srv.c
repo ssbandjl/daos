@@ -360,7 +360,8 @@ static int
 dtx_init(void)
 {
 	int	rc;
-
+	/* 理想情况下，针对每个打开的容器的专用 DXT 批量提交 ULT 是最简单的模型。 但如果打开的容器在目标上越来越多，它可能会对引擎造成负担。 因此有必要限制目标上 DTX 批量提交 ULT 的计数。 加载模块时可以通过环境“DAOS_DTX_BATCHED_ULT_MAX”进行调整。 “0”表示无限制。
+该补丁在DAOS文档中增加了DTX相关环境变量的描述 */
 	dtx_agg_thd_cnt_up = DTX_AGG_THD_CNT_DEF;
 	d_getenv_int("DAOS_DTX_AGG_THD_CNT", &dtx_agg_thd_cnt_up);
 	if (dtx_agg_thd_cnt_up < DTX_AGG_THD_CNT_MIN || dtx_agg_thd_cnt_up > DTX_AGG_THD_CNT_MAX) {
@@ -398,7 +399,14 @@ dtx_init(void)
 	dtx_batched_ult_max = DTX_BATCHED_ULT_DEF;
 	d_getenv_int("DAOS_DTX_BATCHED_ULT_MAX", &dtx_batched_ult_max);
 	D_INFO("Set the max count of DTX batched commit ULTs as %d\n", dtx_batched_ult_max);
-
+	/* DAOS-2585 dtx：将 CoS 逻辑从 VOS 移动到 DTX (#2809)
+Commit-on-Share (CoS) 逻辑对于 DTX 是特殊的。 最初，它是在 VOS 内部实现的，以便于使用它来检查 VOS 中的修改可见性。 但它使 VOS 逻辑更加复杂。 另一方面，我们将很快支持分布式事务，这可能需要更复杂的 CoS 处理。 因此我们决定将 CoS 逻辑从 VOS 移至 DTX。 这将简化VOS逻辑，并使VOS、DTX和对象之间的关系更加清晰。
+从 VOS 分离 CoS 缓存后，我们使用新机制解决 VOS 中的修改可见性问题：在将 DTX 插入 CoS 缓存后，DTX 领导者将在 DTX in-DRAM 条目上标记“可提交”（通过 VOS API：vos_dtx_mark_committable） . 这种动作是由DTX逻辑驱动的，从对象层的角度来看，它是透明的。 这是非常轻量级的操作，与 VOS 中 CoS 缓存的原始情况相比几乎没有开销。
+其他变化：
+1. 目前，CoS 缓存中未添加同步模式 DTX（例如用于更新 EC 对象的 DTX）。
+2. 对于在 DTX resync 之前启动的 DTX，领导者需要在将 DTX 设为“可提交”之前检查其本地 DTX 状态。 因为 DTX 重新同步逻辑可能会因竞争而中止此类 DTX。
+3. 优化 DTX 重新同步逻辑以跳过 CoS 缓存检查，可以由已调用的 vos_dtx_check() 代替。
+4. 从 VOS 本地测试集中删除陈旧的 DTX 测试用例 */
 	rc = dbtree_class_register(DBTREE_CLASS_DTX_CF,
 				   BTR_FEAT_UINT_KEY | BTR_FEAT_DYNAMIC_ROOT,
 				   &dbtree_dtx_cf_ops);
@@ -446,6 +454,9 @@ static struct daos_rpc_handler dtx_handlers[] = {
 
 #undef X
 
+/* 客户端将生成 DTX 标识符并通过更新/打孔 RPC 将其发送到领导副本。 在 leader 端，它会将 update/punch RPC 调度到其他具有 DTXs 数组的副本，这些副本由于共享或冲突而需要提交。
+对于客户端，它使用与服务器端相同的算法来选举领导者。
+对于修改 RPC，客户端仅将其发送给领导者。 对于其他只读 RPC，它可以像没有 DTX 的情况一样发送到任何副本。 但是如果非leader副本不确定相关目标数据记录的可见性，它会回复“-DER_INPROGRESS”给客户端，然后客户端需要重试与leader的RPC。 相关逻辑会在后续补丁中实现 */
 struct dss_module dtx_module =  {
 	.sm_name	= "dtx",
 	.sm_mod_id	= DAOS_DTX_MODULE,

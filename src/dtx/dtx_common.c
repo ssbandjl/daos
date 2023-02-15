@@ -18,6 +18,8 @@
 #include "dtx_internal.h"
 
 struct dtx_batched_cont_args;
+/* DAOS-8300 dtx: control dtx aggregation threshold when start engine (#6484) 允许在启动 DAOS 引擎时通过在服务器上设置环境变量来控制 DTX 聚合阈值：
+DTX_AGG_THD_CNT：取值范围为[2^20, 2^24]，默认为2^19*7。 DTX_AGG_THD_AGE：取值范围[140, 700]，默认210，有助于性能调优 */
 uint32_t dtx_agg_thd_cnt_up;
 uint32_t dtx_agg_thd_cnt_lo;
 uint32_t dtx_agg_thd_age_up;

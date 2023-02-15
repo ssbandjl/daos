@@ -19,7 +19,7 @@
 #include "srv_internal.h"
 #include "srv_layout.h"
 bool ec_agg_disabled;
-
+/* CORDAOSM-1 dsm：初始化 dsm 代码结构 这个补丁列出了初始的 DSM 代码结构。 因为池创建和存储部分仍在处理中，所以它们的内容已从此补丁中删除 */
 static int
 init(void)
 {
@@ -42,12 +42,19 @@ init(void)
 		D_GOTO(err_pool_iv, rc);
 
 	ec_agg_disabled = false;
+	/* DAOS-7254 聚合：将 EC 聚合与 VOS 聚合分开 (#5667)
+将 EC agg 和 VOS aggregate 分离成两个 ULT，避免 iv fetch，dsc_pool/container open 每次回调，同时保证 EC aggregation 可以在删除快照时触发。
+添加 DAOS_EC_AGG 环境以禁用 EC 聚合以进行测试 */
 	d_getenv_bool("DAOS_EC_AGG_DISABLE", &ec_agg_disabled);
 	if (unlikely(ec_agg_disabled))
 		D_WARN("EC aggregation is disabled.\n");
 
 	ds_pool_rsvc_class_register();
-
+	/* DAOS-3106 池：NVMe 错误反应操作 (#1250)
+实现NVMe故障反应操作，增加nvme_recovery测试套件。
+限制：
+- 由于缺乏离线获取pool map的基础设施，不支持离线NVMe故障反应。 一旦池缓存和池映射 IV 清理完成，它就会完成。
+- nvme_recovery 测试只能手动运行，因为尚不支持 NVMe reint，失败的 VOS 目标无法重新集成，每次运行后需要重新启动 DAOS 服务器 */
 	bio_register_ract_ops(&nvme_reaction_ops);
 	return 0;
 
@@ -180,7 +187,14 @@ struct dss_module_metrics pool_metrics = {
 	.dmm_fini = ds_pool_metrics_free,
 	.dmm_nr_metrics = ds_pool_metrics_count,
 };
-
+/* DAOS-147 构建：目录重命名和适应构建系统
+开始源码重构：
+- 重命名目录
+- 更改构建系统以采用新布局
+- 建立一个单一的 libdaos 库
+- 启动 DSM 拆分为池和容器。 重复代码
+尚未删除。
+- 将 dtp 代码移到 common 中并将生成的库重命名为 libcart 以便于转换 */
 struct dss_module pool_module =  {
 	.sm_name	= "pool",
 	.sm_mod_id	= DAOS_POOL_MODULE,

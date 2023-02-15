@@ -386,7 +386,7 @@ struct bio_reaction_ops {
 };
 
 /*
- * Register faulty/reint reaction callbacks.
+ * Register faulty/reint reaction callbacks. 注册故障/重新反应的回调
  *
  * \param ops[IN]	Reaction callback functions
  */
