@@ -1222,6 +1222,7 @@ ino_flush(d_list_t *rlink, void *arg)
 
 	/* If the FUSE connection is dead then do not traverse further, it
 	 * doesn't matter what gets returned here, as long as it's negative
+	 如果 FUSE 连接已死，则不要进一步遍历，这里返回的内容无关紧要，只要它是负数即可
 	 */
 	if (rc == -EBADF)
 		return -DER_NO_HDL;
@@ -1279,7 +1280,7 @@ dfuse_pool_close_cb(d_list_t *rlink, void *handle)
 }
 
 /* Called as part of shutdown, if the startup was successful.  Releases resources created during
- * operation.
+ * operation. 如果启动成功，则作为关闭的一部分调用。 释放运行期间创建的资源
  */
 int
 dfuse_fs_stop(struct dfuse_projection_info *fs_handle)

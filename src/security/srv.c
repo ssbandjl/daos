@@ -39,7 +39,7 @@ fini(void)
 	ds_sec_server_socket_path = NULL;
 	return 0;
 }
-
+// 默认加载安全模块
 struct dss_module security_module =  {
 	.sm_name	= "security",
 	.sm_mod_id	= DAOS_SEC_MODULE,

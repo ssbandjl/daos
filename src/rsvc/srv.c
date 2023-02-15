@@ -1405,7 +1405,8 @@ rsvc_module_fini(void)
 	rsvc_hash_fini();
 	return 0;
 }
-
+/* rsvc：从 ds_pool 中提取 ds_rsvc, 为了在添加新的副本服务（例如，副本管理服务）时减少代码重复，此补丁将通用复制服务代码从 ds_pool 提取到 src/rsvc 中的新 ds_rsvc 模块中。 包括一些简化，但功能大部分没有变化。
+现有的rsvc客户端代码将通过一个单独的补丁从common中提取到src/rsvc中的dc_rsvc中*/
 struct dss_module rsvc_module = {
 	.sm_name	= "rsvc",
 	.sm_mod_id	= DAOS_RSVC_MODULE,

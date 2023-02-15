@@ -386,7 +386,7 @@ ds_mgmt_system_module_init(void)
 		return -DER_NOMEM;
 	d_iov_set(&mgmt_svc_id, mgmt_svc_id_s, len + 1);
 
-	/* Set the MS DB UUID bytes to the system name bytes. */
+	/* Set the MS DB UUID bytes to the system name bytes 将 MS DB UUID 字节设置为系统名称字节 */
 	D_CASSERT(DAOS_SYS_NAME_MAX + 1 <= sizeof(mgmt_svc_db_uuid));
 	memcpy(mgmt_svc_db_uuid, mgmt_svc_id.iov_buf, mgmt_svc_id.iov_len);
 

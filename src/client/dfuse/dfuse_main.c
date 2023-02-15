@@ -205,7 +205,7 @@ dfuse_launch_fuse(struct dfuse_projection_info *fs_handle, struct fuse_args *arg
 	if (rc != 0)
 		DFUSE_TRA_ERROR(dfuse_info,
 				"Fuse loop exited with return code: %d (%s)", rc, strerror(rc));
-
+	// 执行卸载后才会返回
 	fuse_session_unmount(dfuse_info->di_session);
 
 	return daos_errno2der(rc);
@@ -542,7 +542,7 @@ main(int argc, char **argv)
 		D_GOTO(out_cont, rc);
 
 	/* The container created by dfuse_cont_open() will have taken a ref on the pool, so drop the
-	 * initial one.
+	 * initial one. 由 dfuse_cont_open() 创建的容器将在池中引用，因此删除初始容器
 	 */
 	d_hash_rec_decref(&fs_handle->dpi_pool_table, &dfp->dfp_entry);
 

@@ -1822,7 +1822,7 @@ failed:
 	return rc;
 }
 
-/** release the object iterator */
+/** release the object iterator 释放对象迭代器 */
 static int
 vos_obj_iter_fini(struct vos_iterator *iter)
 {

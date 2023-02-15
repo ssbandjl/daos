@@ -6058,7 +6058,7 @@ out:
 /**
  * Send a CaRT message to the pool svc to test and
  * (if applicable based on destroy and force option) evict all open handles
- * on a pool.
+ * on a pool. 向池 svc 发送 CaRT 消息以进行测试并（如果适用，基于销毁和强制选项）驱逐池上所有打开的句柄(控制器)
  *
  * \param[in]	pool_uuid	UUID of the pool
  * \param[in]	ranks		Pool service replicas

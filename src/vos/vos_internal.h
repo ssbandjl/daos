@@ -79,7 +79,10 @@ extern struct dss_module_key vos_module_key;
 #define VOS_CONT_HHASH_BITS 20 /* Up to 1048576 containers */
 
 #define VOS_BLK_SHIFT		12	/* 4k */
-#define VOS_BLK_SZ		(1UL << VOS_BLK_SHIFT) /* bytes */
+#define VOS_BLK_SZ		(1UL << VOS_BLK_SHIFT) /* bytes  vos每块大小=4K, */
+/* 集成块分配器, - 在 btree 和 evtree 上下文中添加 NVMe 空间跟踪信息，这将用于释放 NVMe 记录。
+- 微调btree & evtree开放接口，传入NVMe空间跟踪信息。
+- 当记录大小大于 VOS_BLK_SIZE (4k) 时，更改 VOS io 代码以在 NVMe 设备上保留数据负载*/
 #define VOS_BLOB_HDR_BLKS	1	/* block */
 
 /** Up to 1 million lid entries split into 2048 expansion slots */
@@ -104,6 +107,7 @@ enum {
 /*
  * Default size (in blocks) threshold for merging NVMe records, we choose
  * 256 blocks as default value since the default DFS chunk size is 1MB.
+ * 合并 NVMe 记录的默认大小（以块为单位）阈值，我们选择 256 个块作为默认值，因为默认的 DFS 块大小为 1MB
  */
 #define VOS_MW_NVME_THRESH	256		/* 256 * VOS_BLK_SZ = 1MB */
 

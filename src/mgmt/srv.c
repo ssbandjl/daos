@@ -419,7 +419,7 @@ static int
 ds_mgmt_init()
 {
 	int rc;
-
+	/*为 DAOS-5385 着陆的工作引入了一个小的竞赛窗口，服务器可以在其中加入但不包含在 CaRT 主要组中。 此提交复活了旧的 mgmt svc 实现的一部分，以允许同步组更新和异步地图广播*/
 	rc = ds_mgmt_system_module_init();
 	if (rc != 0)
 		return rc;
@@ -449,7 +449,7 @@ ds_mgmt_cleanup()
 	ds_mgmt_tgt_cleanup();
 	return ds_mgmt_svc_stop();
 }
-
+// 注册 mgmt drpc 模块以与控制平面通信并创建一个简单的处理程序来验证功能
 struct dss_module mgmt_module = {
 	.sm_name		= "mgmt",
 	.sm_mod_id		= DAOS_MGMT_MODULE,

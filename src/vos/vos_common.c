@@ -502,6 +502,7 @@ vos_mod_init(void)
 	if (rc)
 		D_ERROR("Failed to initialize incarnation log capability\n");
 
+	/* 有选择地合并聚合记录, 为了最小化性能影响，VOS 聚合需要在 VOS 树压缩和数据合并/重定位（消耗 CPU 和存储带宽，但可能产生更多碎片）之间进行权衡此补丁为 vos_aggregate() 引入了“force_merge”标志，当未提供“force_merge”时，VOS 聚合将有选择地合并同一媒体上的记录，以最大限度地减少对性能的影响。 vos_aggregate() 调用者负责根据 IO 工作负载或聚合 EPR 使用适当的标志此补丁还抑制了聚合中的 NOSPACE 错误消息, DAOS_VOS_AGG_THRESH 触发vos聚合的块数 */
 	d_getenv_int("DAOS_VOS_AGG_THRESH", &vos_agg_nvme_thresh);
 	if (vos_agg_nvme_thresh == 0 || vos_agg_nvme_thresh > 256)
 		vos_agg_nvme_thresh = VOS_MW_NVME_THRESH;

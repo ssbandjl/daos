@@ -56,6 +56,9 @@ const char	       *dss_nvme_conf;
 
 /** Socket Directory */
 const char	       *dss_socket_dir = "/var/run/daos_server";
+/* DAOS-1666 控制：将 sockdir 添加到 io 服务器 cli opts 从配置参数或 daos_server cli opts 传递套接字目录到 io_server 并更新相关的单元测试。
+在 rdb 之前运行 Go unittests 以捕获服务器启动失败。 修复配置文件中的 pci 地址格式。
+添加对 daos_io_server 的支持以验证安全凭证。 将池属性结构移动到头文件中，以便安全模块中的访问控制检查可以访问它。 还包括池服务在访问检查期间使用的安全 api 调用。 但是，此时它不会更改池连接以使用新凭据。*/
 
 /** NVMe mem_size for SPDK memory allocation */
 unsigned int		dss_nvme_mem_size = DAOS_NVME_MEM_PRIMARY;

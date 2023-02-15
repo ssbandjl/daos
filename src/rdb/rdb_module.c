@@ -17,6 +17,7 @@
 static int
 rdb_module_init(void)
 {
+	/* 删除 the_one_rdb_hack 并将 rdb 对象添加到 rdb_hash。 Raft RPC 现在通过 DB UUID 定向到匹配的 rdb 对象 */ 
 	return rdb_hash_init();
 }
 
@@ -66,6 +67,7 @@ static struct dss_module_ops rdb_mod_ops = {
 	.dms_get_req_attr = rdb_get_req_attr,
 };
 
+/* 添加rdb的rpc（RPC定义和实用程序）、raft（Raft集成）和module（服务器模块接口）子模块 */
 struct dss_module rdb_module = {
 	.sm_name	= "rdb",
 	.sm_mod_id	= DAOS_RDB_MODULE,

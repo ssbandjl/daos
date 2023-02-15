@@ -19,7 +19,7 @@
 #include <daos/rsvc.h>
 #include <daos_srv/rdb.h>
 
-/** List of all replicated service classes */
+/** List of all replicated service classes 所有的副本服务类 */
 enum ds_rsvc_class_id {
 	DS_RSVC_CLASS_MGMT,
 	DS_RSVC_CLASS_POOL,
