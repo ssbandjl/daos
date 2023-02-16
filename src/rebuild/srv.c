@@ -2319,7 +2319,17 @@ init(void)
 	rc = ABT_mutex_create(&rebuild_gst.rg_lock);
 	if (rc != ABT_SUCCESS)
 		return dss_abterr2der(rc);
-
+	/* DAOS-729 iv：更新服务器 iv 层以满足 oid 需求
+	稍后更新服务器 iv 以满足 iv oid 需求
+	1. 增加iv_value分配入口API，iv_value不再是iv_entry->iv_value，每个用户都可以通过API定义自己的iv_value。
+	2. 将priv 封装成一个新的结构，这样on_put 就可以同时访问entry 和priv。
+	3. 将 priv 导出到条目 iv_ops，因此每个不同的模块都可以在每个请求中携带自己的 priv。
+	4.在ds_iv_key中添加void *key和class_id，class_id会引用不同的module，IV_REBUILD/IV_POOL等，如果用户需要有多个entry，需要使用key。
+	5. 提供key pack/unpack ent函数对cart IV RPC的key进行打包/解包，同时也提供key compare key的功能，让key更通用。
+	6. 把IVCB_FORWARD检查移到entry_update()里面，这样每个模块可以决定更新请求是否需要自己转发。
+	7. 将iv_classes 导出到ds_iv_xxx，这样IV 用户就可以注册多个类。
+	8. 清理daos_sgl_xxx，所以所有的都将使用相同的daos_sgl_copy。
+	9.其他一些重命名和清理 */
 	rc = rebuild_iv_init();
 	return rc;
 }
@@ -2345,7 +2355,11 @@ rebuild_cleanup(void)
 	ds_rebuild_leader_stop_all();
 	return 0;
 }
-
+/* DAOS-1560 rpc：通过 crt_proto_register() 注册 DAOS RPC
+使用 struct daos_rpc 删除旧的 DAOS RPC 描述。
+为 RPC 规范引入一个宏，而不是许多手动创建的结构。 现在所有需要的结构都是从单个 RPC 描述自动生成的。
+使用 crt_proto_register() 函数注册 DAOS RPC。
+引入模块版本的定义并在任何地方使用它而不是硬编码值。 */
 struct dss_module rebuild_module = {
 	.sm_name	= "rebuild",
 	.sm_mod_id	= DAOS_REBUILD_MODULE,

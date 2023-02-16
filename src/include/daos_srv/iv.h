@@ -286,7 +286,7 @@ enum iv_key {
 	 */
 	IV_CONT_AGG_EPOCH_REPORT,
 	/* leader sync the minimum epoch(VOS aggregate epoch boundary) to all
-	 * other servers
+	 * other servers 领导者将最小纪元（VOS 聚合纪元边界）同步到所有其他服务器
 	 */
 	IV_CONT_AGG_EPOCH_BOUNDRY,
 };

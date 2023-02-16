@@ -175,7 +175,7 @@ struct rebuild_global {
 	/**
 	 * Completed rebuild status list on raft replica nodes,
 	 * empty on other nodes.
-	 * Only operated by stream 0, no need lock.
+	 * Only operated by stream 0, no need lock. 在 raft 副本节点上完成重建状态列表，在其他节点上为空。 只被stream 0操作，不需要锁
 	 */
 	d_list_t	rg_completed_list;
 

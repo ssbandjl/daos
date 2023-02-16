@@ -120,6 +120,14 @@ ds_pool_prop_default_init(void)
 		D_DEBUG(DB_MGMT,
 			"Initializing default ACL pool prop\n");
 		entry->dpe_val_ptr = ds_sec_alloc_default_daos_pool_acl();
+		/* - 实施容器 ACL 道具。
+- 将所有者和所有者组道具添加到容器中。
+- 为容器初始化默认 ACL。
+- 将默认所有者更改为与真实用户不匹配的特殊字符串 (NOBODY@)。 在 UNIX 系统中，某些情况下使用小写的“nobody@”。
+- 将容器相关权限添加到 daos_acl_dump()。
+- 清理 ACL 验证逻辑和到/从 str 逻辑。
+- 更新 daos_test 套件中默认所有者/组/ACL 道具的容器查询测试。
+- 清理池和容器道具中的一些共享逻辑。 */
 		if (entry->dpe_val_ptr == NULL)
 			return -DER_NOMEM;
 	}

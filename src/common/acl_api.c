@@ -81,7 +81,7 @@ get_copy_sorted_by_principal_type(struct daos_ace *aces[], uint16_t num_aces)
 /*
  * Flattens the array of ACE pointers into a single data blob in buffer.
  * Assumes caller has allocated the buffer large enough to hold the flattened
- * list.
+ * list. 将 ACE 指针数组展平为缓冲区中的单个数据块。 假设调用者已经分配了足够大的缓冲区来容纳展平的列表
  */
 static void
 flatten_aces(uint8_t *buffer, uint32_t buf_len, struct daos_ace *aces[],

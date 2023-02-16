@@ -18,13 +18,19 @@
 
 static int
 init(void)
+/* 这个补丁列出了初始的 DSM 代码结构。 因为池创建和存储部分仍在处理中，所以它们的内容已从此补丁中删除 */
 {
 	int rc;
 
 	rc = ds_oid_iv_init();
 	if (rc)
 		D_GOTO(err, rc);
-
+	/* DAOS-2185 容器：将 iv 添加到容器（#297）
+	将 iv 添加到容器领导者，因此快照列表可以在所有服务器上共享，并且重建可能需要它。
+	注意：容器将与池共享相同的 iv 名称空间，即池下的所有容器将共享相同的 iv 名称空间。
+	将原点 ds_cont 重命名为 ds_cont_child 以将其标识为每个 xstream 结构，与 ds_pool_child 对齐。
+	为每个节点添加 ds_cont 以加载 iv 命名空间。
+	一些清理和修复。 */
 	rc = ds_cont_iv_init();
 	if (rc)
 		D_GOTO(err_oid_iv, rc);

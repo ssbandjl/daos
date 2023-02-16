@@ -212,7 +212,15 @@ int
 ds_cont_prop_default_init(void)
 {
 	struct daos_prop_entry	*entry1, *entry2;
+	/* DAOS-9998 池：添加 daos 互操作功能 (#8312)
 
+	1.增加'dmg pool upgrade command'界面
+	2. 具有新关联池属性的版本控制方案
+	3.关机/失败后重启
+	4. 在具有旧版本的池中创建的新容器不应启用新功能。
+	5. 添加 2.0 和 2.2 之间添加的新池/容器属性
+	6. 降级已升级池的DAOS 软件会报适当的RAS 错误。
+	7. 撤销打开的句柄，确保池升级时没有连接 */
 	entry1 = daos_prop_entry_get(&cont_prop_default_v0, DAOS_PROP_CO_ACL);
 	if (entry1 != NULL) {
 		D_DEBUG(DB_MGMT,

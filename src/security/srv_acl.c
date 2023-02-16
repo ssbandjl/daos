@@ -19,7 +19,7 @@
 
 /**
  * The default ACLs for pool and container both include ACEs for owner and the
- * assigned group. All others are denied by default.
+ * assigned group. All others are denied by default. 池和容器的默认 ACL 都包括所有者和分配组的 ACE。 默认情况下拒绝所有其他人
  */
 #define NUM_DEFAULT_ACES	(2)
 
