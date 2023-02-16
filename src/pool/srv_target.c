@@ -419,6 +419,7 @@ pool_child_delete_one(void *uuid)
 /* ds_pool ********************************************************************/
 
 static struct daos_lru_cache   *pool_cache;
+/* 虽然目前这不是强制性的，但添加它会更安全，并且允许缓存池对象在未来被 0 以外的标签使用（例如，访问缓存池映射） */
 
 static inline struct ds_pool *
 pool_obj(struct daos_llink *llink)
