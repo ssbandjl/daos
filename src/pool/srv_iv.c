@@ -1643,7 +1643,7 @@ int
 ds_pool_iv_init(void)
 {
 	int	rc;
-
+	/* DAOS-2180 容器：通过 IV 传播属性（#628）此补丁的一个副作用是为 ACL 添加了 DAOS_ACL_MAX_ACE_LEN 限制（现在为 8KB），以便于为 IV 条目分配内存，因为不知道 IV 提取的大小。 有一个ACE长度限制应该是合理的，我们可以在以后需要的时候改变设置 */
 	rc = ds_iv_class_register(IV_POOL_MAP, &iv_cache_ops, &pool_iv_ops);
 	if (rc)
 		D_GOTO(out, rc);
@@ -1651,11 +1651,11 @@ ds_pool_iv_init(void)
 	rc = ds_iv_class_register(IV_POOL_PROP, &iv_cache_ops, &pool_iv_ops);
 	if (rc)
 		D_GOTO(out, rc);
-
+	/* 在 pool svc step up 回调中移动 pool map/property IV distribpute，因此即使是离线池也可以分发它们 */
 	rc = ds_iv_class_register(IV_POOL_CONN, &iv_cache_ops, &pool_iv_ops);
 	if (rc)
 		D_GOTO(out, rc);
-
+	/* 将重建池/容器句柄 uuid 移到重建模块之外，因此所有其他模块将共享池/容器句柄 uuid 以进行远程获取 */
 	rc = ds_iv_class_register(IV_POOL_HDL, &iv_cache_ops, &pool_iv_ops);
 	if (rc)
 		D_GOTO(out, rc);

@@ -1924,7 +1924,7 @@ dc_array_get_size(tse_task_t *task)
 	kqp->size	= args->size;
 	kqp->array	= array;
 
-	rc = daos_task_create(DAOS_OPC_OBJ_QUERY_KEY, tse_task2sched(task),
+	rc = daos_task_create(DAOS_OPC_OBJ_QUERY_KEY /* dc_obj_query_key */, tse_task2sched(task),
 			      0, NULL, &query_task);
 	if (rc != 0)
 		D_GOTO(err_task, rc);
@@ -2001,7 +2001,7 @@ dc_array_stat(tse_task_t *task)
 	kqp->size	= &args->stbuf->st_size;
 	kqp->array	= array;
 
-	rc = daos_task_create(DAOS_OPC_OBJ_QUERY_KEY, tse_task2sched(task), 0, NULL, &query_task);
+	rc = daos_task_create(DAOS_OPC_OBJ_QUERY_KEY /* dc_obj_query_key */, tse_task2sched(task), 0, NULL, &query_task);
 	if (rc != 0)
 		D_GOTO(err_task, rc);
 

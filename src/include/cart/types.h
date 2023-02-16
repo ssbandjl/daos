@@ -231,6 +231,9 @@ struct crt_proto_format {
 /**
  * given the base opcode, version of a protocol, and a member RPC index, compute
  * the RPC opcode of that member RPC
+ * 操作码转换, 如
+ * opc=0x4090009
+ * 基础操作码4,版本9,索引9
  */
 #define CRT_PROTO_OPC(base_opc, version, rpc_index)			\
 	((uint32_t)(base_opc) |						\
