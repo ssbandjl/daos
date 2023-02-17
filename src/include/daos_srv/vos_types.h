@@ -79,7 +79,7 @@ D_CASSERT(sizeof(struct dtx_entry) ==
 enum vos_pool_open_flags {
 	/** Pool is small (for sys space reservation); implies VOS_POF_EXCL */
 	VOS_POF_SMALL	= (1 << 0),
-	/** Exclusive (-DER_BUSY if already opened) */
+	/** Exclusive (-DER_BUSY if already opened) 独立的 */
 	VOS_POF_EXCL	= (1 << 1),
 	/** Ignore the pool uuid passed into vos_pool_open */
 	VOS_POF_SKIP_UUID_CHECK = (1 << 2),

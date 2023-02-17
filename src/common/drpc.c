@@ -163,7 +163,15 @@ new_unixcomm_socket(int flags, struct unixcomm **newcommp)
 	D_ALLOC_PTR(comm);
 	if (comm == NULL)
 		return -DER_NOMEM;
-
+	/* DAOS-1427 common：添加对 drpc 监听器的 C 支持
+此补丁添加了一个 API 来设置套接字以侦听 dRPC 消息。 侦听套接字设置为非阻塞。
+progress 方法会超时阻塞，并维护连接和侦听器。 它接受侦听器上的新连接，并处理连接会话的消息。 如果会话失败或被对等方关闭，则会将其清除。 如果侦听器收到任何错误，那将是一个惊喜——我们让会话保持打开状态并传播一个错误代码供调用者解决。
+一个简单的示例流程：
+1.创建监听套接字：drpc_listen()
+2. 创建一个包含侦听套接字的drpc 上下文的drpc_progress_context。
+3. 超时调用drpc_progress()。 如果在打开的套接字上检测到传入活动，这将根据需要调用 drpc_accept() 和/或 drpc_recv()。
+4. 检查是否检测到关机条件。
+5. 如果检测到关闭条件，drpc_close() 所有打开的套接字并退出。 否则回到3 */
 	comm->fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
 	if (comm->fd < 0) {
 		int rc = errno;
@@ -226,7 +234,11 @@ unixcomm_connect(char *sockaddr, int flags, struct unixcomm **newcommp)
 
 	return 0;
 }
-
+/* CART-822 测试：解决了 fi 测试中发现的一些问题。 (#2977)
+这主要是为了确保在内存分配失败时使用正确的返回码。
+protobuf 支持使用允许将 arg 传递给 alloc() 的自定义分配器，利用它通过堆栈变量传递分配失败，以便调用代码可以区分分配失败和其他错误。
+除了更新 drpc.c 中的分配器外，还使用 cli_mgmt.c 中的相同技术。
+从 nlt 代码中删除已知 memleaks 的白名单，这不再被使用 */
 static int
 unixcomm_listen(char *sockaddr, int flags, struct unixcomm **newcommp)
 {
@@ -470,9 +482,10 @@ drpc_connect(char *sockaddr, struct drpc **drpcp)
 
 /**
  * Set up a drpc socket server to passively listen for connections on a given
- * path.
+ * path. 
+ * 将 dRPC 侦听器移动到专用的 xstream, 创建了一个新系统 XS (1)，绑定到与 XS 0 相同的 CPU 核心。dRPC 侦听器循环专门在这个 XS 上运行。 当 dRPC 消息到达时，drpc_progress 在 XS 0 上启动一个新的 ULT 来处理消息。 它必须在 XS 0 上才能与只能在 XS 0 上运行的服务进行交互。为 dRPC 上下文结构添加了引用计数。 drpc_close 现在要么减少引用计数，要么如果这是最后一个引用，则关闭/释放套接字。 删除了现在不再使用的 drpc_recv
  *
- * \param	sockaddr	Path to unix domain socket in the filesystem
+ * \param	sockaddr	Path to unix domain socket in the filesystem 域套接字
  * \param	handler		Handler for messages received on sessions for
  *					this socket.
  *

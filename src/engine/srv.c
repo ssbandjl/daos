@@ -115,7 +115,7 @@ struct dss_xstream_data {
 	struct dss_xstream	**xd_xs_ptrs;
 	/** serialize initialization of ULTs */
 	ABT_cond		  xd_ult_init;
-	/** barrier for all ULTs to enter handling loop */
+	/** barrier for all ULTs to enter handling loop 所有 ULT 进入处理循环的屏障 */
 	ABT_cond		  xd_ult_barrier;
 	ABT_mutex		  xd_mutex;
 	struct dss_thread_local_storage *xd_dtc;
@@ -458,6 +458,8 @@ dss_srv_handler(void *arg)
 		ABT_thread_attr attr;
 
 		/* Initialize NVMe context for main XS which accesses NVME */
+		/* 如果独立 VOS 使用的是 sys_db，则它不应在创建文件或退出文件之前删除该文件。 添加了函数参数，以便可以指示是否使用 sys_db 以及要使用的目标。 以前对于所有独立的 VOS 实例总是使用 -1 tgt id。 daos 调试工具将利用 tgt id 并将使用 sys_db smd 文件。
+为了初始化 bio 上下文，目标 id -1 用于指示它是否应该自轮询。 但是，为了支持 daos 调试工具，需要实际的目标 id 以及自轮询 */
 		rc = bio_xsctxt_alloc(&dmi->dmi_nvme_ctxt, dmi->dmi_tgt_id, false);
 		if (rc != 0) {
 			D_ERROR("failed to init spdk context for xstream(%d) "
@@ -1236,6 +1238,7 @@ dss_srv_init(void)
 	bool		 started = true;
 
 	xstream_data.xd_init_step  = XD_INIT_NONE;
+	/* 购物车上下文创建应该在服务器上序列化，否则分配的上下文 ID 可能是随机的并且无法匹配 xstream ranks 的顺序 */
 	xstream_data.xd_ult_signal = false;
 
 	D_ALLOC_ARRAY(xstream_data.xd_xs_ptrs, DSS_XS_NR_TOTAL);
@@ -1277,7 +1280,9 @@ dss_srv_init(void)
 	if (!xstream_data.xd_dtc)
 		D_GOTO(failed, rc);
 	xstream_data.xd_init_step = XD_INIT_TLS_INIT;
-
+	/* vos初始化 DAOS-10615 vos：独立 VOS 的改进 (#9062)
+如果独立 VOS 使用的是 sys_db，则它不应在创建文件或退出文件之前删除该文件。 添加了函数参数，以便可以指示是否使用 sys_db 以及要使用的目标。 以前对于所有独立的 VOS 实例总是使用 -1 tgt id。 daos 调试工具将利用 tgt id 并将使用 sys_db smd 文件。
+为了初始化 bio 上下文，目标 id -1 用于指示它是否应该自轮询。 但是，为了支持 daos 调试工具，需要实际的目标 id 以及自轮询 */
 	rc = vos_db_init(dss_storage_path);
 	if (rc != 0)
 		D_GOTO(failed, rc);
@@ -1303,6 +1308,13 @@ dss_srv_init(void)
 	D_ASSERT(rc == 0);
 
 	/* start up drpc listener */
+	/* DAOS-1498 iosrv：将 dRPC 侦听器添加到 IO 服务器
+	- 在 IO 服务器启动时启动一个新的 ULT，用于侦听来自 daos_server 的 dRPC 消息。 该线程最初将在 xstream 0 中运行，因为该通道的流量应该相对较低。 如果它变得要求太高，它可能会被移动到它自己的 xstream。
+	- 添加了 dRPC 进度上下文的创建和删除功能。
+	- 添加了一个顶级 dRPC 处理程序，它与注册表交互以获得给定消息的正确处理程序。
+	- 添加了新的 dRPC 状态以指示 Protobuf 定义中的无效模块/方法 ID。
+	- 修正了一些错误和内存泄漏。
+	- 创建了一个工具来检查集成到常备 I/O 服务器中的侦听器。 */
 	rc = drpc_listener_init();
 	if (rc != 0)
 		D_GOTO(failed, rc);

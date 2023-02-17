@@ -447,7 +447,7 @@ enum {
 int bio_nvme_ctl(unsigned int cmd, void *arg);
 
 /*
- * Initialize SPDK env and per-xstream NVMe context.
+ * Initialize SPDK env and per-xstream NVMe context. 初始化 SPDK env 和 per-xstream NVMe 上下文
  *
  * \param[OUT] pctxt	Per-xstream NVMe context to be returned
  * \param[IN] tgt_id	Target ID (mapped to a VOS xstream)

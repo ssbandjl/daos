@@ -356,7 +356,7 @@ struct bio_blobstore {
 				 bb_unloading:1;
 };
 
-/* Per-xstream NVMe context */
+/* Per-xstream NVMe context 每个执行流的Nvme上下文 */
 struct bio_xs_context {
 	int			 bxc_tgt_id;
 	unsigned int		 bxc_blob_rw;		/* inflight blob read/write */

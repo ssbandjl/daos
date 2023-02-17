@@ -17,9 +17,10 @@
  * buffer to put all of the information in. This value is also defined in
  * the corresponding control plane file drpc_server.go. If changed here
  * it must be changed in that file as well
+ * 在 unix 域套接字上使用 packetsocket 意味着我们在不知道其大小的情况下一次接收整个消息。 因此，出于这个原因，我们需要限制最大消息大小，以便我们可以预先分配一个缓冲区来放入所有信息。该值也在相应的控制平面文件 drpc_server.go 中定义。 如果在此处更改，则也必须在该文件中进行更改
  */
 #define UNIXCOMM_MAXMSGSIZE (1 << 17)
-
+/* 此补丁为 DRPC 添加了初始客户端框架。 它提供了一种创建 DRPC 连接和调用 golang DRPC 服务器的机制 */
 struct unixcomm {
 	int fd; /** File descriptor of the unix domain socket */
 	int flags; /** Flags set on unix domain socket */

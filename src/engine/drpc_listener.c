@@ -113,7 +113,7 @@ setup_listener_ctx(struct drpc_progress_context **new_ctx)
 }
 
 /*
- * Sets up the listener socket and kicks off a ULT to listen on it.
+ * Sets up the listener socket and kicks off a ULT to listen on it. 设置侦听器套接字并启动 ULT 以对其进行侦听。
  */
 static int
 drpc_listener_start_ult(ABT_thread *thread)
@@ -128,6 +128,11 @@ drpc_listener_start_ult(ABT_thread *thread)
 	}
 
 	/* Create a ULT to start the drpc listener */
+	/* DAOS-4881 计划：删除冗余 ABT 池 (#4176)
+我们试图通过在遗留调度程序中利用多个 ABT 池来确定不同类型的 ULT 的优先级，这就是创建 IO、REBUILD、GC 和 SCRUB ABT 池的原因。 新的调度程序通过调度请求队列对 ULT 进行优先级排序，这些 ABT 池现在实际上没有用了。
+此补丁删除了所有这些 ABT 池，并为所有 ULT（网络和 NVMe 轮询 ULT 除外）创建了单个 GENERIC ABT 池。
+此补丁还将 ULT 类型替换为 XS 类型，以使代码更加清晰。
+ds_csum_recalc() 中的一个小修复，用于卸载适当 xstream 上的 csum 计算 */
 	rc = dss_ult_create(drpc_listener_run, (void *)ctx, DSS_XS_DRPC,
 			    0, 0, thread);
 	if (rc != 0) {

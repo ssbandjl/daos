@@ -125,7 +125,7 @@ unixcomm_poll(struct unixcomm_poll *comms, size_t num_comms, int timeout_ms)
 
 /*
  * Count the valid drpc contexts in the drpc_progress_context session list.
- * Returns error if an invalid drpc session context is found.
+ * Returns error if an invalid drpc session context is found. 计算 drpc_progress_context 会话列表中有效的 drpc 上下文。 如果发现无效的 drpc 会话上下文，则返回错误
  */
 static int
 get_open_drpc_session_count(struct drpc_progress_context *ctx)
@@ -147,7 +147,7 @@ get_open_drpc_session_count(struct drpc_progress_context *ctx)
 }
 
 /*
- * Convert a drpc_progress context to an array of unixcomm_poll structs.
+ * Convert a drpc_progress context to an array of unixcomm_poll structs. 将 drpc_progress 上下文转换为 unixcomm_poll 结构数组
  */
 static int
 drpc_progress_context_to_unixcomms(struct drpc_progress_context *ctx,
@@ -444,6 +444,9 @@ process_activity(struct drpc_progress_context *ctx,
 
 	return rc;
 }
+
+/* DAOS-1498 drpc：将 drpc_progress 移动到服务器库
+- 将 drpc_progress() 函数及其助手从 drpc 公共接口中移出，并移入其自己的服务器端源文件中。 进度调用将仅在 DAOS IO 服务器中它自己的 ULT 中使用。 ULT 的实现将出现在未来的补丁中。 - 使 drpc_is_valid_listener() 成为公共方法，以允许它在 drpc_progress() 中使用。 - 重新组织单元测试以适应源结构的变化 */
 
 int
 drpc_progress(struct drpc_progress_context *ctx, int timeout_ms)

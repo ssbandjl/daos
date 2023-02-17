@@ -802,7 +802,7 @@ typedef int (*sys_db_trav_cb_t)(struct sys_db *db, char *table, d_iov_t *key,
 
 #define SYS_DB_NAME_SZ		32
 
-/** system database is a simple local KV store */
+/** system database is a simple local KV store  系统数据库是一个简单的本地 KV 存储 */
 struct sys_db {
 	char	 sd_name[SYS_DB_NAME_SZ];
 	/** look up the provided key in \a table and return its value */

@@ -76,7 +76,7 @@ void drpc_progress_context_close(struct drpc_progress_context *ctx);
  * Incoming messages are processed using the dRPC handler.
  * Incoming connections are added to the ctx session list.
  * Failed or closed connections are cleaned up and removed from the session
- *	list.
+ *	list. 检查活动的 drpc 上下文，并处理该活动。 使用 dRPC 处理程序处理传入消息。 传入连接被添加到 ctx 会话列表中。 失败或关闭的连接被清理并从会话列表中删除
  *
  * \param[in][out]	ctx		Progress context, which includes the
  *						listener and all open sessions.

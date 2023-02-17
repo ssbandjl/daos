@@ -6,7 +6,7 @@
 
 #include "drpc_handler.h"
 #include <daos/drpc_modules.h>
-
+/* drpc函数注册表 */
 static drpc_handler_t *registry_table;
 
 /*

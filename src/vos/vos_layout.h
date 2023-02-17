@@ -101,7 +101,7 @@ enum vos_gc_type {
 #define POOL_DF_VERSION				POOL_DF_AGG_OPT
 
 /**
- * Durable format for VOS pool
+ * Durable format for VOS pool VOS 池的持久格式
  */
 struct vos_pool_df {
 	/** Structs stored in LE or BE representation */

@@ -44,6 +44,7 @@ struct vos_sys_db {
 	ABT_mutex		 db_lock;
 	uuid_t			 db_pool;
 	uuid_t			 db_cont;
+	/* 池控制器 */
 	daos_handle_t		 db_poh;
 	daos_handle_t		 db_coh;
 	daos_unit_oid_t		 db_obj;
@@ -393,7 +394,7 @@ vos_db_init_ex(const char *db_path, const char *db_name, bool force_create, bool
 
 	if (force_create)
 		db_unlink(&vos_db.db_pub);
-
+	/* loop 2 times */
 	for (create = 0; create <= 1; create++) {
 		rc = db_open_create(&vos_db.db_pub, !!create);
 		if (rc == 0) {

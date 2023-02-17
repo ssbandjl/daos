@@ -49,7 +49,29 @@ vos_pool_settings_init(void)
 
 	return rc;
 }
-
+/* DAOS-2540 VOS：VOS 的垃圾收集器（#971）
+此补丁是 VOS 垃圾收集器的实现：
+- 删除的容器/对象/键不再立即释放，而是在当前池的 GC FIFO 中排队，称为 GC bin。
+- 上层堆栈调用 vos_gc_run(int credits) 来执行实际的空间回收。 此函数将尝试释放排队的项目，直到它消耗完所有积分或释放所有内容
+- 每次用户打开一个池时，这个池将被注册为 GC vos_gc_run() 将在每次被调用时检查注册的池
+- 注册池将在关闭后注销
+- vos_init/fini 将进行引用计数，多次调用是安全的
+- 打开一个空的 dbtree/evtree（归零树根），返回 DER_NONEXIST 而不是 DER_INVAL
+- 修复 vos_pool_open/close 的引用计数泄漏
+- 将一些通用数据结构测试实用程序移动到共享头文件 src/include/daos/tests_lib.h
+src/tests/dts_common.c中定义的几个函数被复制到src/vos/tests/vts_common.c中，这是因为vos_tests是在src/tests下的utilites和libraries之前构建的，所以很难调用src中定义的函数 /测试。
+长期目标是将大部分单元测试移至 src/tests，例如，我们可以：
+src/测试/vos/
+来源/测试/安置
+源代码/测试/对象
+...
+因此，为所有测试程序重用共享函数会容易得多。
+- 添加新的 API vos_obj_delete，它完全删除一个对象及其所有键
+- 添加新的 API vos_pool_ctl，它的唯一功能是重置 GC 计数器，将来可以添加更多。
+- rebuild18 被禁用，因为它会触发 Mercury 中的错误 (Cart-666)
+- 禁用初始池 scm 大小检查，因为它不正确。 如果 DAOS 在创建池时进行任何内部 PMDK 分配，测试将被破坏。
+VOS 的代码清理
+- 删除容器和对象表定义，因为它们只不过是 btree 根，添加另一层是不必要的 */
 static inline PMEMobjpool *
 vos_pmemobj_create(const char *path, const char *layout, size_t poolsize,
 		   mode_t mode)
@@ -277,6 +299,7 @@ vos_pool_create(const char *path, uuid_t uuid, daos_size_t scm_sz,
 	struct umem_instance	 umem = {0};
 	struct vos_pool_df	*pool_df;
 	struct bio_xs_context	*xs_ctxt = vos_xsctxt_get();
+	/* DAOS-1366 bio：将 EIO 模块重命名为 BIO (1/2), 将 EIO（扩展 I/O）重命名为 BIO（Blob I/O）。 这是第一个重命名函数和变量名的补丁 */
 	struct bio_blob_hdr	 blob_hdr;
 	daos_handle_t		 hdl;
 	struct d_uuid		 ukey;
@@ -324,11 +347,11 @@ vos_pool_create(const char *path, uuid_t uuid, daos_size_t scm_sz,
 		rc = umem_tx_errno(rc);
 		goto close;
 	}
-
+	/* 由于我们从不引用另一个池中的数据，因此我们可以在表示中单独使用偏移量。 这可以在 umem 接口中得到普遍支持。 添加对将一些标志附加到 NULL 条目的支持，以用于 64 位条目中的未来 dtx 标志（如 DTX_UMMID_ABORTED）。 为 umem API 添加一个简单但不完整的单元测试。 推迟一些测试，直到我们知道在我们将所有内容移植到 VOS 中以使用偏移量后，我们需要在 umem API 中拥有什么 */
 	pool_df = vos_pool_pop2df(ph);
 
 	/* If the file is fallocated separately we need the fallocated size
-	 * for setting in the root object.
+	 * for setting in the root object. 如果文件是单独分配的，我们需要在根对象中设置分配的大小
 	 */
 	if (!scm_sz) {
 		struct stat lstat;

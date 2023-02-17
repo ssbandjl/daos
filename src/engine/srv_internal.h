@@ -284,7 +284,12 @@ sched_create_thread(struct dss_xstream *dx, void (*func)(void *), void *arg,
 	if (!(flags & DSS_ULT_FL_PERIODIC))
 		/* Atomic integer assignment from different xstream */
 		info->si_stats.ss_busy_ts = info->si_cur_ts;
-
+	/* DAOS-4183 iosrv：mmap() 外部分配的 ULT 堆栈 (#5111)
+这个补丁实现了外部分配的 ULTs mmap()'ed 堆栈。
+这种分配堆栈的方式将允许受益于内核事实上的堆栈保护功能（即用于即时和增强的堆栈溢出检测），并且还可以根据位置自动增长一些可能性。
+每个 XStream 维护一个 ULT 堆栈池，以避免在每次 ULT 启动/停止时重复调用 mmap()/munmap()。 这个新流程适用于引擎以及 vos_perf 和 abt_perf 等外部工具。
+此功能的副作用是我们可能会消耗比内核默认允许的更多的 mmap 区域。 因此，sysctl vm.max_map_count 默认值 64K 通过 sysctl 配置文件 (/etc/sysctl.d/10-daos_server.conf) 增加。
+此功能默认禁用并由 STACK_MMAP scons 变量/布尔值控制 */
 	rc = daos_abt_thread_create(cur_dx->dx_sp, dss_free_stack_cb, abt_pool, func, arg, t_attr, thread);
 	return dss_abterr2der(rc);
 }

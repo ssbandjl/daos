@@ -448,6 +448,19 @@ ult_create_internal(void (*func)(void *), void *arg, int xs_type, int tgt_idx,
 /**
  * Create a ULT to execute \a func(\a arg). If \a ult is not NULL, the caller
  * is responsible for freeing the ULT handle with ABT_thread_free().
+ * 
+ * DAOS-4881 计划：CPU 在空闲时放松 (#4332)
+当 xstream 空闲时，调度程序将使 CPU 放松一小段时间。 默认的放松模式是调度程序在空闲时调用 sleep("short_timeout")，如果购物车进度接口能够放松 CPU（取决于网络提供商），则可以设置 env var SCHED_RELAX_MODE=net 以使调度程序调用 crt_progress(" short_timeout") 在等待请求时返回 realx。
+进行了以下更改以支持此功能：引入 sched_cond_wait()，它由长期阻塞在某个条件下的 ULT 调用（如 RDB 守护进程），以便调度程序能够知道有多少 ULT 在非条件下被阻塞 即时事件。
+引入 sched_create_thread/task() 以在为特定 xstream 创建 ULT 后触发“繁忙时间戳”，以便调度程序能够知道 xstream 最近是否繁忙。
+引入了 DSS_ULT_FL_PERIODIC 标志，它会被线程创建调用者使用，他们不希望“忙时间戳”被触发。 主要用于EC聚合周期性集合调用。
+对 DTX 和 EC 聚合 ULT 进行必要的更改以避免使 xstream 保持“忙碌”。
+添加了一些环境变量：
+SCHED_PRIO_DISABLED 禁用调度程序优先级队列。
+SCHED_RELAX_DISABLED 禁用 CPU 在空闲时放松。
+SCHED_RELAX_INTVL 配置短放松间隔。 （以毫秒为单位，默认为 1 毫秒）
+SCHED_STATS_INTVL 定期在控制台上打印放松统计数据（以秒为单位）。
+SCHED_RELAX_MODE 改变放松模式，“睡眠”是默认模式，设置为“阻止购物车进度”模式的任何其他字符串
  *
  * \param[in]	func		function to execute
  * \param[in]	arg		argument for \a func
