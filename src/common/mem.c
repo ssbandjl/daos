@@ -466,7 +466,7 @@ static struct umem_class umem_class_defined[] = {
 	},
 };
 
-/** Workout the necessary offsets and base address for the pool */
+/** Workout the necessary offsets and base address for the pool 为池计算出必要的偏移量和基地址 */
 static void
 set_offsets(struct umem_instance *umm)
 {
@@ -494,6 +494,7 @@ set_offsets(struct umem_instance *umm)
 
 /**
  * Instantiate a memory class \a umm by attributes in \a uma
+ * 通过uma中的属性实例化一个内存类umm
  *
  * \param uma [IN]	Memory attributes to instantiate the memory class.
  * \param umm [OUT]	The instantiated memory class.
@@ -527,7 +528,7 @@ umem_class_init(struct umem_attr *uma, struct umem_instance *umm)
 	memcpy(umm->umm_slabs, uma->uma_slabs,
 	       sizeof(struct pobj_alloc_class_desc) * UMM_SLABS_CNT);
 #endif
-
+	
 	set_offsets(umm);
 
 	D_DEBUG(DB_MEM, "Instantiate memory class %s id=%d nospc_rc=%d pool=%p pool_uuid_lo="DF_X64

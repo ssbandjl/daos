@@ -524,6 +524,7 @@ int  dbtree_class_register(unsigned int tree_class, uint64_t tree_feats,
 int  dbtree_create(unsigned int tree_class, uint64_t tree_feats,
 		   unsigned int tree_order, struct umem_attr *uma,
 		   umem_off_t *root_offp, daos_handle_t *toh);
+/* 创建b树 */
 int  dbtree_create_inplace(unsigned int tree_class, uint64_t tree_feats,
 			   unsigned int tree_order, struct umem_attr *uma,
 			   struct btr_root *root, daos_handle_t *toh);

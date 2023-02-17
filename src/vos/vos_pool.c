@@ -102,7 +102,7 @@ vos_pmemobj_close(PMEMobjpool *pop)
 	pmemobj_close(pop);
 	D_MUTEX_UNLOCK(&vos_pmemobj_lock);
 }
-
+/* PM池转持久格式 */
 static inline struct vos_pool_df *
 vos_pool_pop2df(PMEMobjpool *pop)
 {
@@ -364,7 +364,10 @@ vos_pool_create(const char *path, uuid_t uuid, daos_size_t scm_sz,
 
 	uma.uma_id = UMEM_CLASS_PMEM;
 	uma.uma_pool = ph;
-
+	/* DAOS-1988 vos：将剩余的 vos txns 移植到 umem_tx（#237）
+* DAOS-1988 vos：将 TX_ 宏的剩余用途移植到 umem 接口
+涵盖 VOS 和 bio。 同时将 pmdk 更新到最新的稳定版本而不是 githash。 这修复了导致 pmemcheck 报告 PMDK 统计信息误报的问题
+从 sizeof(int) 移动到 sizeof(var) 以避免将来出现问题 */
 	rc = umem_class_init(&uma, &umem);
 	if (rc != 0)
 		goto close;
@@ -372,7 +375,7 @@ vos_pool_create(const char *path, uuid_t uuid, daos_size_t scm_sz,
 	rc = umem_tx_begin(&umem, NULL);
 	if (rc != 0)
 		goto close;
-
+	/* 从 pmemobj 宏移动到 umem_tx_begin/end 后，调用 pmemobj_tx_add_range 导致 vmem 模式出现问题 */
 	rc = umem_tx_add_ptr(&umem, pool_df, sizeof(*pool_df));
 	if (rc != 0)
 		goto end;
