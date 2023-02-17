@@ -12,7 +12,7 @@
 #include <daos/mem.h>
 #include <daos/btree.h>
 #include <daos_srv/vea.h>
-
+/* vea魔术字 */
 #define VEA_MAGIC	(0xea201804)
 #define VEA_BLK_SZ	(4 * 1024)	/* 4K */
 #define VEA_TREE_ODR	20

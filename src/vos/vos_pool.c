@@ -241,6 +241,15 @@ pool_lookup(struct d_uuid *ukey, struct vos_pool **pool)
 	return 0;
 }
 
+/* DAOS-6768 bio：为 SCM RDMA 使用 BIO DMA 缓冲区 (#5732)
+由于最近的内核不允许 SCM MR，此补丁将默认的“直接 SCM RDMA”模式更改为“RDMA 到 DMA 缓冲区 + 一个 SCM < > 缓冲区内存复制”模式。 可以通过设置“DAOS_SCM_RDMA_ENABLED=1”来启用“直接 SCM RDMA”模式。
+此新的 SCM RDMA 模式进行了以下更改：
+- 即使未配置 NVMe 也设置 DMA 缓冲区；
+- 调整 dma_rw() 以支持 SCM。 为了简化 NVMe I/O 代码，
+部分页面更新上的“归零->修改->写入”被删除；
+- 默认的 SCM RDMA 现在不会绕过批量缓存；
+- Dedup memcmp 模式现在为数据验证分配 DRAM 缓冲区，如果验证失败，则将数据复制到新分配的 SCM */
+
 static int
 vos_blob_format_cb(void *cb_data, struct umem_instance *umem)
 {
@@ -402,7 +411,7 @@ end:
 	/**
 	 * The transaction can in reality be aborted
 	 * only when there is no memory, either due
-	 * to loss of power or no more memory in pool
+	 * to loss of power or no more memory in pool 实际上，只有在没有内存时才能中止事务，这可能是由于断电或池中没有更多内存
 	 */
 	if (rc == 0)
 		rc = umem_tx_commit(&umem);

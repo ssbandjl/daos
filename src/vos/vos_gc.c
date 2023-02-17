@@ -831,7 +831,7 @@ gc_init_pool(struct umem_instance *umm, struct vos_pool_df *pd)
 
 	for (i = 0; i < GC_MAX; i++) {
 		struct vos_gc_bin_df *bin = &pd->pd_gc_bins[i];
-
+		/* DAOS-9028 gc：预分配第一个 GC 包 (#8708), 当池太小时，SCM 空间预留被禁用。 这对于使用小池、填充它们然后尝试删除容器的测试来说是有问题的。 无法为垃圾回收分配 gc 包。 通过预先分配第一批行李，可以解决此问题 */
 		size = offsetof(struct vos_gc_bag_df, bag_items[gc_bag_size]);
 		bag_id = umem_zalloc(umm, size);
 		if (UMOFF_IS_NULL(bag_id))
@@ -898,7 +898,7 @@ gc_check_cont(struct vos_container *cont)
 /**
  * Attach a pool for GC, this function also pins the pool in open hash table.
  * GC will remove this pool from open hash if it has nothing left for GC and
- * user has already closed it.
+ * user has already closed it. 附加一个用于 GC 的池，此函数还将池固定在打开的哈希表中。 如果 GC 没有任何东西留给 GC 并且用户已经关闭它，GC 将从打开的哈希中删除该池
  */
 int
 gc_add_pool(struct vos_pool *pool)
@@ -963,7 +963,7 @@ gc_log_pool(struct vos_pool *pool)
 /**
  * Resource reclaim for all opened VOS pool.
  * This function returns when there is nothing to reclaim or consumed all
- * credits. It returns the remainded credits.
+ * credits. It returns the remainded credits. 返回剩余的积分
  */
 #if VOS_STANDALONE
 static int

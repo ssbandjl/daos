@@ -38,7 +38,7 @@ erase_md(struct umem_instance *umem, struct vea_space_df *md)
 
 /*
  * Initialize the space tracking information on SCM and the header of the
- * block device.
+ * block device. 初始化SCM上的空间跟踪信息和块设备的头部
  */
 int
 vea_format(struct umem_instance *umem, struct umem_tx_stage_data *txd,

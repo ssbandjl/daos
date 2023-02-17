@@ -501,6 +501,15 @@ umem_tx_commit(struct umem_instance *umm)
 {
 	if (umm->umm_ops->mo_tx_commit)
 		return umm->umm_ops->mo_tx_commit(umm);
+		/* DAOS-828 umem：完整的交易接口
+完成umem交易接口，可以作为TX_BEGIN宏的替代品。 宏的主要缺点是由于内部“longjmp”调用，很难进行正确的错误清理。
+umem 将提供三个事务 API：
+- umem_tx_begin()：开始交易；
+- umem_tx_abort()：错误中止交易；
+- umem_tx_commit()：成功提交交易；
+
+使用 umem 事务接口的示例： 
+*/
 	else
 		return 0;
 }
