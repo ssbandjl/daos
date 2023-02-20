@@ -96,6 +96,8 @@ By `daos_obj_generate_oid()` user can generate an object ID for the specific obj
 class. DAOS uses this encoded information to generate the object layout that
 describes on what targets the object is effectively stored.
 
+如上所述，对象类别ID和组数嵌入在对象ID中。 通过 daos_obj_generate_oid() 用户可以为特定的对象类生成一个对象 ID。 DAOS 使用此编码信息生成对象布局，描述对象有效存储的目标
+
 Users can select the object class manually when generating the oid.
 However manually selecting the object class is not encouraged for regular users and
 should be done by advanced users only who understand all the trade-offs.
@@ -104,6 +106,8 @@ would allow DAOS to automatically select an object class based on the container
 properties where that object is being accessed such as the redundancy factor (RF),
 the number of domain (server engines) of the pool, and on the type of object
 being accessed (determined by the feats flag).
+
+用户可以在生成oid时手动选择对象类。 然而，不鼓励普通用户手动选择对象类，而应该由了解所有权衡取舍的高级用户来完成。 对于大多数用户，将 OC_UNKNOWN (0) 对象类传递给 daos_obj_generate_oid() 将允许 DAOS 根据访问该对象的容器属性自动选择对象类，例如冗余因子 (RF)、域数 ( 池的服务器引擎），以及正在访问的对象的类型（由 feats 标志确定）。
 
 The following details how the object class is chosen when no default or hints are provided:
 - RF:0

@@ -11,6 +11,8 @@ when the container is first created.
 
 The container is the unit of data management in DAOS and can be snapshotted or
 cloned.
+容器是DAOS中数据管理的单位，可以快照也可以克隆
+
 
 !!! warning
     DAOS containers are storage containers and should not be confused with Linux
@@ -82,6 +84,8 @@ be modified by changing the redundancy factor (rf) property at creation time.
 To create a container that can support one engine failure, use a redundancy
 factor of 1 as follows:
 
+默认情况下，创建容器时未启用数据保护。 这可以通过在创建时更改冗余因子 (rf) 属性来修改。 要创建一个可以支持一个引擎故障的容器，请使用冗余因子 1，如下所示
+
 ```bash
 $ daos cont create tank --label mycont1 --type POSIX --properties rf:1
   Container UUID : b396e2ca-2077-4908-9ff2-1af4b4b2fd4a
@@ -134,6 +138,8 @@ changed.
 ### Listing Properties
 
 The `daos` utility may be used to list all container's properties as follows:
+
+daos 实用程序可用于列出所有容器的属性，如下所示：
 
 ```bash
 $ daos cont get-prop tank mycont
@@ -255,9 +261,9 @@ The table below summarizes the available container properties.
 | group                   | Yes             | Group acting as the owner of the container|
 | acl                     | No              | Container access control list|
 | layout\_type            | Yes             | Container type (e.g., POSIX, HDF5, ...)|
-| layout\_ver             | Yes             | Layout version to be used at the discretion of I/O middleware for interoperability|
-| rf                      | Yes             | Redundancy Factor which is the maximum number of simultaneous engine failures that objects can support without data loss|
-| rf\_lvl                 | Yes             | Redundancy Level which is the level in the fault domain hierarchy to use for object placement|
+| layout\_ver             | Yes             | Layout version to be used at the discretion of I/O middleware for interoperability 由 I/O 中间件自行决定使用的布局版本以实现互操作性|
+| rf                      | Yes             | Redundancy Factor which is the maximum number of simultaneous engine failures that objects can support without data loss 冗余因子，它是对象在不丢失数据的情况下可以支持的同时引擎故障的最大数量|
+| rf\_lvl                 | Yes             | Redundancy Level which is the level in the fault domain hierarchy to use for object placement 冗余级别，它是故障域层次结构中用于对象放置的级别|
 | health                  | No              | Current state of the container|
 | alloc\_oid              | No              | Maximum allocated object ID by container allocator|
 | ec\_cell                | Yes             | Erasure code cell size for erasure-coded objects|
@@ -268,6 +274,8 @@ The table below summarizes the available container properties.
 
 Moreover, the following properties have been added as placeholders, but are not
 fully supported yet:
+
+此外，以下属性已添加为占位符，但尚未完全支持：
 
 | **Container Property**  | **Immutable**   | **Description** |
 | ------------------------| --------------- | ----------------|
@@ -298,6 +306,12 @@ The known DAOS container types are maintained as an enumerated list in the
 header file. The following container types are currently defined,
 and can be used with the `daos cont create --type` command option:
 
+DAOS 容器类型表示特定的存储中间件，它在通过 libdaos 提供的主要 DAOS API 之上实现自己的数据布局。 容器类型通过不可变的 layout_type 容器属性指定。 在每个容器类型中，layout_version 属性提供了一种版本控制机制——此版本号的使用由相应的中间件决定。
+
+一些容器布局被定义为主 DAOS 项目的一部分。 最著名的例子是 POSIX 容器类型，它用于实现包含文件和目录的 DAOS 文件系统 (DFS) 布局。 其他容器布局由各种用户社区创建，这些用户社区在 DAOS 之上实现他们自己的特定于域的存储中间件。
+
+已知的 DAOS 容器类型在 daos_prop.h 头文件中作为枚举列表进行维护。 当前定义了以下容器类型，可以与 daos cont create --type 命令选项一起使用
+
 | **Container Type** | **Description** |
 | ------------------ | --------------- |
 | UNKNOWN            | No container type was specified at container create time, or the specified container type is unknown. |
@@ -314,7 +328,11 @@ To register a new DAOS container type (represented as an integer number and a
 corresponding `DAOS_PROP_CO_LAYOUT_*` mnemonic name for that integer in the
 `daos_prop.h` header), please get in touch with the DAOS engineering team.
 
-### Redundancy Factor
+要注册新的 DAOS 容器类型（表示为整数和相应的 DAOS_PROP_CO_LAYOUT_* daos_prop.h 标头中该整数的助记名称），请与 DAOS 工程团队联系。
+
+### Redundancy Factor 冗余因子
+
+故障域越多越好
 
 Objects in a DAOS container may belong to different object classes and
 have different levels of data protection. While this model gives a lot of control
@@ -324,6 +342,8 @@ same container, the user should also be prepared for the case where some objects
 might suffer from data loss after several cascading failures, while some others
 with higher level of data protection may not. This incurs extra complexity that
 not all I/O middleware necessarily wants to deal with.
+
+DAOS 容器中的对象可能属于不同的对象类并且具有不同级别的数据保护。 虽然此模型为用户提供了很多控制权，但它也需要为每个对象仔细选择合适的类。 如果不同数据保护级别的对象也存储在同一个容器中，用户也应该准备好这样的情况，即一些对象在多次级联故障后可能会丢失数据，而另一些数据保护级别更高的对象则不会。 这会导致并非所有 I/O 中间件都需要处理的额外复杂性。
 
 To lower the bar of adoption while still keeping the flexibility, two container
 properties have been introduced:
@@ -338,6 +358,12 @@ properties have been introduced:
 
 The redundancy factor can be set at container creation time and cannot be
 modified after creation.
+
+为了在保持灵活性的同时降低采用门槛，引入了两个容器属性：
+
+冗余因子 (rf)，它描述了容器中的对象受到保护的并发引擎排除的数量。 rf 值是介于 0（无数据保护）和 5（最多支持 5 个同时故障）之间的整数。
+表示是否有任何对象内容可能因级联引擎故障而丢失的健康属性。 此属性的值可以是 HEALTHY（无数据丢失）或 UNCLEAN（数据可能已丢失）。
+冗余因子可在容器创建时设置，创建后不可修改
 
 ```bash
 $ daos cont create tank --label mycont1 --type POSIX --properties rf:1
@@ -372,6 +398,12 @@ parities or more can be stored in the container.
 As long as the number of simultaneous engine failures is below the redundancy
 factor, the container is reported as healthy. if not, then the container is
 marked as unclean and cannot be accessed.
+
+只有启用了数据保护的对象才能存储在这样的容器中。 这包括复制或擦除编码的对象。 尝试打开具有不支持数据冗余的类（例如 SX）的对象将失败。
+
+对于 rf2，只有至少具有 3 向复制或具有两个或更多奇偶校验的纠删码的对象才能存储在容器中。
+
+只要同时发生的引擎故障数低于冗余因子，容器就会报告为健康。 如果不是，则容器被标记为不干净且无法访问
 
 ```bash
 $ daos cont get-prop tank mycont1

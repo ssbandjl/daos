@@ -297,6 +297,7 @@ d_rank_list_alloc(uint32_t size)
 
 	rank_list->rl_nr = size;
 	for (i = 0; i < size; i++)
+		/* 先设置为0, 1, 2... */
 		rank_list->rl_ranks[i] = i;
 
 	return rank_list;
@@ -620,6 +621,7 @@ uint32_array_to_rank_list(uint32_t *ints, size_t len)
 		return NULL;
 
 	for (i = 0; i < len; i++)
+		/* 再填充具体的rank号 */
 		result->rl_ranks[i] = (d_rank_t)ints[i];
 
 	return result;

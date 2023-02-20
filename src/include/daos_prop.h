@@ -158,6 +158,7 @@ enum {
 };
 
 #define DAOS_PROP_PO_SVC_REDUN_FAC_MAX		4
+/* 新池服务的冗余系数默认为2 */
 #define DAOS_PROP_PO_SVC_REDUN_FAC_DEFAULT	2
 
 static inline bool

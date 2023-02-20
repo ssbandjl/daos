@@ -378,7 +378,7 @@ dtx_req_list_send(struct dtx_req_args *dra, crt_opcode_t opc, int *committed, d_
 	dra->dra_abt_list = abt_list;
 	dra->dra_act_list = act_list;
 	dra->dra_committed = committed;
-
+	/* ABT_future_create 创建一个未来并将新创建的未来的句柄返回到 newfuture 中。 此例程分配一个数组，其中包含定义的多个隔间。 每个隔间都包含一个 void* 指针。 future 有一个计数器来判断所有的贡献是否已经完成。 此例程还为所有将被阻止等待未来准备就绪的 ULT 创建条目列表。 该列表最初是空的。 列表中的条目设置顺序与 ABT_future_set 终止的顺序相同。 */
 	rc = ABT_future_create(len, dtx_req_list_cb, &future);
 	if (rc != ABT_SUCCESS) {
 		D_ERROR("ABT_future_create failed for opc %x, len = %d: "

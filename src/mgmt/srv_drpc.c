@@ -447,7 +447,7 @@ ds_mgmt_drpc_pool_create(Drpc__Call *drpc_req, Drpc__Response *drpc_resp)
 	}
 
 	D_INFO("Received request to create pool on %zu ranks.\n", req->n_ranks);
-
+	/* 影响广泛的更改添加了对服务器 YAML 文件中指定的多个存储层配置的支持。 此更改旨在实现与 master 分支的功能对等，同时构建一个框架以使用用户指定数量的存储层 */
 	if (req->n_tierbytes != DAOS_MEDIA_MAX)
 		D_GOTO(out, rc = -DER_INVAL);
 
@@ -474,6 +474,8 @@ ds_mgmt_drpc_pool_create(Drpc__Call *drpc_req, Drpc__Response *drpc_resp)
 	}
 	D_DEBUG(DB_MGMT, DF_UUID": creating pool\n", DP_UUID(pool_uuid));
 
+	/* 目前，池服务 (PS) 仅替换 DOWN 副本。 如果池中没有足够的引擎，PS 将以降级冗余运行。 但是，当池中可用引擎的数量增加时，PS 不会尝试恢复其冗余。 此补丁略微改进了此策略，以尝试为新的 PS RF 属性 svc_rf 恢复一些冗余。
+对于新池，这个新的 PS RF 属性默认为 2； 对于现有池，此新属性默认为 2 或当前有效 RF（例如，1 用于 3 或 4 个副本），以较大者为准。 它只能在池创建时指定； 我们稍后会支持更改它。 我们将此补丁的范围限制在恢复策略，而不是机制。 */
 	rc = create_pool_props(&base_props, req->numsvcreps, req->user, req->usergroup,
 			       (const char **)req->acl, req->n_acl);
 	if (rc != 0)

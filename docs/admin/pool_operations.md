@@ -7,6 +7,8 @@ Pools can be expanded at a later time with the `dmg pool expand` command
 that adds additional engine ranks to the existing pool's storage allocation.
 The DAOS management API also provides these capabilities.
 
+DAOS 池是一种存储预留，可以跨越 DAOS 系统中任意数量的存储引擎。 池由管理员管理。 分配给池的空间量是在创建时使用 dmg pool create 命令决定的。 稍后可以使用 dmg pool expand 命令扩展池，该命令将额外的引擎等级添加到现有池的存储分配中。 DAOS 管理 API 也提供了这些能力
+
 
 ## Pool Basics
 
@@ -22,9 +24,11 @@ Its subcommands can be grouped into the following areas:
 * Commands to manage failures and other non-standard scenarios.
   This includes draining, excluding and re-integrating targets,
   and evicting client connections to a pool.
+  用于管理故障和其他非标准场景的命令。 这包括排出、排除和重新整合目标，以及将客户端连接逐出池。
 
 * An upgrade command to upgrade a pool's format version
   after a DAOS software upgrade.
+  升级池版本
 
 ### Creating a Pool
 
