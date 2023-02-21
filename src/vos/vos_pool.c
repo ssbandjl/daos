@@ -474,7 +474,7 @@ close:
 
 /**
  * kill the pool before destroy:
- * - detach from GC, delete SPDK blob
+ * - detach from GC, delete SPDK blob 在销毁之前杀死一个 VOS 池, 它删除这个池的 SPDK blob 并将它从 VOS GC 中分离出来
  */
 int
 vos_pool_kill(uuid_t uuid)
