@@ -378,7 +378,21 @@ dtx_req_list_send(struct dtx_req_args *dra, crt_opcode_t opc, int *committed, d_
 	dra->dra_abt_list = abt_list;
 	dra->dra_act_list = act_list;
 	dra->dra_committed = committed;
-	/* ABT_future_create 创建一个未来并将新创建的未来的句柄返回到 newfuture 中。 此例程分配一个数组，其中包含定义的多个隔间。 每个隔间都包含一个 void* 指针。 future 有一个计数器来判断所有的贡献是否已经完成。 此例程还为所有将被阻止等待未来准备就绪的 ULT 创建条目列表。 该列表最初是空的。 列表中的条目设置顺序与 ABT_future_set 终止的顺序相同。 */
+	/* ABT_future_create 创建一个未来, 并将新创建的未来的句柄返回到 newfuture 中。 此例程分配一个数组，其中包含定义的多个隔间。 每个隔间都包含一个 void* 指针。 future 有一个计数器来判断所有的贡献是否已经完成。 此例程还为所有将被阻止等待未来准备就绪的 ULT 创建条目列表。 该列表最初是空的。 列表中的条目设置顺序与 ABT_future_set 终止的顺序相同。 
+	Future、Eventual 或 Promise 是一种在线程之间传递值的机制，允许线程等待异步设置的值。 它用于提高并行程序中的并发性。 这种结构在函数式编程语言中非常流行，尤其是 MultiLisp。 如果程序员定义了一个包含表达式的未来，运行时系统承诺同时计算该表达式。 表达式的结果值可能不会立即可用，但最终会被计算出来。 因此，futures 还需要程序和可能计算部分代码的多个并发线程之间的同步接口。
+
+在 Argobots 中，futures 用于同步协作并发 ULT 之间的执行。 实施了两种基本机制，eventuals 和 futures。
+
+Argobots 中的未来行为略有不同。 未来是用许多隔间创建的。 这 k 个隔间中的每一个都将通过提供 ULT 来设置。 任何其他 ULT 都将阻塞未来，直到所有隔间都已设置。 从某种意义上说，future 是 eventual 的多缓冲区扩展。 Eventuals 和 futures 有不同的内存管理理念。 最终将创建和销毁将保存结果的内存缓冲区。 相反，未来不会创建任何缓冲区。 因此，未来假设每个贡献的 ULT 都分配并销毁所有内存缓冲区。 当贡献的 ULT 设置一个值时，它只是传递一个指向特定内存位置的指针
+
+创造新的未来。 ABT_future_create() 创建一个新的future，通过newfuture返回它的句柄。 newfuture 还没有准备好并且有 num_compartments 个隔间。 如果 newfuture 的 ABT_future_set() 成功 num_compartments 次，newfuture 就准备好了。
+
+为没有隔间的未来调用 ABT_future_set() 是错误的。 对于没有隔间的未来，ABT_future_wait() 和 ABT_future_test() 在没有 ABT_future_set() 的情况下成功。 如果 num_compartments 为零，则永远不会调用 cb_func()。 如果 cb_func 不为 NULL，则回调函数 cb_func() 注册到 future。 在 ABT_future_set() 设置所有隔间之前，将调用 cb_func()。 cb_func() 的调用者未定义，因此依赖于 cb_func() 的调用者的程序是不合格的。 调用 cb_func() 的未来状态在 cb_func() 中未定义。 cb_func() 的参数 arg 是一个正确对齐的数组，每个元素存储传递给 ABT_future_set() 的值。 arg 的内容是只读的，在 cb_func() 完成后可能无法访问。 newfuture 在使用后必须由 ABT_future_free() 释放。
+
+等一个未来。 ABT_future_wait() 的调用者等待未来的未来。 如果 future 准备就绪，则此例程立即返回。 如果 future 还没有准备好，这个例程的调用者就会挂起。 一旦未来准备就绪，呼叫者将恢复。
+
+预示/唤醒未来 ABT_future_set() 将 value 值设置为未来 future 的未设置隔间之一。 如果 future 的所有隔间都已设置，则此例程使 future 准备就绪并唤醒所有被 future 阻塞的服务线程。 如果回调函数设置为future，则在future设置为ready之前触发回调函数, 先执行回调, 然后设置ready并唤醒wait的线程
+	*/
 	rc = ABT_future_create(len, dtx_req_list_cb, &future);
 	if (rc != ABT_SUCCESS) {
 		D_ERROR("ABT_future_create failed for opc %x, len = %d: "
