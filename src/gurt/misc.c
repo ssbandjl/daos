@@ -478,7 +478,7 @@ out:
 /*
  * Compare whether or not the two rank lists are identical.
  * This function possibly will change the order of the passed in rank list, it
- * will sort the rank list in order.
+ * will sort the rank list in order. 比较两个排名列表是否相同。 这个函数可能会改变传入的排名列表的顺序，它将排名列表按顺序排序
  */
 bool
 d_rank_list_identical(d_rank_list_t *rank_list1, d_rank_list_t *rank_list2)
@@ -690,6 +690,33 @@ d_rank_range_list_realloc(d_rank_range_list_t *range_list, uint32_t size)
 
 	return range_list;
 }
+
+/* 在此更改之前，daos_pool_query() API“tgts”输出参数
+没有人居住。 通过此更改，界面变得清晰，
+并提供了一个实现。 “tgts”参数现已重命名
+“排名”。 发出池查询时传入 daos_pool_info_t
+参数，如果有一些禁用的目标（即 pi_ndisabled > 0
+在返回的信息中），排名列表将由那些池组成
+与禁用/关闭目标关联的存储引擎。 如果在
+另一方面，池中没有目标被禁用（pi_ndisabled == 0），
+ranks 列表将包含所有当前的池存储引擎
+（发现在泳池地图上）。
+
+在此更改中，为了返回排名的更紧凑的调试日志记录，
+添加了新的 gurt 类型/功能。 排名范围类型的列表
+添加了 d_rank_range_list_t，并且可以从 d_rank_list_t 创建。
+
+同样在此更改中，daos_test 在某些 daos_pool_query() 中进行了修改
+调用（例如，在 pool_op_retry 中）传递排名列表。
+
+在未来的补丁中，需要做更多的工作来更新基于 Go 的
+daos 和 dmg 实用程序。 排名列表/排名范围信息是
+工具中需要将它们显示在命令输出中
+最终用户。 目前，例如，daos 实用程序不通过
+d_rank_list_t 通过 CGo 调用到 libdaos，所以没有信息
+可以立即返回。 dmg相关的工作可能涉及更多，
+可能随着 gRPC protobuf 的变化，以及（待定）处理
+服务器/引擎端而不是客户端的池映射 */
 
 /* TODO (DAOS-10253) Add unit tests for this function */
 d_rank_range_list_t *

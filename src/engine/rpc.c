@@ -21,7 +21,7 @@ rpc_cb(const struct crt_cb_info *cb_info)
 
 /**
  * Send \a rpc and wait for the reply. Does not consume any references to \a
- * rpc.
+ * rpc. 发送rpc并等待响应
  *
  * \param[in] rpc	RPC to be sent
  * \return		error code

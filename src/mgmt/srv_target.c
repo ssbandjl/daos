@@ -271,6 +271,10 @@ cleanup_leftover_cb(uuid_t uuid, void *arg)
 	/* destroy blobIDs */
 	D_DEBUG(DB_MGMT, "Clear SPDK blobs for pool "DF_UUID"\n", DP_UUID(uuid));
 	uuid_copy(id.uuid, uuid);
+	/* 我们试图通过在遗留调度程序中利用多个 ABT 池来确定不同类型的 ULT 的优先级，这就是创建 IO、REBUILD、GC 和 SCRUB ABT 池的原因。 新的调度程序通过调度请求队列对 ULT 进行优先级排序，这些 ABT 池现在实际上没有用了。
+此补丁删除了所有这些 ABT 池，并为所有 ULT（网络和 NVMe 轮询 ULT 除外）创建了单个 GENERIC ABT 池。
+此补丁还将 ULT 类型替换为 XS 类型，以使代码更加清晰。
+ds_csum_recalc() 中的一个小修复，用于卸载适当 xstream 上的 csum 计算 */
 	rc = dss_thread_collective(tgt_kill_pool, &id, 0);
 	if (rc != 0) {
 		D_ERROR("tgt_kill_pool, rc: "DF_RC"\n", DP_RC(rc));
@@ -317,7 +321,7 @@ cleanup_leftover_pools(bool zombie_only)
 	int		rc;
 
 	D_INIT_LIST_HEAD(&dead_list);
-
+	/* 在池目标销毁上，如果 vos_pool 仍被挥之不去的 IO 请求占用，我们将推迟 blob 销毁和 pmemobj 文件删除，直到 vos_pool 被释放。 blob 销毁将被推迟到最后一个 vos_pool 引用放置或下一个服务器启动。 pmemobj 文件删除将推迟到下一个池目标创建或下一个服务器启动 */
 	rc = zombie_pool_iterate(cleanup_leftover_cb, &dead_list);
 	if (rc)
 		D_ERROR("failed to delete SPDK blobs for ZOMBIES pools: "
@@ -609,6 +613,8 @@ struct tgt_create_args {
 	daos_size_t		 tca_nvme_size;
 	int			 tca_rc;
 };
+
+/* 在函数 tgt_create() 中，我们有许多同步/阻塞操作。 这些操作可以长时间（超过 16 秒）阻塞 XS(0)。 在这个补丁中，我尝试将大部分这些操作移动到单独的异步线程中。 这样可以避免长时间阻塞 XS(0) */
 
 static void *
 tgt_create_preallocate(void *arg)

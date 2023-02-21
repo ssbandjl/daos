@@ -281,6 +281,8 @@ out:
 	return rc;
 }
 
+
+/* 创建池属性 */
 static int
 create_pool_props(daos_prop_t **out_prop, uint32_t numsvcreps, char *owner, char *owner_grp,
 		  const char **ace_list, size_t ace_nr)

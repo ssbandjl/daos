@@ -272,7 +272,7 @@ dss_thread_collective_reduce(struct dss_coll_ops *ops,
 }
 
 static int
-dss_collective_internal(int (*func)(void *), void *arg, bool thread,
+dss_collective_internal(int (*func)(void *), void *arg, bool thread /* true */,
 			unsigned int flags)
 {
 	int				rc;

@@ -95,8 +95,24 @@ ds_mgmt_tgt_pool_create_ranks(uuid_t pool_uuid, char *tgt_dev, d_rank_list_t *ra
 
 	/* Collective RPC to all of targets of the pool */
 	topo = crt_tree_topo(CRT_TREE_KNOMIAL, 4);
-	opc = DAOS_RPC_OPCODE(MGMT_TGT_CREATE, DAOS_MGMT_MODULE,
-			      DAOS_MGMT_VERSION);
+	opc = DAOS_RPC_OPCODE(MGMT_TGT_CREATE /* 7 */, DAOS_MGMT_MODULE /* 1 */,
+			      DAOS_MGMT_VERSION /* 2 */);
+/* 重建(rebuild)和重新加入(reint) 
+此补丁使现有池成员能够恢复
+服务器重启后。
+该过程类似于：
+- 创建一个池，并将数据写入其中
+- 一个或多个等级失败/被杀死
+- 自动检测失败并将排名从池中排除
+- 管理员修复了问题并重新启动服务器*不删除超级块信息*
+- 重新启动的服务器使用存储在超级块中的相同 UUID 恢复其旧排名
+- 然后，操作员可以使用“dmg pool reintegrate”将池重新集成到活动服务中
+这是重返社会的第一个实际步骤——尽管这有几个限制：
+- 池必须处于“离线”状态 - 即没有客户端连接到它
+- 超级块必须仍然存在以指示服务器的 UUID 在失败之前是什么。
+- 重新整合的数据不会从先前重建的节点中删除
+- 节点上没有数据被重新使用以加速重新集成过程。 容器被删除，它们的全部内容从其他副本中获取。
+未来的补丁将解决这些限制。 */
 	rc = crt_corpc_req_create(dss_get_module_info()->dmi_ctx, NULL,
 				  rank_list, opc, NULL, NULL,
 				  CRT_RPC_FLAG_FILTER_INVERT, topo, &tc_req);
@@ -121,6 +137,7 @@ ds_mgmt_tgt_pool_create_ranks(uuid_t pool_uuid, char *tgt_dev, d_rank_list_t *ra
 		D_GOTO(decref, rc);
 	}
 
+	/* 获取发送rpc的响应 */
 	tc_out = crt_reply_get(tc_req);
 	rc = tc_out->tc_rc;
 	if (rc != 0) {
@@ -185,9 +202,9 @@ ds_mgmt_create_pool(uuid_t pool_uuid, const char *group, char *tgt_dev,
 
 	/* The pg_ranks and targets lists should overlap perfectly.
 	 * If not, fail early to avoid expensive corpc failures.
-   pg_ranks 和 targets 列表应该完美重叠。 如果没有，尽早失败以避免代价高昂的 corpc 失败
+   pg_ranks 和 targets 列表应该完美重叠。 如果没有，尽早失败以避免代价高昂的 corpc 失败, 从目标target中排除不在当前组中的rank
 	 */
-	d_rank_list_filter(pg_ranks, pg_targets, false /* exclude */);
+	d_rank_list_filter(pg_ranks /* src_set */, pg_targets /* dst_set */, false /* exclude */);
 	if (!d_rank_list_identical(pg_targets, targets)) {
 		char *pg_str, *tgt_str;
 
@@ -211,8 +228,21 @@ ds_mgmt_create_pool(uuid_t pool_uuid, const char *group, char *tgt_dev,
 		D_FREE(tgt_str);
 		D_GOTO(out, rc = -DER_OOG);
 	}
+	/* DAOS-5385 控制：MS 在控制平面中的初始实现 (#3495)
 
-	rc = ds_mgmt_tgt_pool_create_ranks(pool_uuid, tgt_dev, targets,
+删除基于 ioserver 的管理服务以支持中的服务
+控制平面。
+
+此提交的目的是为了与以前的实现对等
+为进一步改进提供稳定的基础。 值得注意的是，新
+实施尚未提供管理的复制
+服务数据库，但后续工作将增加对复制的支持。
+
+笔记：
+* 不提供从以前的 MS 迁移路径（需要重新格式化）
+* 为 AttachInfo ranks 添加一个新的 upcall 以了解池的服务等级
+* 从客户端 API 中删除池管理功能的所有痕迹 */
+	rc = ds_mgmt_tgt_pool_create_ranks(pool_uuid, tgt_dev /* pmem */, targets,
 					   scm_size, nvme_size);
 	if (rc != 0) {
 		D_ERROR("creating pool "DF_UUID" on ranks failed: rc "DF_RC"\n",
