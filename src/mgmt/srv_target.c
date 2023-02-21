@@ -49,6 +49,7 @@ struct ds_pooltgts_rec {
 	d_list_t	dptr_hlink;	/* in hash table */
 };
 
+/* 池目标 */
 static struct ds_pooltgts	*pooltgts;
 
 static inline struct ds_pooltgts_rec *
@@ -661,12 +662,12 @@ tgt_create_preallocate(void *arg)
 
 		/**
 		 * Create one VOS file per execution stream
-		 * 16MB minimum per pmemobj file (SCM partition)
+		 * 16MB minimum per pmemobj file (SCM partition) 每个执行流创建一个vos文件, 每个scm分区(pm对象)最小16MB
 		 */
 		D_ASSERT(dss_tgt_nr > 0);
 		rc = tgt_vos_preallocate(tca->tca_ptrec->dptr_uuid,
 					 max(tca->tca_scm_size / dss_tgt_nr,
-					     1 << 24), dss_tgt_nr);
+					     1 << 24), dss_tgt_nr /* 每个引擎的目标数 */);
 		if (rc)
 			goto out;
 	} else {

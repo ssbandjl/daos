@@ -85,7 +85,7 @@ collective_reduce(void **arg)
 
 static int
 dss_collective_reduce_internal(struct dss_coll_ops *ops,
-			       struct dss_coll_args *args, bool create_ult,
+			       struct dss_coll_args *args, bool create_ult /* true */,
 			       unsigned int flags)
 {
 	struct collective_arg		carg;
@@ -99,6 +99,7 @@ dss_collective_reduce_internal(struct dss_coll_ops *ops,
 	int				tid;
 
 	if (ops == NULL || args == NULL || ops->co_func == NULL) {
+		/* mandatory args 强制参数 */
 		D_DEBUG(DB_MD, "mandatory args missing dss_collective_reduce");
 		return -DER_INVAL;
 	}
@@ -123,7 +124,7 @@ dss_collective_reduce_internal(struct dss_coll_ops *ops,
 
 	/*
 	 * Use the first, extra element of the value array to store the number
-	 * of failed tasks.
+	 * of failed tasks. 使用值数组的第一个额外元素来存储失败任务的数量
 	 */
 	rc = ABT_future_create(xs_nr + 1, collective_reduce, &future);
 	if (rc != ABT_SUCCESS)
@@ -317,7 +318,7 @@ dss_task_collective(int (*func)(void *), void *arg, unsigned int flags)
  * \return		number of failed xstreams or error code
  */
 int
-dss_thread_collective(int (*func)(void *), void *arg, unsigned int flags)
+dss_thread_collective(int (*func)(void *), void *arg, unsigned int flags /* 0 */)
 {
 	return dss_collective_internal(func, arg, true, flags);
 }
@@ -494,7 +495,7 @@ ult_execute_cb(void *data)
 
 	rc = arg->dfa_func(arg->dfa_arg);
 	arg->dfa_status = rc;
-
+	/* 同步则设置未来 */
 	if (!arg->dfa_async)
 		ABT_future_set(arg->dfa_future, (void *)(intptr_t)rc);
 	else
