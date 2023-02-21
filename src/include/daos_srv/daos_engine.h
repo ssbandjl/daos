@@ -493,7 +493,7 @@ enum dss_xs_type {
 	DSS_XS_IOFW	= 1,
 	/** EC/checksum/compress computing offload */
 	DSS_XS_OFFLOAD	= 2,
-	/** pool service, RDB, drpc handler */
+	/** pool service, RDB, drpc handler 池服务,RDB */
 	DSS_XS_SYS	= 3,
 	/** SWIM operations */
 	DSS_XS_SWIM	= 4,

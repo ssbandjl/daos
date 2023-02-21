@@ -662,7 +662,7 @@ pool_fetch_hdls_ult(void *data)
 
 	/* sp_map == NULL means the IV ns is not setup yet, i.e.
 	 * the pool leader does not broadcast the pool map to the
-	 * current node yet, see pool_iv_pre_sync().
+	 * current node yet, see pool_iv_pre_sync(). 需要利用pool_iv_pre_sync同步pool map
 	 */
 	ABT_mutex_lock(pool->sp_mutex);
 	if (pool->sp_map == NULL)
@@ -750,7 +750,7 @@ pool_fetch_hdls_ult_abort(struct ds_pool *pool)
 
 /*
  * Start a pool. Must be called on the system xstream. Hold the ds_pool object
- * till ds_pool_stop. Only for mgmt and pool modules.
+ * till ds_pool_stop. Only for mgmt and pool modules. 开始一个游泳池。 必须在系统 xstream 上调用。 保持 ds_pool 对象直到 ds_pool_stop。 仅适用于 mgmt 和 pool 模块
  */
 int
 ds_pool_start(uuid_t uuid)
@@ -764,7 +764,7 @@ ds_pool_start(uuid_t uuid)
 
 	/*
 	 * Look up the pool without create_args (see pool_alloc_ref) to see if
-	 * the pool is started already.
+	 * the pool is started already. 
 	 */
 	rc = daos_lru_ref_hold(pool_cache, (void *)uuid, sizeof(uuid_t),
 			       NULL /* create_args */, &llink);
@@ -775,6 +775,23 @@ ds_pool_start(uuid_t uuid)
 				DP_UUID(uuid));
 			rc = -DER_BUSY;
 		}
+
+		/* 1. ds_pool_stop()调用xstream 0放最后一个引用
+				ds_pool；
+			2. 在 ds_pool put 的最后一次引用中，它持有“pool_cache_lock”并且
+				集体调用清除每个 VOS xstream 上的 ds_pool_child；
+				（参见 ds_pool_put() -> pool_free_ref()）
+			3. VOS xstreams需要等待之前退出的聚合ULTs
+				清除 ds_pool_child； （见 pool_child_delete_one() ->
+				ds_cont_child_stop_all() -> cont_child_stop())
+			4.聚合ULT可以运行在EC聚合代码中获取cont
+				IV，那需要调用ds_pool_lookup(), ds_pool_lookup()
+				需要获取“pool_cache_lock”；
+
+			此补丁删除了“pool_cache_lock”并确保 ds_pool 缓存被
+			仅由 xstream 0 访问。 如果 VOS xstreams 需要访问 ds_pool，
+			它要么直接使用“ds_pool_child->spc_pool”，要么安排一个
+			xstream 0 上的 ULT */
 		/* Already started; drop our reference. */
 		daos_lru_ref_release(pool_cache, &pool->sp_entry);
 		return rc;

@@ -792,7 +792,7 @@ ds_mgmt_hdlr_tgt_create(crt_rpc_t *tc_req)
 		if (rc)
 			goto out;
 
-		/** ready for prime time, move away from NEWBORNS dir */
+		/** ready for prime time, move away from NEWBORNS dir 准备好迎接黄金时段，离开 NEWBORNS 目录 */
 		rc = rename(tca.tca_newborn, tca.tca_path);
 		if (rc < 0) {
 			rc = daos_errno2der(errno);
