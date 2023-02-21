@@ -531,6 +531,16 @@ typedef int (*crt_iv_comp_cb_t)(crt_iv_namespace_t ivns, uint32_t class_id,
  * \param[in] cb_arg		pointer to argument passed to fetch_comp_cb
  *
  * \return			DER_SUCCESS on success, negative value if error
+ * 获取 incast 变量的值。
+
+参数:
+ivns – IV 命名空间的本地句柄
+class_id – IV 所属的 IV 类 ID
+iv_key – IV 的密钥
+iv_ver – 输入参数的 IV 版本：1) (version == 0) 意味着调用者不关心它是什么版本，或者依赖更新的同步来取回新值。 2) (version == -1) 表示调用者想要取回最新值，获取请求将始终传播到根节点以获取最新值。 3) 其他正值表示调用者想要取回等于或高于该版本的值。 fetch_comp_cb中会通过这个参数返回实际的版本。
+shortcut – 优化访问请求传播的快捷方式提示，参见 crt_iv_shortcut_t
+fetch_comp_cb – 指向获取完成回调的指针
+cb_arg – 指向传递给 fetch_comp_cb 的参数的指针
  */
 int
 crt_iv_fetch(crt_iv_namespace_t ivns, uint32_t class_id,
@@ -553,6 +563,12 @@ crt_iv_fetch(crt_iv_namespace_t ivns, uint32_t class_id,
  *		       synchronize the update request to all nodes.
  *		       And will keep the consistent order of updating if
  *		       CRT_IV_CLASS_UPDATE_IN_ORDER is set in the iv class.
+ 同步更新请求或通知的方式（从根节点到其他节点）。
+当用户更新一个incast变量时，它可以选择传递更新
+同步或通知所有节点。
+CRT_IV_SYNC_NONE - 不需要同步。
+CRT_IV_SYNC_EAGER - 必须先向所有节点同步更新请求或通知，然后完成更新。
+CRT_IV_SYNC_LAZY - 可以先进行更新并完成，然后将更新同步到所有节点。 对于延迟同步，IV 框架会将更新请求延迟同步到所有节点。 如果在 iv 类中设置了 CRT_IV_CLASS_UPDATE_IN_ORDER，将保持一致的更新顺序。
  */
 typedef enum {
 	CRT_IV_SYNC_NONE	= 0,
