@@ -2088,7 +2088,7 @@ exit:
 		iv_ops->ivo_on_put(ivns_internal, &iv_value, user_priv);
 	return rc;
 }
-
+/* 在集合rpc发送前执行cart iv同步 */
 int
 crt_iv_sync_corpc_pre_forward(crt_rpc_t *rpc, void *arg)
 {

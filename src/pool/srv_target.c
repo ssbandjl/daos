@@ -1474,7 +1474,7 @@ ds_pool_tgt_map_update(struct ds_pool *pool, struct pool_buf *buf,
 		}
 
 		update_map = true;
-		/* drop the stale map */
+		/* drop the stale map 丢弃过时的map */
 		pool->sp_map = map;
 		map = tmp;
 	}

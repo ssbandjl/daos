@@ -1781,7 +1781,7 @@ pool_start_all(void *arg)
 {
 	int rc;
 
-	/* Scan the storage and start all pool services. */
+	/* Scan the storage and start all pool services. 服务端启动时,通过动态模块回调启动池服务副本 */
 	rc = ds_mgmt_tgt_pool_iterate(start_one, NULL /* arg */);
 	if (rc != 0)
 		D_ERROR("failed to scan all pool services: "DF_RC"\n",

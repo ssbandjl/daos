@@ -789,6 +789,7 @@ crt_corpc_req_hdlr(struct crt_rpc_priv *rpc_priv)
 
 	/* Invoke pre-forward callback first if it is registered */
 	if (co_ops && co_ops->co_pre_forward) {
+		/* e.g. -> crt_iv_sync_corpc_pre_forward */
 		rc = co_ops->co_pre_forward(&rpc_priv->crp_pub,
 					    co_info->co_priv);
 		if (rc != 0) {
