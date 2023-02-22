@@ -37,6 +37,7 @@ typedef void		*crt_iv_namespace_t;
 /**
  * The version is an optional feature of incast variable. Each iv can have its
  * own version which is a customized value from upper layer or application.
+ * 上层应用可自定义incast版本
  *
  * It can be used to identify and aggregate updates from different nodes of the
  * group (parent can ignore update from children if it has the same or higher
@@ -45,6 +46,7 @@ typedef void		*crt_iv_namespace_t;
  * User can select to not use the version in which case there is no aggregation
  * for updates, for this usage user can always use one same version for example
  * zero.
+ * 它可用于识别和聚合来自组中不同节点的更新（如果父节点具有与之前已经完成的相同或更高的更新版本，则父节点可以忽略来自子节点的更新）。 或者解决更高版本获胜的冲突更新。 用户提供的详细语义。 用户可以选择不使用版本，在这种情况下没有更新聚合，对于这种用法，用户始终可以使用一个相同的版本，例如零
  */
 typedef uint32_t	crt_iv_ver_t;
 
@@ -61,6 +63,11 @@ typedef uint32_t	crt_iv_ver_t;
  * node. Will add other kind of shortcut should requirements arise in future.
  *
  * User can indicate it for every specific fetch/update request.
+ * 优化请求传播的快捷方式提示。
+一个用法示例是指示组树的级别以避免请求遍历每个级别。
+另一种可能的用法是指示用户的访问行为，例如：contention unlikely 表示请求满足其他请求的可能性很小，因此可以将请求直接发送给 root。
+目前只支持直接发送到根节点的CRT_IV_SHORTCUT_TO_ROOT。 如果将来出现需求，将添加其他类型的快捷方式。
+用户可以为每个特定的获取/更新请求指明它
  */
 typedef enum {
 	/** no shortcut */
