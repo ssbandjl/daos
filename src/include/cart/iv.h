@@ -87,6 +87,8 @@ typedef d_iov_t	crt_iv_key_t;
  * aggregation logic. Based on this flag, client has ability to perform
  * desired optimizations, such as potentially reusing iv_value buffers
  * previously allocated/reserved.
+ * 传递给回调的操作标志
+目前仅支持 CRT_IV_FLAG_PENDING_FETCH 标志。 只要作为聚合逻辑的一部分调用，就会在 on_fetch() 回调期间设置此标志。 基于此标志，客户端能够执行所需的优化，例如可能重用先前分配/保留的 iv_value 缓冲区
  */
 typedef enum {
 	/** Called node is the root for the operation */

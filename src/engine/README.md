@@ -26,7 +26,7 @@ By default, one main xstream and no offload xstreams are created per target. The
 
 Each xstream allocates private storage that can be accessed via the `dss_tls_get()` function. When registering, each module can specify a module key with a size of data structure that will be allocated by each xstream in the TLS. The `dss_module_key_get()` function will return this data structure for a specific registered module key.
 
-## Incast Variable Integration
+## Incast Variable Integration 集成内部广播变量
 
 DAOS uses IV (incast variable) to share values and statuses among servers under a single IV namespace, which is organized as a tree. The tree root is called IV leader, and servers can either be leaves or non-leaves. Each server maintains its own IV cache. During fetch, if the local cache can not fulfill the request, it forwards the request to its parents, until reaching the root (IV leader). As for update, it updates its local cache first, then forwards to its parents until it reaches the root, which then propagate the changes to all the other servers. The IV namespace is per pool, which is created during pool connection, and destroyed during pool disconnection. To use IV, each user needs to register itself under the IV namespace to get an identification, then it will use this ID to fetch or update its own IV value under the IV namespace.
 

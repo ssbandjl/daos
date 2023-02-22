@@ -605,7 +605,7 @@ ds_pool_cache_init(void)
 	int rc;
 
 	rc = daos_lru_cache_create(-1 /* bits */, D_HASH_FT_NOLOCK /* feats */,
-				   &pool_cache_ops, &pool_cache);
+				   &pool_cache_ops /* ops */, &pool_cache /* lcache */);
 	return rc;
 }
 
@@ -674,6 +674,7 @@ pool_fetch_hdls_ult(void *data)
 			DP_UUID(pool->sp_uuid));
 		D_GOTO(out, rc);
 	}
+	/* 获取所有连接到这个池的控制器 */
 	rc = ds_pool_iv_conn_hdl_fetch(pool);
 	if (rc) {
 		D_ERROR("iv conn fetch %d\n", rc);

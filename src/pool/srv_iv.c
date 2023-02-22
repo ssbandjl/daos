@@ -1208,7 +1208,7 @@ ds_pool_iv_conn_hdl_update(struct ds_pool *pool, uuid_t hdl_uuid,
 /* 删除 temporay maxim 快照限制，并在提取缓冲区不够大时添加重试快照 IV 提取。
 在 rebuild_simple 中添加测试以验证大型快照处理删除不必要的服务器到服务器的 IV 提取处理池/容器 IV 进程内的一些清理 */
 
-/* Get all pool connect handles for the pool */
+/* Get all pool connect handles for the pool 获取池的所有池连接句柄 */
 int
 ds_pool_iv_conn_hdl_fetch(struct ds_pool *pool)
 {

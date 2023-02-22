@@ -15,7 +15,8 @@
  * Each pool has one iv namespace, which is created when the  pool is
  * connected, and destroyed when pool is disconnected. Each DAOS IV
  * user will attach its entries to the iv namespace, and each user will
- * have a constant key id to locate its entry.
+ * have a constant key id to locate its entry. 
+ * DAOS iv 缓存为 daos 使用 cart IV 提供了一个通用接口。 每个 pool 都有一个 iv 命名空间，在 pool 连接时创建，在 pool 断开连接时销毁。 每个 DAOS IV 用户都会将其条目附加到 iv 命名空间，并且每个用户都会有一个常量键 ID 来定位其条目
  */
 struct ds_iv_ns {
 	d_rank_t	iv_master_rank;
@@ -70,6 +71,7 @@ struct ds_iv_class {
  * When IV callback arrives, it will locate the cache entry in namespace
  * by the key. If there is only one entry for the class, then only using
  * class_id can locate the entry, otherwise using key + key_cmp callback.
+ * 这些回调使用 ds_iv_key 来定位 iv 缓存条目和类类型。当 IV 回调到达时，它将通过键定位命名空间中的缓存条目。 如果class只有一个entry，那么只能用class_id定位entry，否则用key+key_cmp回调
  */
 struct ds_iv_key {
 	d_rank_t	rank;
@@ -273,6 +275,7 @@ int ds_iv_class_unregister(unsigned int class_id);
 enum iv_key {
 	IV_POOL_MAP = 1,
 	IV_POOL_PROP,
+	/* 池连接 */
 	IV_POOL_CONN,
 	IV_REBUILD,
 	IV_OID,

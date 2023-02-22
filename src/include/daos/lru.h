@@ -73,16 +73,16 @@ struct daos_llink {
  * LRU cache implementation using d_hash_table and d_list_t
  */
 struct daos_lru_cache {
-	uint32_t		 dlc_csize;	/**< Provided cache size */
-	uint32_t		 dlc_count;	/**< count of refs in cache */
-	d_list_t		 dlc_lru;	/**< list head of LRU */
+	uint32_t		 dlc_csize;	/**< Provided cache size 缓存大小*/
+	uint32_t		 dlc_count;	/**< count of refs in cache 缓存计数*/
+	d_list_t		 dlc_lru;	/**< list head of LRU 列表头 */
 	struct d_hash_table	 dlc_htable;	/**< Hash table for all refs */
-	struct daos_llink_ops	*dlc_ops;	/**< ops to maintain refs */
+	struct daos_llink_ops	*dlc_ops;	/**< ops to maintain refs 维护引用 */
 };
 
 /**
  * Create a DAOS LRU cache
- * This function creates an LRU cache in DRAM
+ * This function creates an LRU cache in DRAM 初始化LRU, 缓存个数,链表头,维护函数操作表等
  *
  * \param[in]  bits		power2(bits) is the size of the LRU cache
  * \param[in]  feats		Feature bits for DHASH, see DHASH_FT_*
