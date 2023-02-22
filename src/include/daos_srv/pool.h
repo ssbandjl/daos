@@ -27,7 +27,7 @@
 /*
  * Pool object
  *
- * Caches per-pool information, such as the pool map.
+ * Caches per-pool information, such as the pool map. ds_pool=服务端的池
  */
 struct ds_pool {
 	struct daos_llink	sp_entry;

@@ -654,6 +654,7 @@ ds_pool_put(struct ds_pool *pool)
 	daos_lru_ref_release(pool_cache, &pool->sp_entry);
 }
 
+/* 从IV中获取池控制器 */
 void
 pool_fetch_hdls_ult(void *data)
 {
@@ -662,7 +663,7 @@ pool_fetch_hdls_ult(void *data)
 
 	/* sp_map == NULL means the IV ns is not setup yet, i.e.
 	 * the pool leader does not broadcast the pool map to the
-	 * current node yet, see pool_iv_pre_sync(). 需要利用pool_iv_pre_sync同步pool map
+	 * current node yet, see pool_iv_pre_sync(). 需要利用 pool_iv_pre_sync 同步pool map
 	 */
 	ABT_mutex_lock(pool->sp_mutex);
 	if (pool->sp_map == NULL)

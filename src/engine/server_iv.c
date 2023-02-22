@@ -54,7 +54,7 @@ ds_iv_class_register(unsigned int class_id, struct crt_iv_ops *crt_ops,
 
 	for (i = 0; i < crt_iv_class_nr; i++) {
 		if (crt_iv_class[i].ivc_ops == crt_ops) {
-			found = true;
+			found = true; /* 之前已经添加该类(cart操作函数指针指向同一内存) */
 			crt_iv_class_id = i;
 			break;
 		}
@@ -63,16 +63,16 @@ ds_iv_class_register(unsigned int class_id, struct crt_iv_ops *crt_ops,
 	/* Update crt_iv_class */
 	if (!found) {
 		struct crt_iv_class *new_iv_class;
-
+		/* 比原来的个数多1个 */
 		D_ALLOC(new_iv_class, (crt_iv_class_nr + 1) *
 				       sizeof(*new_iv_class));
 		if (new_iv_class == NULL)
 			return -DER_NOMEM;
-
+		/* 用拷贝内存的方式,将原来的iv类拷贝到新申请的内存块 */
 		if (crt_iv_class_nr > 0)
 			memcpy(new_iv_class, crt_iv_class,
 			       crt_iv_class_nr * sizeof(*new_iv_class));
-
+		/* 在新的内存块起始位置设置属性和cart操作 */
 		new_iv_class[crt_iv_class_nr].ivc_id = 0;
 		new_iv_class[crt_iv_class_nr].ivc_feats = 0;
 		new_iv_class[crt_iv_class_nr].ivc_ops = crt_ops;
@@ -80,6 +80,7 @@ ds_iv_class_register(unsigned int class_id, struct crt_iv_ops *crt_ops,
 			D_FREE(crt_iv_class);
 		crt_iv_class_nr++;
 		crt_iv_class = new_iv_class;
+		/* 类id=最后一个元素的索引号 */
 		crt_iv_class_id = crt_iv_class_nr - 1;
 	}
 
