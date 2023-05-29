@@ -1,0 +1,8 @@
+https://github.com/ssbandjl/daos.git
+git remote add upstream https://github.com/daos-stack/daos.git
+git remote -v
+git fetch upstream
+git merge upstream/master
+
+daos客户端支持s3(ds3): https://github.com/daos-stack/daos/commit/f848300590bcca29147256f84d6f766e7faa0457
+
