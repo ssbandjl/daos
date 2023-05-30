@@ -64,3 +64,5 @@ utils/githooks/*.d/*-user-*
 .pre-commit
 .vscode
 src/include/daos_version.h
+
+build_external_debug_cache
