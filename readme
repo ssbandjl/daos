@@ -175,12 +175,88 @@ vim /home/daos/daos/utils/config/examples/daos_server_local.yml
 tour.md
 创建池/创建容器
 dmg system query -v
-dmg pool create sxb -z 4g
+dmg pool create sxb -z 4g  #dmg pool create --scm-size=8G --nvme-size=64G --label=samirrav_pool -u samirrav@, dmg pool create --scm-size=8G --nvme-size=64G samirrav_pool -u samirrav@ -g samirrav@
 dmg pool list -v
 dmg pool query sxb
 daos cont create --oclass=RP_3GX --properties=rf:1 --type POSIX --pool sxb --label sxb
 daos container create --pool sxb --type POSIX --label sxb
 daos container --verbose query -p sxb -c sxb
+daos container create sxb --type POSIX sxb #### 2.3, daos [OPTIONS] container create [create-OPTIONS] [pool label or UUID] [label]
+daos container query sxb sxb --verbose
+
+systemd
+$ cat ~/.config/systemd/user/samirrav_dfuse.service
+[Service]
+ExecStart=dfuse  --foreground -m /scratch_fs/samirrav_dfuse/  --pool samirrav_pool --cont samirrav_cont
+ExecStop=fusermount3 -u /scratch_fs/samirrav_dfuse/
+[Install]
+WantedBy=default.target
+$
+$ systemctl --user daemon-reload
+$ systemctl --user list-unit-files | grep samirrav
+
+
+查池
+[root@e65332746210 daos]# dmg pool query sxb
+Pool 9b6324da-f57a-4cd7-9586-989e9259f60e, ntarget=1, disabled=0, leader=0, version=1
+Pool space info:
+- Target(VOS) count:1
+- Storage tier 0 (SCM):
+  Total size: 240 MB
+  Free: 240 MB, min:240 MB, max:240 MB, mean:240 MB
+- Storage tier 1 (NVMe):
+  Total size: 3.8 GB
+  Free: 3.7 GB, min:3.7 GB, max:3.7 GB, mean:3.7 GB
+Rebuild idle, 0 objs, 0 recs
+[root@e65332746210 daos]# dmg pool list --verbose
+Label UUID                                 State SvcReps SCM Size SCM Used SCM Imbalance NVME Size NVME Used NVME Imbalance Disabled UpgradeNeeded? 
+----- ----                                 ----- ------- -------- -------- ------------- --------- --------- -------------- -------- -------------- 
+sxb   9b6324da-f57a-4cd7-9586-989e9259f60e Ready 0       240 MB   206 kB   0%            3.8 GB    42 MB     0%             0/1      None           
+
+[root@e65332746210 daos]# daos container query sxb sxb --verbose
+  Container UUID              : 0b22f857-de4d-407d-a4a3-8ee620c6fa7d                        
+  Container Label             : sxb                                                         
+  Container Type              : POSIX                                                       
+  Pool UUID                   : 9b6324da-f57a-4cd7-9586-989e9259f60e                        
+  Container redundancy factor : 0                                                           
+  Number of open handles      : 1                                                           
+  Latest open time            : 0x10dd92ddb5880000 (2023-05-30 02:45:59.711932416 +0000 UTC)
+  Latest close/modify time    : 0x10dd92dde3b00000 (2023-05-30 02:45:59.760330752 +0000 UTC)
+  Number of snapshots         : 0                                                           
+  Object Class                : UNKNOWN                                                     
+  Dir Object Class            : UNKNOWN                                                     
+  File Object Class           : UNKNOWN                                                     
+  Chunk Size                  : 1.0 MiB                                                     
+
+
+获取属性:
+[root@e65332746210 sxb]# daos cont get-prop sxb sxb
+Properties for container sxb
+Name                                             Value                               
+----                                             -----                               
+Highest Allocated OID (alloc_oid)                1                                   
+Checksum (cksum)                                 off                                 
+Checksum Chunk Size (cksum_size)                 32 KiB                              
+Compression (compression)                        off                                 
+Deduplication (dedup)                            off                                 
+Dedupe Threshold (dedup_threshold)               4.0 KiB                             
+EC Cell Size (ec_cell_sz)                        64 KiB                              
+Performance domain affinity level of EC (ec_pda) 1                                   
+Encryption (encryption)                          off                                 
+Global Version (global_version)                  2                                   
+Group (group)                                    root@                               
+Label (label)                                    sxb                                 
+Layout Type (layout_type)                        POSIX (1)                           
+Layout Version (layout_version)                  1                                   
+Max Snapshot (max_snapshot)                      0                                   
+Object Version (obj_version)                     1                                   
+Owner (owner)                                    root@                               
+Redundancy Factor (rd_fac)                       rd_fac0                             
+Redundancy Level (rd_lvl)                        node (2)                            
+Performance domain affinity level of RP (rp_pda) 3                                   
+Server Checksumming (srv_cksum)                  off                                 
+Health (status)                                  HEALTHY                             
+Access Control List (acl)                        A::OWNER@:rwdtTaAo, A:G:GROUP@:rwtT 
 
 
 调试:
@@ -201,7 +277,8 @@ daos cont query sxb sxb
 
 挂载/卸载
 mkdir -p /tmp/sxb
-dfuse --mountpoint=/tmp/sxb --pool=sxb --cont=sxb
+dfuse --mountpoint=/tmp/sxb --pool=sxb --cont=sxb   # mount.fuse3 dfuse /scratch_fs/daos_dfuse_samir -o pool=samirrav_pool,container=samirrav_cont
+echo 'dfuse /scratch_fs/root_dfuse fuse3 pool=admin_pool,container=admin_cont,auto,x-systemd.requires=daos_agent.service    0 0' >> /etc/fstab
 cd /tmp/sxb
 
 umount /tmp/sxb
@@ -751,3 +828,23 @@ dfs_open(ch->dfs, NULL, daos->disk.name, mode, fd_oflag, daos->oclass, 0, NULL, 
 
 
 dmg -i storage format
+
+build_client(only):
+scons-3 BUILD_TYPE=debug TARGET_TYPE=debug client install --build-deps=yes
+
+
+engine start -> engine/init.c -> main
+
+spdk
+spdk_blob_io_write
+
+拦截库:libioil -> IOIL_SRC = ['int_posix.c', 'int_read.c', 'int_write.c'] -> src/client/dfuse/il/int_write.c -> ioil_do_pwritev -> 自动去掉前缀 dfuse_ -> __attribute__((weak, alias("dfuse_" #name)))
+writev -> dfuse_writev -> pwritev_rpc -> bytes_written = ioil_do_pwritev
+pwritev -> dfuse_pwritev
+d_iov_set
+dfs_write
+
+
+
+为挂载点、池、容器添加对位置参数的支持, 如果要通过 fstab 挂载 dfuse，则只给出一个选项，即挂载点，因此将其放在第一位，但如果给定，也接受池和容器。 检修 dfuse_pool_connect 函数, 这允许通过标准的 mount 命令和 fstab 通过如下一行来安装dfuse：dfuse /mnt/dfuse fuse3 默认值，用户 0 0
+dfuse -> src/client/dfuse/dfuse_main.c -> main
