@@ -1,3 +1,6 @@
+daos开发文档: https://docs.daos.io/v2.5/dev/development/
+公共组件: https://github.com/daos-stack/daos/tree/master/src/common
+
 https://github.com/ssbandjl/daos.git
 git remote add upstream https://github.com/daos-stack/daos.git
 git remote -v
@@ -8,6 +11,7 @@ daos客户端支持s3(ds3): https://github.com/daos-stack/daos/commit/f848300590
 
 git clone --recurse xxx
 git submodule update --init --recursive
+
 
 docker
 Dockerfile.el.9
@@ -90,6 +94,7 @@ Put a replicated service reference: 放置一个复制的服务参考
 filter_invert: 倒置过滤
 
 docker build  . -f utils/docker/Dockerfile.centos.7 -t daos:2.0.1
+docker --debug  build . -f utils/docker/Dockerfile.el.8 -t daos
 
 curl -sSfL --retry 10 --retry-max-time 60 -o ofi_patch_001 https://raw.githubusercontent.com/daos-stack/libfabric/master/daos-9173-ofi.patch
 curl -sSfL --retry 10 --retry-max-time 60 -o ofi_patch_002 https://raw.githubusercontent.com/daos-stack/libfabric/master/daos-9376-ofi.patch
@@ -961,7 +966,7 @@ write -> dfuse_cb_write 回调写 src/client/dfuse/fuse3
     evx->evx_status	= DAOS_EVS_READY
     D_INIT_LIST_HEAD(&evx->evx_child) 初始化链表
     daos_eq_putref 从事件队列继承传输上下文
-  ev->de_complete_cb = dfuse_cb_write_complete 设置回调
+  ev->de_complete_cb = dfuse_cb_write_complete -> 设置回调
   d_iov_set(&ev->de_iov, ibuf.buf[0].mem, len)  # 设置io向量， 将第二参数的地址和长度赋值给第一个参数
   ev->de_sgl.sg_iovs = &ev->de_iov   sgl分散聚集列表
   readahead ie_truncated 预读和截断
@@ -972,7 +977,8 @@ write -> dfuse_cb_write 回调写 src/client/dfuse/fuse3
     daos_event_errno_rc(ev) 将错误码转正
       daos_ev2evx(ev)
     daos_array_write 写数组对象: daos_array_write(obj->oh, DAOS_TX_NONE, &iod, sgl, ev)
-      dc_task_create(dc_array_write, NULL, ev, &task) 创建任务
+      dc_task_create(dc_array_write, NULL, ev, &task) -> 创建任务
+      args = dc_task_get_args(task)
       dc_task_schedule(task, true)  task与args做转换: dc_task_get_args 调度任务
     return daos_der2errno(rc)
   sem_post(&fs_handle->dpi_sem)   解锁信号量(+1,如果大于0,其他线程将被唤醒执行),唤醒线程（线程同步）: dfuse_progress_thread sem_wait(&fs_handle->dpi_sem)
@@ -1006,6 +1012,7 @@ dc_array_write
     array_decref(array)
     tse_task_register_cbs(stask, check_short_read_cb 读回调
     tse_sched_progress(tse_task2sched(task)) 推进/处理
+      tse_sched_run
 
 
 check_short_read_cb
@@ -1157,14 +1164,24 @@ ca_arrays
 tse 调度
 dc_task_create
   sched = daos_ev2sched(ev) 事件转调度器
-  tse_task_create 初始化 tse_task。 该任务会被添加到调度器任务列表中，稍后被调度，如果提供了依赖任务，则该任务将被添加到依赖任务的dep列表中，一旦依赖任务完成，则添加该任务 到调度程序列表。
+  tse_task_create(func, sched, NULL, &task) -> 初始化 tse_task。 该任务(task)会被添加到调度器(sched)任务列表中，稍后被调度，如果提供了依赖任务，则该任务将被添加到依赖任务的dep列表中，一旦依赖任务完成，则添加该任务到调度程序列表(先完成依赖任务, 然后添加主任务)
   task_ptr2args 指针转参数
+    D_INIT_LIST_HEAD(&dtp->dtp_list) -> 初始化任务链表
+    D_INIT_LIST_HEAD(&dtp->dtp_task_list)
+  	D_INIT_LIST_HEAD(&dtp->dtp_dep_list)
+	  D_INIT_LIST_HEAD(&dtp->dtp_comp_cb_list)
+	  D_INIT_LIST_HEAD(&dtp->dtp_prep_cb_list)
+    ...
+    dtp->dtp_func	  = task_func
+    ...
     tse_task_buf_embedded 获取任务的嵌入式缓冲区，用户可以使用它来携带功能参数。 任务的嵌入式缓冲区有大小限制，如果 buf_size 大于限制，此函数将返回 NULL。 用户应通过 tse_task_set_priv() 使用私有数据来传递大参数。 MSC - 我将其更改为只是一个缓冲区，而不是像以前那样, 不断给一个额外的指针指向大的预涂层缓冲区。 以前的方式不适用于公共用途。我们现在应该使它更简单，更通用，如下面的评论
       tse_task_buf_size
         return (size + 7) & ~0x7
-  tse_task_register_comp_cb(task, task_comp_event, NULL, 0) dtc->dtc_cb = cb task_comp_event 注册完成回调
+  args->ta_magic = DAOS_TASK_MAGIC
+  tse_task_register_comp_cb(task, task_comp_event, NULL, 0) -> dtc->dtc_cb = cb task_comp_event 注册完成回调
     register_cb(task, true, comp_cb, arg, arg_size)
       d_list_add(&dtc->dtc_list, &dtp->dtp_comp_cb_list) 插入到列表开始处
+  failed -> tse_task_decref(task) -> 如果失败则判断引用计数
 
 
 
@@ -1211,7 +1228,13 @@ dc_task_schedule
   task_is_valid
   daos_event_launch
   tse_task_schedule
-    tse_task_schedule_with_delay 与 tse_task_schedule 相同，如果 instant 为 false，则期望任务不会在 delay 微秒内执行。
+    tse_task_schedule_with_delay 与 tse_task_schedule 相同，如果 instant(立即执行) 为 false，则期望任务不会在 delay 微秒内执行
+      ready = (dtp->dtp_dep_cnt == 0 && d_list_empty(&dtp->dtp_prep_cb_list)) -> 任务准备好了(无依赖任务且预执行(回调)链表为空)
+      ...
+      dtp->dtp_wakeup_time = daos_getutime() + delay -> 延迟执行
+      tse_task_insert_sleeping(dtp, dsp)
+      ...
+      dtp->dtp_func(task) -> 立即执行任务
 
 daos_event_comp_list 事件完成列表
 
