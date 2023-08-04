@@ -848,3 +848,537 @@ dfs_write
 
 为挂载点、池、容器添加对位置参数的支持, 如果要通过 fstab 挂载 dfuse，则只给出一个选项，即挂载点，因此将其放在第一位，但如果给定，也接受池和容器。 检修 dfuse_pool_connect 函数, 这允许通过标准的 mount 命令和 fstab 通过如下一行来安装dfuse：dfuse /mnt/dfuse fuse3 默认值，用户 0 0
 dfuse -> src/client/dfuse/dfuse_main.c -> main
+
+
+
+
+
+
+src/client/dfuse/ops/write.c -> dfuse_cb_write
+
+
+
+
+vos_blob_format_cb
+  bio_write_blob_hdr
+    bio_write
+      bio_rw
+        bio_rwv
+          bio_iod_post 提交io描述
+            dma_rw
+              nvme_rw
+                spdk_blob_io_write rw_completion
+                  blob_request_submit_op
+                    blob_request_submit_op_single
+                      bs_batch_write_dev
+                        blob_bdev->bs_dev.write
+                        bdev_blob_write
+                          spdk_bdev_write_blocks
+
+
+rw_completion
+  spdk_thread_send_msg
+
+
+客户端mount:
+ufuse -m /mnt/sxb --pool sxb --cont sxb
+ufuse_main.c -> main dfuse_main.c
+  ubip_debug_init daos_debug_init
+    d_log_init_adv 高级日志初始化, 客户端日志文件
+      log_file = getenv(D_LOG_FILE_ENV) export D_LOG_FILE=/tmp/daos_client.log
+      debug_prio_err_load_env
+      d_log_open
+        freopen(mst.log_file 重新关联标准输出或错误输出
+        setlinebuf(stderr) 设置错误输出为行缓冲
+    d_log_sync_mask
+  daos_init
+    daos_eq_lib_init 事件队列
+      crt_init_opt
+  dfuse_fs_init
+    d_hash_table_create_inplace dpi_pool_table 打开的池表， 创建hash表 大小=power2(n次方)， 操作方法
+    dpi_iet open inodes
+    daos_eq_create 一个事件队列关联一个网络上下文， 跟踪池的多个事件
+      daos_eq_alloc
+      crt_context_create(&eqx->eqx_ctx)
+        crt_contpext_provider_create
+          crt_context_init
+      daos_eq_insert(eqx)
+      daos_eq_handle(eqx, eqh)
+      tse_sched_init(&eqx->eqx_sched, NULL, eqx->eqx_ctx)
+    sem_init
+  duns_resolve_path
+  dfuse_pool_connect
+  dfuse_cont_open
+  dfuse_start dfuse_fs_start 启动文件系统
+    d_hash_rec_insert(&fs_handle->dpi_iet 将根插入hash表, 在 dfuse_reply_entry 中也会插入: d_hash_rec_find_insert(&fs_handle->dpi_iet
+    d_slab_init
+    d_slab_register
+    dfuse_progress_thread pthread_create(&fs_handle->dpi_thread, NULL, dfuse_progress_thread, fs_handle) 异步进度线程，该线程在启动时使用事件队列启动，并阻塞在信号量上，直到创建异步事件，此时线程唤醒并在 daos_eq_poll() 中忙于轮询直到完成
+      sem_wait
+      daos_eq_poll  从 EQ 中检索完成事件
+        daos_eq_lookup 查找私有事件队列
+          daos_hhash_link_lookup
+        crt_progress_cond(epa.eqx->eqx_ctx, timeout, eq_progress_cb, &epa)
+          eq_progress_cb
+        dfuse_launch_fuse(fs_handle, &args) 创建fuse文件系统
+          fuse_session_new(args, &dfuse_ops, sizeof(dfuse_ops), fs_handle)
+          fuse_session_mount
+          dfuse_send_to_fg
+          dfuse_loop
+  dfuse_fs_fini
+
+
+dfuse_progress_thread
+  rc = sem_wait(&fs_handle->dpi_sem) 等dpi_sem信号
+  daos_eq_poll
+  daos_event_fini 完成一个事件。 如果事件已被传递到任何 DAOS API，则它只能在从 EQ 中轮询出来时才能完成，即使通过调用 daos_event_abort() 中止也是如此。 如果事件是用父事件初始化的，那么该事件将从父事件的子列表中删除。 如果ev本身是一个父事件，那么这个函数会finalize所有的子事件和ev。
+  ev->de_complete_cb(ev) -> dfuse_cb_write_complete 写完成回调
+
+struct fuse_lowlevel_ops dfuse_ops dfuse低层操作对象
+  .create		= df_ll_create
+	.open		= dfuse_cb_open,
+	.release	= dfuse_cb_release,
+	.write_buf	= dfuse_cb_write,
+	.read		= dfuse_cb_read,
+	.readlink	= dfuse_cb_readlink,
+	.ioctl		= dfuse_cb_ioctl,
+
+struct fuse_file_info libfuse
+
+
+客户端写数据：write.c
+write -> dfuse_cb_write 回调写 src/client/dfuse/fuse3
+  fuse_req_userdata
+  fuse_req_ctx
+  fuse_buf_size(bufv)
+  ibuf = FUSE_BUFVEC_INIT(len) 分配本地缓冲区
+  DFUSE_TRA_DEBUG 调试
+  fuse_buf_copy(&ibuf, bufv, 0)
+  dfuse_cache_evict
+  d_slab_acquire 以高效的方式分配数据
+  fuse_buf_copy libfuse
+  daos_event_init 线程事件初始化
+    evx->evx_status	= DAOS_EVS_READY
+    D_INIT_LIST_HEAD(&evx->evx_child) 初始化链表
+    daos_eq_putref 从事件队列继承传输上下文
+  ev->de_complete_cb = dfuse_cb_write_complete 设置回调
+  d_iov_set(&ev->de_iov, ibuf.buf[0].mem, len)  # 设置io向量， 将第二参数的地址和长度赋值给第一个参数
+  ev->de_sgl.sg_iovs = &ev->de_iov   sgl分散聚集列表
+  readahead ie_truncated 预读和截断
+  dfs_write (文件系统， 对象，sgl列表，文件(对象)偏移，事件) 将数据写到文件对象
+    事件为空
+      daos_event_launch
+      daos_event_complete
+    daos_event_errno_rc(ev) 将错误码转正
+      daos_ev2evx(ev)
+    daos_array_write 写数组对象: daos_array_write(obj->oh, DAOS_TX_NONE, &iod, sgl, ev)
+      dc_task_create(dc_array_write, NULL, ev, &task) 创建任务
+      dc_task_schedule(task, true)  task与args做转换: dc_task_get_args 调度任务
+    return daos_der2errno(rc)
+  sem_post(&fs_handle->dpi_sem)   解锁信号量(+1,如果大于0,其他线程将被唤醒执行),唤醒线程（线程同步）: dfuse_progress_thread sem_wait(&fs_handle->dpi_sem)
+
+
+dc_array_write
+  daos_task_get_args task和args可互转
+  dc_array_io opc = DAOS_OPC_ARRAY_WRITE 操作码是写数组  读:DAOS_OPC_ARRAY_READ
+    array_hdl2ptr
+    io_extent_same
+    D_INIT_LIST_HEAD(&io_task_list)
+    daos_task_create(DAOS_OPC_ARRAY_GET_SIZE 短读任务 DAOS_OPC_ARRAY_READ
+    while (u < rg_iod->arr_nr) 遍历每个范围，但同时组合属于同一 dkey 的连续范围。 如果用户给出的范围不增加偏移量，则它们可能不会合并，除非分隔范围也属于同一个 dkey
+      compute_dkey 计算分布式key 在给定此范围的数组索引的情况下计算 dkey。 还计算从我们开始的索引开始，dkey 可以保存的记录数写作。 相对于 dkey 的记录索引
+      struct io_params *prev, *current 如果有多个dkey io, 则通过链表连接起来
+      num_ios++
+      d_iov_set(dkey, &params->dkey_val, sizeof(uint64_t));
+      d_iov_set(&iod->iod_name, &params->akey_val, 1);
+      compute_dkey 再次计算dkey
+      create_sgl 创建分散聚集列表
+      daos_task_create(DAOS_OPC_OBJ_FETCH 读: DAOS_OPC_ARRAY_READ 按索引号 -> dc_obj_fetch_task
+      daos_task_create(DAOS_OPC_OBJ_UPDATE 写 或 DAOS_OPC_ARRAY_PUNCH truncate dc_funcs[opc].task_func 客户端方法数组
+      daos_task_get_args
+      tse_task_register_deps 注册在计划任务之前需要完成的依赖任务。 依赖任务无法进行, 如果一个任务依赖于其他任务，只有依赖的任务完成了，才可以将任务添加到调度器列表中
+      tse_task_list_add(io_task, &io_task_list)  d_list_add_tail(&dtp->dtp_task_list, head); 添加任务到链表
+    tse_task_register_comp_cb(task, free_io_params_cb, &head, sizeof(head))  为任务注册完成回调
+    if (op_type == DAOS_OPC_ARRAY_READ && array->byte_array) 短读
+      tse_task_register_deps(task, 1, &stask) 注册依赖任务
+      tse_task_list_add(stask, &io_task_list) 加到io任务列表
+    tse_task_list_sched(&io_task_list, false); 调度执行
+    array_decref(array)
+    tse_task_register_cbs(stask, check_short_read_cb 读回调
+    tse_sched_progress(tse_task2sched(task)) 推进/处理
+
+
+check_short_read_cb
+
+通过以下对象连接
+.cpf_name =
+daos_opc_t
+dc_funcs[opc].task_func 客户端方法数组
+
+DAOS_OPC_OBJ_UPDATE 写
+  dc_obj_update_task DAOS_OBJ_RPC_UPDATE
+    obj_req_valid(task, args, DAOS_OBJ_RPC_UPDATE
+      obj_auxi = tse_task_stack_push(task, sizeof(*obj_auxi))
+      tse_task_stack_pop
+    dc_tx_attach(args->th, obj, DAOS_OBJ_RPC_UPDATE, task) 如果事务有效(hdl.cookie == 1), 则走dtx
+  dc_obj_update 否则
+      obj_task_init_common(task, DAOS_OBJ_RPC_UPDATE
+        tse_task_stack_push
+        shard_task_list_init(obj_auxi)
+      obj_rw_req_reassemb 重新组装
+      dkey_hash = obj_dkey2hash
+      obj_req_get_tgts 获取对象对应的目标
+        obj_dkey2grpmemb
+          obj_dkey2grpidx
+            pool_map_ver = pool_map_get_version(pool->dp_map)
+            grp_size = obj_get_grp_size(obj)
+            grp_idx = d_hash_jump(hash, obj->cob_shards_nr / grp_size) how hash generate? obj with pool
+        obj_shards_2_fwtgts
+          obj_shard_tgts_query 分片目标查询
+            obj_shard_open
+              dc_obj_shard_open
+                pool_map_find_target 二分查找
+                  comp_sorter_find_target(sorter, id)
+                    daos_array_find
+                      array_bin_search
+          obj_grp_leader_get
+            pl_select_leader obj_get_shard
+              array_bin_search 二分查找 daos_obj_classes
+      tse_task_register_comp_cb(task, obj_comp_cb, NULL, 0)
+      obj_csum_update(obj, args, obj_auxi)
+      obj_rw_bulk_prep
+      obj_req_fanout(obj, obj_auxi, dkey_hash, map_ver, epoch, shard_rw_prep, dc_obj_shard_rw, task)  扇出 shard_io_cb = io_cb = dc_obj_shard_rw
+
+
+ds_obj_rw_handler 接收端的回调
+  obj_ioc_begin 访问VOS前的各种检查
+  obj_rpc_is_fetch
+  process_epoch
+  obj_rpc_is_fetch
+  rc = dtx_begin 返回超时?
+    dtx_handle_init
+      dtx_shares_init(dth) 初始化以下链表, 提交,中断,活动,检查
+      dtx_epoch_bound
+      vos_dtx_rsrvd_init(dth)
+  obj_local_rw 本地读写
+
+
+创建任务, daos_task_create
+创建一个异步任务并将其与 daos 客户端操作相关联。 对于同步操作，请为该操作使用特定的 API。 通常，此 API 用于需要将一系列 daos 操作排队到 DAOS 异步引擎中的用例，这些任务之间的执行顺序具有特定的依赖性。 例如，用户可以创建任务来打开一个对象，然后使用插入到打开任务更新中的依赖项来更新该对象。 对于更简单的工作流程，用户可以使用基于事件的 API 而不是任务。
+
+
+dfuse_start
+  dfuse_progress_thread
+
+
+重要结构：
+
+tse_task_t	*io_task = NULL; io任务
+
+
+
+
+
+
+ubix:
+
+pool_map
+ufuse_cb_write position=0
+  ufuse_cb_write_complete 回调
+  ufs_write
+    dc_array_write
+    ubip_task_create UBIP_OPC_OBJ_UPDATE
+    dc_obj_update_task
+    dc_obj_update
+      obj_update_shards_get
+      obj_rw_bulk_prep
+      obj_req_fanout shard_rw_prep dc_obj_shard_rw = shard_io_cb 请求扇出
+        io_prep_cb shard_rw_prep 发送io前执行的回调
+        shard_io 分片IO
+          obj_shard_open
+            map_ver
+            dc_obj_shard_open 打开分片
+            dc_cont_tgt_idx2ptr 根据容器handler和taget索引，获取池的目标pool_target
+              pool
+              dc_hdl2pool
+                ubip_hhash_link_lookup(poh.cookie)
+              pool_map_find_target
+              dc_pool_put
+                ubip_hhash_link_putref
+              dc_cont_put
+          shard_auxi->shard_io_cb(obj_shard,...) -> dc_obj_shard_rw 对象分片读写回调
+          obj_shard_close
+
+
+
+import struct
+pool_target
+
+
+main
+ufuse_start
+  ufuse_lanuch_fuse
+    ll_loop_fn
+      ufuse_loop
+        start_one
+          ufuse_do_work
+            fuse_session_process_buf_int libfuse3.so.3
+              do_write_buf(req, in->nodeid, inarg, buf)
+                se->op.write_buf(req, nodeid, &bufv, arg->offset, &fi)
+                ufuse_cb_write step?
+
+
+
+
+dc_obj_shard_rw 客户端对象分片读写(读写对象分片)
+  obj_shard_ptr2pool(shard) 根据分片获取池
+  obj_req_create opc = UBIP_OBJ_RPC_UPDATE -> ds_obj_rw_handler
+  uuid_copy
+  ubip_dti_copy 拷贝dtx_id
+  跳过ec逻辑
+  tse_task_register_comp_cb
+  ubip_rpc_send
+    crt_req_send ubip_rpc_cb -> tse_task_complete 发送完成回调流程:hg -> crt_hg_req_send_cb -> crp_complete_cb -> -> ubip_rpc_cb -> dc_rw_cb
+
+超时检测和业务回调是在不同的线程中并发执行
+
+ds_obj_rw_handler
+  obj_rw_reply
+    obj_reply_set_status 与 obj_reply_get_status 成对使用
+      ((struct obj_rw_out *)reply)->orw_ret = status 设置回复状态
+
+
+怎么处理超时
+
+crt_swim_cli_cb
+ca_arrays
+
+
+tse 调度
+dc_task_create
+  sched = daos_ev2sched(ev) 事件转调度器
+  tse_task_create 初始化 tse_task。 该任务会被添加到调度器任务列表中，稍后被调度，如果提供了依赖任务，则该任务将被添加到依赖任务的dep列表中，一旦依赖任务完成，则添加该任务 到调度程序列表。
+  task_ptr2args 指针转参数
+    tse_task_buf_embedded 获取任务的嵌入式缓冲区，用户可以使用它来携带功能参数。 任务的嵌入式缓冲区有大小限制，如果 buf_size 大于限制，此函数将返回 NULL。 用户应通过 tse_task_set_priv() 使用私有数据来传递大参数。 MSC - 我将其更改为只是一个缓冲区，而不是像以前那样, 不断给一个额外的指针指向大的预涂层缓冲区。 以前的方式不适用于公共用途。我们现在应该使它更简单，更通用，如下面的评论
+      tse_task_buf_size
+        return (size + 7) & ~0x7
+  tse_task_register_comp_cb(task, task_comp_event, NULL, 0) dtc->dtc_cb = cb task_comp_event 注册完成回调
+    register_cb(task, true, comp_cb, arg, arg_size)
+      d_list_add(&dtc->dtc_list, &dtp->dtp_comp_cb_list) 插入到列表开始处
+
+
+
+
+执行任务的回调，如果所有的CB都执行完则返回true
+并且不重新启动任务。 如果任务被用户重新初始化，则意味着
+它又在飞行中，所以我们在重新初始化它的当前 CB 处中断，
+并返回 false，表示任务未完成。 所有剩余的 CB
+未执行的仍然附加，但已执行的
+此时已经从列表中删除
+tse_task_complete_callback
+  ret = dtc->dtc_cb(task, dtc->dtc_arg); task_comp_event
+
+
+
+
+crt_rpc_completed call 2？ 重复完成，duplicated completions
+
+ubip_rpc_db
+ubip_rpc_complete
+  tse_task_complete
+    tse_sched_process_complete(dsp)
+      post_procee
+        tse_task_complete_callback
+          dtc_cb 执行注册时的回调 register_cb -> dc_rw_cb
+          task_comp_event
+            event_complete
+              complete_locked
+                ubip_event_complete_cb
+                  d_list_for_each_entry_safe
+                  d_list_del_init
+                  __gurt_list_del
+
+dc_rw_cb 
+  opc_get
+  UBIP_FAIL_CHECK
+dc_obj_shard_rw
+  tse_task_register_comp_cb(task, dc_rw_cb...)  dtc->dtc_cb = cb   <- tse_task_complete_callback
+    dc_rw_cb
+      rc = obj_reply_get_status  DER_SHUTDOWN(-2017) | DER_IO(-2001) 2008 NOTLEADER
+        ((struct obj_rw_out *)reply)->orw_ret
+
+dc_task_schedule
+  task_is_valid
+  daos_event_launch
+  tse_task_schedule
+    tse_task_schedule_with_delay 与 tse_task_schedule 相同，如果 instant 为 false，则期望任务不会在 delay 微秒内执行。
+
+daos_event_comp_list 事件完成列表
+
+
+dc_rw_cb DER_NO_HDL 'Invalid handle' 1002 追rc
+  opc = OBJ_RPC_UPDATE = 0
+  rc = obj_reply_get_status orw_ret
+
+
+
+
+crt_ctx_epi_abort
+  crt_rpc_complete
+
+
+StorageFormat 在请求的主机列表中提供的所有主机或所有已配置的主机（如果未明确指定）并发执行存储准备步骤。 该函数会阻塞，直到收到所有结果（成功或失败），并返回一个包含所有主机存储准备操作结果的响应结构。
+dmg storage format  Format SCM and NVMe storage attached to remote servers.
+type storageFormatCmd struct
+func (cmd *storageFormatCmd) Execute
+  func StorageFormat
+    checkFormatReq
+
+
+
+dc_pool_query
+
+
+daos_event_init
+  D_CASSERT
+  D_INIT_LIST_HEAD(&evx->evx_child);
+	D_INIT_LIST_HEAD(&evx->evx_link);
+	D_INIT_LIST_HEAD(&evx->evx_callback.evx_comp_list);
+  eqx = daos_eq_lookup(eqh)
+    hlink = daos_hhash_link_lookup(eqh.cookie)
+      d_hhash_link_lookup(daos_ht.dht_hhash, key)
+  daos_eq_putref(eqx)
+
+
+
+daos_hhash_init_feats
+  d_hhash_create dht_hhash
+
+
+dfuse_fs_init
+  daos_eq_create
+    daos_eq_insert
+
+
+
+读
+dc_array_read
+  dc_array_io DAOS_OPC_ARRAY_READ
+
+
+
+读
+dc_obj_fetch_task
+  obj_req_valid 校验请求
+  obj_task_init
+  obj_req_with_cond_flags
+    obj_cond_fetch_prep 预处理, 将 obj 任务拆分为多个子任务
+  obj_fetch_shards_get
+  obj_shards_2_fwtgts
+  obj_csum_fetch
+  obj_rw_bulk_prep
+  obj_req_fanout shard_rw_prep dc_obj_shard_rw 请求扇出
+
+
+重复完成 coredump
+dfuse_ops
+.lookup		= df_ll_lookup 按名称查找目录条目并获取其属性
+df_ll_lookup
+  // 查inodes表
+  d_hash_rec_find(&fs_handle->dpi_iet, &parent, sizeof(parent))  d_hash_rec_insert(&fs_handle->dpi_iet 插入hash表
+  parent_inode->ie_dfs->dfs_ops->lookup(req, parent_inode, name) 调用父节点的查找方法
+    dfuse_cb_lookup
+  d_hash_rec_decref(&fs_handle->dpi_iet, rlink)
+
+ufuse_cb_getattr 先获取属性
+dfuse_dfs_ops
+.lookup		= dfuse_cb_lookup
+分配ie
+dfs_lookupx 查询条目,获取属性, 生成?
+  dfs_lookup_rel_int
+    check_name 检查文件名和文件名长度
+    get_daos_obj_mode 返回对象模式, 只读|读写
+    fetch_entry 获取条目/查条目
+      d_iov_set(&dkey, (void *)name, len)
+      d_iov_set(&iod->iod_name, INODE_AKEY_NAME
+      DAOS_IOD_ARRAY
+      sgl->sg_iovs	= sg_iovs
+      daos_obj_fetch 从数组中查询对象 ioms: 存储缓冲层(接收缓冲区)
+        dc_obj_fetch_task_create 创建获取任务
+          DAOS_API_ARG_ASSERT(*args, OBJ_FETCH) 通过断言检查参数预定义大小和传入的参数大小
+          dc_task_create(dc_obj_fetch_task, tse, ev, task) dc_obj_fetch_task -> func -> task_func -> dtp_func daos任务私有回调
+            daos_event_priv_get(&ev) 获取基于线程的私有事件, static __thread daos_event_t	ev_thpriv; 线程私有数据
+            sched = daos_ev2sched(ev)
+            tse_task_create
+        dc_task_schedule
+    switch (entry.mode & S_IFMT) 判断条目类型 文件,符号链接, 
+      daos_array_open_with_attr 普通文件 S_IFREG
+        dc_array_open
+          daos_task_create(DAOS_OPC_OBJ_OPEN 创建对象打开任务, 创建一个异步任务并将其与 daos 客户端操作相关联。 对于同步操作，请为该操作使用特定的 API。 通常，此 API 用于需要将一系列 daos 操作排队到 DAOS 异步引擎中的用例，这些任务之间的执行顺序具有特定的依赖性。 例如，用户可以创建任务来打开一个对象，然后使用插入到打开任务更新中的依赖项来更新该对象。 对于更简单的工作流程，用户可以使用基于事件的 API 而不是任务
+          tse_task_register_deps 注册依赖任务
+            for num_deps 遍历依赖任务数量
+              tse_task_add_dependent(task, dep_tasks[i])
+                Add dependent 依赖 -> 主任务
+                  d_list_add_tail(&tlink->tl_link, &dep_dtp->dtp_dep_list) 添加到依赖链表
+          tse_task_register_comp_cb(task, open_handle_cb 注册打开完成回调
+          tse_task_schedule(open_task, false) 调度任务
+          tse_sched_progress(tse_task2sched(task)) 推进任务
+          daos_task_create(DAOS_OPC_OBJ_FETCH 查看元数据
+atomic_store_relaxed(&ie->ie_ref, 1); 初始化引用计数 原子操作
+dfs_obj2id 文件系统转daos对象 128位(32+96)
+dfuse_compute_inode
+S_ISDIR 目录
+  check_for_uns_ep 统一命名空间
+dfuse_reply_entry
+
+io故障
+
+打开回调
+open_handle_cb
+  open_with_attr = 1
+  array_hdl_link(array) 
+  *args->oh = array_ptr2hdl(array)
+    ubip_hhash_link_lookup(oh.cookie) 根据key查找hash表
+
+
+dc_array_set_size
+
+
+0x00001 ----> oh
+
+
+
+dc_array_get_size
+dc_array_stat
+DAOS_OPC_OBJ_QUERY_KEY DAOS_OBJ_RPC_QUERY_KEY
+dc_obj_query_key
+  obj_task_init(api_task, DAOS_OBJ_RPC_QUERY_KEY
+  queue_shard_query_key_task
+    shard_query_key_task // 客户端pool map err
+    dc_obj_shard_query_key
+      obj_shard_query_key_cb
+
+
+opc=0x4090009 DAOS_OBJ_RPC_QUERY_KEY 查键
+ds_obj_query_key_handler_1
+
+全局rpc操作码: cg_opc_map
+
+
+open shard
+obj_shard_open 18
+
+
+shard_query_key_task
+
+daos_task_create(DAOS_OPC_OBJ_QUERY_KEY
+
+
+dc_obj_open_task_create
+  dc_task_create(dc_obj_open, "obj open")
+  
+
+
+obj_rw_req_reassemb 重新组装对象读写请求
+
+
