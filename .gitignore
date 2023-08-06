@@ -66,3 +66,4 @@ utils/githooks/*.d/*-user-*
 src/include/daos_version.h
 
 build_external_debug_cache
+cache/

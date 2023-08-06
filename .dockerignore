@@ -5,6 +5,8 @@
 # just generate noise and extra work for docker.
 *
 !src
+!cache
+!cache_tgz
 !utils/build.config
 !utils/certs
 !utils/ci

@@ -84,6 +84,8 @@ COPY --chown=daos_server:daos_server SConstruct .
 COPY --chown=daos_server:daos_server site_scons/prereq_tools site_scons/prereq_tools
 COPY --chown=daos_server:daos_server site_scons/components site_scons/components
 COPY --chown=daos_server:daos_server utils/build.config utils/
+COPY --chown=daos_server:daos_server cache_tgz cache.tgz
+RUN tar -zxf cache.tgz && rm -f cache.tgz
 
 # Control what to build.  By default Dockerfiles build everything to allow for
 # ease-of-use for users, however in CI everything is turned off and then
@@ -152,6 +154,7 @@ ENV FI_SOCKETS_MAX_CONN_RETRY=1
 WORKDIR /home/daos/daos/src/client/java
 
 ARG DAOS_JAVA_BUILD=$DAOS_BUILD
+ARG DAOS_JAVA_BUILD="no"
 
 RUN [ "$DAOS_JAVA_BUILD" != "yes" ] || {                                                      \
         mkdir /home/daos/.m2 &&                                                               \

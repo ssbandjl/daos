@@ -135,6 +135,13 @@ docker run -it -d --privileged --cap-add=ALL --name centos  -p 22222:22 -p 5555:
 docker run -it -d --privileged --cap-add=ALL --name daos1 -v /home/xb/project/stor/daos/origin/docker/daos:/home/xb/project/stor/daos/origin/docker/daos -v /dev:/dev -v /dev/hugepages:/dev/hugepages -v /sys/fs/cgroup:/sys/fs/cgroup:ro daos:2.0.1
 docker exec -u root -it daos1 bash -c 'cd /home/daos;exec "${SHELL:-sh}"'
 
+main:
+docker run -it -d --privileged --cap-add=ALL --name daos_main1 -v /root/project/stor/daos/main/daos:/root/project/stor/daos/main/daos -v /dev:/dev -v /dev/hugepages:/dev/hugepages -v /sys/fs/cgroup:/sys/fs/cgroup:ro daos:latest
+docker exec -u root -it daos_main1 bash -c 'cd /root/project/stor/daos/main/daos;exec "${SHELL:-sh}"'
+
+
+
+
 
 docker exec -it -u root server /bin/bash
 export FI_LOG_LEVEL=debug
@@ -345,8 +352,10 @@ struct ofi_prov		*next: 提供者是一个单向链表
 
 
 
-scons build:
+scons build, -> site_scons/prereq_tools/base.py -> 
 require -> comp_def.configure() -> comp_def.build -> if has_changes or self.has_missing_targets
+
+
 
 rebuild mercury, site_scons/prereq_tools/base.py, 
 def _has_changes(self)
@@ -1404,4 +1413,14 @@ dc_obj_open_task_create
 
 obj_rw_req_reassemb 重新组装对象读写请求
 
+
+编译镜像: docker build  . -f utils/docker/Dockerfile.el.8 -t daos
+
+
+components:
+site_scons/components/__init__.py
+
+cache:
+RUN: git clone https://github.com/pmodels/argobots.git /home/daos/pre/build/external/release/argobots
+tar -zcvf cache.tgz cache
 

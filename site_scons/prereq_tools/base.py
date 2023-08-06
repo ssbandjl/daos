@@ -44,6 +44,10 @@ from SCons.Script import BUILD_TARGETS
 from SCons.Errors import InternalError
 
 
+# cache_dir = '/home/daos/pre/cache' # for docker image
+cache_dir = 'cache' # for docker container scons build
+
+
 class DownloadFailure(Exception):
     """Exception raised when source can't be downloaded
 
@@ -292,7 +296,19 @@ No commit_versions entry in utils/build.config for
 build with random upstream changes.
 *********************** ERROR ************************\n""")
             raise DownloadFailure(self.url, subdir)
-
+        com_name=subdir.split("/")[-1]
+        dir_name_cache = "%s/%s" %(cache_dir, com_name)
+        print("com_name:{}, dir_name_cache:{}, subdir:{}".format(com_name, dir_name_cache, subdir))
+        commands=None
+        if os.path.isdir(dir_name_cache):
+        #   commands = ['cp -r %s %s' %(dir_name_cache,subdir)]
+          commands = [['cp', '-r', dir_name_cache, subdir]]
+          print("use cache, dir_name_cache:%s, url:%s, subdir:%s" %(dir_name_cache, self.url, subdir))
+        else:
+          commands = [['git', 'clone', self.url, subdir]]
+        if not RUNNER.run_commands(commands):
+            raise DownloadFailure(self.url, subdir)
+        
         if not os.path.exists(subdir):
             commands = [['git', 'clone', self.url, subdir]]
             if not RUNNER.run_commands(commands):
