@@ -24,4 +24,5 @@
 rm -f cache_tgz
 cd ../ && tar -zcvf cache_tgz cache
 cp cache_tgz daos/
-
+rm -rf daos/cache
+cp -r cache daos/

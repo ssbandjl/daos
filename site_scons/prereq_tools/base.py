@@ -300,7 +300,11 @@ build with random upstream changes.
         dir_name_cache = "%s/%s" %(cache_dir, com_name)
         print("com_name:{}, dir_name_cache:{}, subdir:{}".format(com_name, dir_name_cache, subdir))
         commands=None
-        if os.path.isdir(dir_name_cache):
+        
+        if os.path.exists(subdir):
+            return 
+        
+        if not os.path.exists(subdir) and os.path.isdir(dir_name_cache):
         #   commands = ['cp -r %s %s' %(dir_name_cache,subdir)]
           commands = [['cp', '-r', dir_name_cache, subdir]]
           print("use cache, dir_name_cache:%s, url:%s, subdir:%s" %(dir_name_cache, self.url, subdir))
