@@ -67,3 +67,6 @@ src/include/daos_version.h
 
 build_external_debug_cache
 cache/
+
+xb/write
+xb/write_file

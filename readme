@@ -1,4 +1,5 @@
 daos开发文档: https://docs.daos.io/v2.5/dev/development/
+daos开发文档_容器增删改查: https://docs.daos.io/v2.5/user/container/
 公共组件: https://github.com/daos-stack/daos/tree/master/src/common
 
 https://github.com/ssbandjl/daos.git
@@ -1439,12 +1440,38 @@ cache:
 RUN: git clone https://github.com/pmodels/argobots.git /home/daos/pre/build/external/release/argobots
 tar -zcvf cache.tgz cache
 
-rocky:
-yum install -y vim net-tools
+rocky8:
+yum install -y vim net-tools gdb
 
 
 cp daos_server_docker_main.yml /opt/daos/etc/daos_server.yml
 mkdir -p /etc/daos/certs
 cp -r daosCA/certs/* /etc/daos/certs/
+
+
+write.c, new, 
+master: src/client/dfuse/dfuse_main.c:659 -> main
+...
+start_one(struct dfuse_tm *dtm)
+pthread_create(&dt->dt_id, NULL, dfuse_do_work, dt)
+dfuse_do_work
+  fuse_session_process_buf_int -> 处理通用缓冲区中提供的原始请求 fusion_buf 可能包含内存缓冲区或管道文件描述符
+  dfuse_cb_write
+    dfuse_mcache_evict
+    d_slab_acquire
+    fuse_buf_copy
+    dfs_write
+      daos_array_write(obj->oh, DAOS_TX_NONE, &iod, sgl, ev)
+        dc_task_create(dc_array_write, NULL, ev, &task) -> tse 创建任务
+
+    sem_post
+    d_slab_restock
+    return
+
+
+...
+daos_progress
+  tse_sched_progress(sched)
+
 
 
