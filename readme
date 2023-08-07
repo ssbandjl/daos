@@ -117,6 +117,9 @@ git clone --recurse-submodules https://github.com/daos-stack/daos.git -b v2.0.1
 docker build  . -f utils/docker/Dockerfile.centos.7 -t daos
 
 
+预留大页: 
+echo 4096 >/sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages; cat /proc/meminfo|grep -i huge
+
 docker stop server && docker rm server
 docker run -it -d --privileged --cap-add=ALL --name server -v /root/github/storage/daos/origin/docker:/home/daos/docker -v /dev:/dev -v /dev/hugepages:/dev/hugepages -v /sys/fs/cgroup:/sys/fs/cgroup:ro daos:2.0.1
 
@@ -138,6 +141,10 @@ docker exec -u root -it daos1 bash -c 'cd /home/daos;exec "${SHELL:-sh}"'
 main:
 docker run -it -d --privileged --cap-add=ALL --name daos_main1 -v /root/project/stor/daos/main/daos:/root/project/stor/daos/main/daos -v /dev:/dev -v /dev/hugepages:/dev/hugepages -v /sys/fs/cgroup:/sys/fs/cgroup:ro daos:latest
 docker exec -u root -it daos_main1 bash -c 'cd /root/project/stor/daos/main/daos;exec "${SHELL:-sh}"'
+
+main_133:
+docker run -it -d --privileged --cap-add=ALL --name daos_main1 -v /home/xb/project/stor/daos/main/daos:/home/xb/project/stor/daos/main/daos -v /dev:/dev -v /dev/hugepages:/dev/hugepages -v /sys/fs/cgroup:/sys/fs/cgroup:ro daos:latest
+docker exec -u root -it daos_main1 bash -c 'cd /home/xb/project/stor/daos/main/daos;exec "${SHELL:-sh}"'
 
 
 
@@ -195,6 +202,14 @@ daos container create --pool sxb --type POSIX --label sxb
 daos container --verbose query -p sxb -c sxb
 daos container create sxb --type POSIX sxb #### 2.3, daos [OPTIONS] container create [create-OPTIONS] [pool label or UUID] [label]
 daos container query sxb sxb --verbose
+
+
+
+新版本创建容器: daos container create sxb --type POSIX sxb
+
+查询容器: daos cont list sxb --verbose; daos cont query sxb sxb
+
+
 
 systemd
 $ cat ~/.config/systemd/user/samirrav_dfuse.service
@@ -324,7 +339,7 @@ dmg server set-logmasks debug
 umount /mnt/sxb
 
 mkdir /mnt/sxb
-dfuse --m=/mnt/sxb --pool=sxb --cont=sxb
+dfuse --m=/mnt/sxb --pool=sxb --cont=sxb   # main: dfuse /mnt/sxb --pool=sxb --cont=sxb
 cd /mnt/sxb
 
 for i in {0..5};do
@@ -1423,4 +1438,13 @@ site_scons/components/__init__.py
 cache:
 RUN: git clone https://github.com/pmodels/argobots.git /home/daos/pre/build/external/release/argobots
 tar -zcvf cache.tgz cache
+
+rocky:
+yum install -y vim net-tools
+
+
+cp daos_server_docker_main.yml /opt/daos/etc/daos_server.yml
+mkdir -p /etc/daos/certs
+cp -r daosCA/certs/* /etc/daos/certs/
+
 
