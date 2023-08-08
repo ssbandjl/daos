@@ -934,7 +934,13 @@ ufuse_main.c -> main dfuse_main.c
           crt_context_init
       daos_eq_insert(eqx)
       daos_eq_handle(eqx, eqh)
-      tse_sched_init(&eqx->eqx_sched, NULL, eqx->eqx_ctx)
+      tse_sched_init(&eqx->eqx_sched, NULL, eqx->eqx_ctx) -> 初始化调度器 -> struct tse_sched_private -> 调度器及队列,属性等
+        D_INIT_LIST_HEAD(&dsp->dsp_init_list); -> 初始队列
+        D_INIT_LIST_HEAD(&dsp->dsp_running_list); -> 运行队列
+        D_INIT_LIST_HEAD(&dsp->dsp_complete_list) -> 完成队列
+        D_INIT_LIST_HEAD(&dsp->dsp_sleeping_list) -> 睡眠队列
+        D_INIT_LIST_HEAD(&dsp->dsp_comp_cb_list); -> 完成回调队列
+        tse_sched_register_comp_cb(sched, comp_cb, udata)
     sem_init
   duns_resolve_path
   dfuse_pool_connect
@@ -1186,12 +1192,12 @@ crt_swim_cli_cb
 ca_arrays
 
 
-tse 调度
+tse: 调度, 1300+400
 dc_task_create
   sched = daos_ev2sched(ev) 事件转调度器
   tse_task_create(func, sched, NULL, &task) -> 初始化 tse_task。 该任务(task)会被添加到调度器(sched)任务列表中，稍后被调度，如果提供了依赖任务，则该任务将被添加到依赖任务的dep列表中，一旦依赖任务完成，则添加该任务到调度程序列表(先完成依赖任务, 然后添加主任务)
   task_ptr2args 指针转参数
-    D_INIT_LIST_HEAD(&dtp->dtp_list) -> 初始化任务链表
+    D_INIT_LIST_HEAD(&dtp->dtp_list) -> 初始化任务链表, 调度时插入到调度器的初始化队列(dsp_init_list) -> d_list_add_tail(&dtp->dtp_list, &dsp->dsp_init_list)
     D_INIT_LIST_HEAD(&dtp->dtp_task_list)
   	D_INIT_LIST_HEAD(&dtp->dtp_dep_list)
 	  D_INIT_LIST_HEAD(&dtp->dtp_comp_cb_list)
@@ -1221,21 +1227,35 @@ tse_task_complete_callback
   ret = dtc->dtc_cb(task, dtc->dtc_arg); task_comp_event
 
 
+rpc发送回调 / ...
+tse_task_complete
+  done = tse_task_complete_callback(task) -> 执行回调, 执行任务的回调，如果所有CB都执行完毕，则返回true，并且不重新初始化任务。 如果任务被用户重新初始化，则意味着它再次处于运行状态，因此我们在重新初始化它的当前 CB 处中断，并返回 false，
+意思是任务没有完成。 所有剩余未执行的 CB 仍保持附加状态，但已执行的 CB 此时已从列表中删除
+    d_list_for_each_entry_safe(dtc, tmp, &dtp->dtp_comp_cb_list, dtc_list) -> 遍历任务的完成列表
+    d_list_del(&dtc->dtc_list) -> 将任务从完成队列摘下来
+    ret = dtc->dtc_cb(task, dtc->dtc_arg) -> 执行任务注册时设置的回调, 参考 -> d_list_add(&dtc->dtc_list, &dtp->dtp_comp_cb_list)
+  D_MUTEX_LOCK(&dsp->dsp_lock) -> 锁调度器
+  tse_task_complete_locked(dtp, dsp)
+    d_list_move_tail(&dtp->dtp_list, &dsp->dsp_complete_list) -> 完成后, 将任务移动到调度器的完成队列
 
 
 crt_rpc_completed call 2？ 重复完成，duplicated completions
 
-ubip_rpc_db
-ubip_rpc_complete
+daos_rpc_send -> crt_req_send(rpc, daos_rpc_cb, task)
+daos_rpc_cb
   tse_task_complete
     tse_sched_process_complete(dsp)
       post_procee
         tse_task_complete_callback
           dtc_cb 执行注册时的回调 register_cb -> dc_rw_cb
-          task_comp_event
+          task_comp_event -> daos_event_complete(task_ptr2args(task)->ta_ev, task->dt_result)
+            eqx = daos_eq_lookup(evx->evx_eqh)
+            daos_event_complete_locked(eqx, evx, rc) -> master
+            daos_event_complete_cb(evx, rc)
+            ...
             event_complete
               complete_locked
-                ubip_event_complete_cb
+                daos_event_complete_cb
                   d_list_for_each_entry_safe
                   d_list_del_init
                   __gurt_list_del
@@ -1259,7 +1279,3061 @@ dc_task_schedule
       dtp->dtp_wakeup_time = daos_getutime() + delay -> 延迟执行
       tse_task_insert_sleeping(dtp, dsp)
       ...
-      dtp->dtp_func(task) -> 立即执行任务
+      dtp->dtp_func(task) -> 准备好了, 立即执行任务
+
+daos_event_comp_list 事件完成列表
+
+
+dc_rw_cb DER_NO_HDL 'Invalid handle' 1002 追rc
+  opc = OBJ_RPC_UPDATE = 0
+  rc = obj_reply_get_status orw_ret
+
+
+
+
+crt_ctx_epi_abort
+  crt_rpc_complete
+
+
+StorageFormat 在请求的主机列表中提供的所有主机或所有已配置的主机（如果未明确指定）并发执行存储准备步骤。 该函数会阻塞，直到收到所有结果（成功或失败），并返回一个包含所有主机存储准备操作结果的响应结构。
+dmg storage format  Format SCM and NVMe storage attached to remote servers.
+type storageFormatCmd struct
+func (cmd *storageFormatCmd) Execute
+  func StorageFormat
+    checkFormatReq
+
+
+
+dc_pool_query
+
+
+daos_event_init
+  D_CASSERT
+  D_INIT_LIST_HEAD(&evx->evx_child);
+	D_INIT_LIST_HEAD(&evx->evx_link);
+	D_INIT_LIST_HEAD(&evx->evx_callback.evx_comp_list);
+  eqx = daos_eq_lookup(eqh)
+    hlink = daos_hhash_link_lookup(eqh.cookie)
+      d_hhash_link_lookup(daos_ht.dht_hhash, key)
+  daos_eq_putref(eqx)
+
+
+
+daos_hhash_init_feats
+  d_hhash_create dht_hhash
+
+
+dfuse_fs_init
+  daos_eq_create
+    daos_eq_insert
+
+
+
+读
+dc_array_read
+  dc_array_io DAOS_OPC_ARRAY_READ
+
+
+
+读
+dc_obj_fetch_task
+  obj_req_valid 校验请求
+  obj_task_init
+  obj_req_with_cond_flags
+    obj_cond_fetch_prep 预处理, 将 obj 任务拆分为多个子任务
+  obj_fetch_shards_get
+  obj_shards_2_fwtgts
+  obj_csum_fetch
+  obj_rw_bulk_prep
+  obj_req_fanout shard_rw_prep dc_obj_shard_rw 请求扇出
+  ...
+obj_task_complete(task, rc)
+
+重复完成 coredump
+dfuse_ops
+.lookup		= df_ll_lookup 按名称查找目录条目并获取其属性
+df_ll_lookup
+  // 查inodes表
+  d_hash_rec_find(&fs_handle->dpi_iet, &parent, sizeof(parent))  d_hash_rec_insert(&fs_handle->dpi_iet 插入hash表
+  parent_inode->ie_dfs->dfs_ops->lookup(req, parent_inode, name) 调用父节点的查找方法
+    dfuse_cb_lookup
+  d_hash_rec_decref(&fs_handle->dpi_iet, rlink)
+
+ufuse_cb_getattr 先获取属性
+dfuse_dfs_ops
+.lookup		= dfuse_cb_lookup
+分配ie
+dfs_lookupx 查询条目,获取属性, 生成?
+  dfs_lookup_rel_int
+    check_name 检查文件名和文件名长度
+    get_daos_obj_mode 返回对象模式, 只读|读写
+    fetch_entry 获取条目/查条目
+      d_iov_set(&dkey, (void *)name, len)
+      d_iov_set(&iod->iod_name, INODE_AKEY_NAME
+      DAOS_IOD_ARRAY
+      sgl->sg_iovs	= sg_iovs
+      daos_obj_fetch 从数组中查询对象 ioms: 存储缓冲层(接收缓冲区)
+        dc_obj_fetch_task_create 创建获取任务
+          DAOS_API_ARG_ASSERT(*args, OBJ_FETCH) 通过断言检查参数预定义大小和传入的参数大小
+          dc_task_create(dc_obj_fetch_task, tse, ev, task) dc_obj_fetch_task -> func -> task_func -> dtp_func daos任务私有回调
+            daos_event_priv_get(&ev) 获取基于线程的私有事件, static __thread daos_event_t	ev_thpriv; 线程私有数据
+            sched = daos_ev2sched(ev)
+            tse_task_create
+        dc_task_schedule(task, true) -> 调度,要求立即执行
+          tse_task_schedule(task, instant)
+        if (daos_event_is_priv(ev)) -> 有私有事件
+          daos_event_priv_wait() -> 等事件
+            crt_progress_cond(evx->evx_ctx, ev_prog_timeout, ev_progress_cb, &epa)
+              HG_Trigger -> HG_Core_trigger -> hg_core_forward_cb -> daos_rpc_cb -> tse_task_complete
+
+    switch (entry.mode & S_IFMT) 判断条目类型 文件,符号链接, 
+      daos_array_open_with_attr 普通文件 S_IFREG
+        dc_array_open
+          daos_task_create(DAOS_OPC_OBJ_OPEN 创建对象打开任务, 创建一个异步任务并将其与 daos 客户端操作相关联。 对于同步操作，请为该操作使用特定的 API。 通常，此 API 用于需要将一系列 daos 操作排队到 DAOS 异步引擎中的用例，这些任务之间的执行顺序具有特定的依赖性。 例如，用户可以创建任务来打开一个对象，然后使用插入到打开任务更新中的依赖项来更新该对象。 对于更简单的工作流程，用户可以使用基于事件的 API 而不是任务
+          tse_task_register_deps 注册依赖任务
+            for num_deps 遍历依赖任务数量
+              tse_task_add_dependent(task, dep_tasks[i])
+                Add dependent 依赖 -> 主任务
+                  d_list_add_tail(&tlink->tl_link, &dep_dtp->dtp_dep_list) 添加到依赖链表
+          tse_task_register_comp_cb(task, open_handle_cb 注册打开完成回调
+          tse_task_schedule(open_task, false) 调度任务
+          tse_sched_progress(tse_task2sched(task)) 推进任务
+          daos_task_create(DAOS_OPC_OBJ_FETCH 查看元数据
+atomic_store_relaxed(&ie->ie_ref, 1); 初始化引用计数 原子操作
+dfs_obj2id 文件系统转daos对象 128位(32+96)
+dfuse_compute_inode
+S_ISDIR 目录
+  check_for_uns_ep 统一命名空间
+dfuse_reply_entry
+
+io故障
+
+打开回调
+open_handle_cb
+  open_with_attr = 1
+  array_hdl_link(array) 
+  *args->oh = array_ptr2hdl(array)
+    ubip_hhash_link_lookup(oh.cookie) 根据key查找hash表
+
+
+dc_array_set_size
+
+
+0x00001 ----> oh
+
+
+
+dc_array_get_size
+dc_array_stat
+DAOS_OPC_OBJ_QUERY_KEY DAOS_OBJ_RPC_QUERY_KEY
+dc_obj_query_key
+  obj_task_init(api_task, DAOS_OBJ_RPC_QUERY_KEY
+  queue_shard_query_key_task
+    shard_query_key_task // 客户端pool map err
+    dc_obj_shard_query_key
+      obj_shard_query_key_cb
+
+
+opc=0x4090009 DAOS_OBJ_RPC_QUERY_KEY 查键
+ds_obj_query_key_handler_1
+
+全局rpc操作码: cg_opc_map
+
+
+open shard
+obj_shard_open 18
+
+
+shard_query_key_task
+
+daos_task_create(DAOS_OPC_OBJ_QUERY_KEY
+
+
+dc_obj_open_task_create
+  dc_task_create(dc_obj_open, "obj open")
+  
+
+
+obj_rw_req_reassemb 重新组装对象读写请求
+
+
+编译镜像: docker build  . -f utils/docker/Dockerfile.el.8 -t daos
+
+
+components:
+site_scons/components/__init__.py
+
+cache:
+RUN: git clone https://github.com/pmodels/argobots.git /home/daos/pre/build/external/release/argobots
+tar -zcvf cache.tgz cache
+
+rocky8:
+yum install -y vim net-tools gdb
+
+
+cp daos_server_docker_main.yml /opt/daos/etc/daos_server.yml
+mkdir -p /etc/daos/certs
+cp -r daosCA/certs/* /etc/daos/certs/
+
+
+write.c, new, 
+master: src/client/dfuse/dfuse_main.c:659 -> main
+...
+start_one(struct dfuse_tm *dtm)
+pthread_create(&dt->dt_id, NULL, dfuse_do_work, dt)
+dfuse_do_work
+  fuse_session_process_buf_int -> 处理通用缓冲区中提供的原始请求 fusion_buf 可能包含内存缓冲区或管道文件描述符
+  dfuse_cb_write
+    dfuse_mcache_evict
+    d_slab_acquire
+    fuse_buf_copy
+    dfs_write
+      daos_array_write(obj->oh, DAOS_TX_NONE, &iod, sgl, ev)
+        dc_task_create(dc_array_write, NULL, ev, &task) -> tse 创建任务
+
+    sem_post
+    d_slab_restock
+    return
+
+
+...
+daos_progress
+  tse_sched_progress(sched)
+
+
+
+tse_task_list_traverse -> 遍历列表 \a head 上的所有任务，对每个任务调用参数为 \a arg 的 \a cb。 用户可以自由地从\a cb执行中的列表\a head中删除任务
+
+depend_task, 遍历, event_queue, 40%, 
+
+
+obj_shard_task_sched(obj_auxi, epoch);
+
+
+
+#0  tse_task_complete_callback (task=task@entry=0x7f68ec004d20) at src/common/tse.c:515
+...
+#0  tse_task_complete (task=0x7f68ec004d20, ret=0) at src/common/tse.c:858
+#1  0x00007f693ce7cf48 in daos_rpc_cb (cb_info=<optimized out>) at src/client/api/rpc.c:24
+#2  0x00007f693b13bd8a in crt_hg_req_send_cb (hg_cbinfo=<optimized out>) at src/cart/crt_hg.c:1364
+#3  0x00007f693a2e34ce in hg_core_forward_cb (callback_info=<optimized out>) at /home/xb/project/stor/daos/main/daos/build/external/debug/mercury/src/mercury.c:990
+#4  0x00007f693a2f3034 in hg_core_trigger_entry (hg_core_handle=0x5608ec45c780) at /home/xb/project/stor/daos/main/daos/build/external/debug/mercury/src/mercury_core.c:5406
+#5  hg_core_trigger (context=0x5608ec2c9500, timeout_ms=timeout_ms@entry=0, max_count=max_count@entry=256, actual_count_p=actual_count_p@entry=0x7f68f3ffda54) at /home/xb/project/stor/daos/main/daos/build/external/debug/mercury/src/mercury_core.c:5267
+#6  0x00007f693a2fbdbb in HG_Core_trigger (context=<optimized out>, timeout=timeout@entry=0, max_count=max_count@entry=256, actual_count_p=actual_count_p@entry=0x7f68f3ffda54)
+    at /home/xb/project/stor/daos/main/daos/build/external/debug/mercury/src/mercury_core.c:6419
+#7  0x00007f693a2e748e in HG_Trigger (context=context@entry=0x5608ec266b70, timeout=timeout@entry=0, max_count=max_count@entry=256, actual_count_p=actual_count_p@entry=0x7f68f3ffda54)
+    at /home/xb/project/stor/daos/main/daos/build/external/debug/mercury/src/mercury.c:2197
+#8  0x00007f693b1490e9 in crt_hg_progress (hg_ctx=hg_ctx@entry=0x5608ec253b18, timeout=timeout@entry=0) at src/cart/crt_hg.c:1540
+#9  0x00007f693b0f9eea in crt_progress_cond (crt_ctx=0x5608ec253b00, timeout=timeout@entry=0, cond_cb=cond_cb@entry=0x7f693ce6732b <ev_progress_cb>, arg=arg@entry=0x7f68f3ffdb00) at src/cart/crt_context.c:1668
+#10 0x00007f693ce712f3 in daos_event_priv_wait () at src/client/api/event.c:1276
+#11 0x00007f693ce7e93c in dc_task_schedule (task=<optimized out>, instant=instant@entry=true) at src/client/api/task.c:124  -> 执行任务主体函数: dc_obj_fetch_task -> 请求扇出 -> 走网络send接口, 发送完成后, 通过trigger调发送回调: daos_rpc_cb
+# dc_obj_fetch_task_create -> dc_task_create(dc_obj_fetch_task, tse, ev, task)
+#12 0x00007f693ce77e72 in daos_obj_fetch (oh=..., oh@entry=..., th=..., th@entry=..., flags=flags@entry=8, dkey=dkey@entry=0x7f68f3ffdc30, nr=nr@entry=1, iods=<optimized out>, sgls=0x7f68f3ffdc10, maps=0x0, ev=0x0) at src/client/api/object.c:170
+#13 0x00007f693c7377b7 in fetch_entry (ver=<optimized out>, oh=..., th=..., th@entry=..., name=<optimized out>, name@entry=0x7f68ec0045c0 "write_test_file", len=len@entry=15, fetch_sym=fetch_sym@entry=false, exists=0x7f68f3ffde47, entry=0x7f68f3ffde60, 
+    xnr=0, xnames=0x0, xvals=0x0, xsizes=0x0) at src/client/dfs/dfs.c:658
+#14 0x00007f693c73d5a2 in entry_stat (dfs=dfs@entry=0x5608ec71f9e0, th=th@entry=..., oh=..., name=name@entry=0x7f68ec0045c0 "write_test_file", len=len@entry=15, obj=obj@entry=0x7f68ec004590, get_size=<optimized out>, stbuf=<optimized out>, 
+    obj_hlc=<optimized out>) at src/client/dfs/dfs.c:1000
+#15 0x00007f693c75440e in dfs_osetattr (dfs=0x5608ec71f9e0, obj=0x7f68ec004590, stbuf=stbuf@entry=0x7f68f3ffe2f0, flags=flags@entry=4) at src/client/dfs/dfs.c:5344
+#16 0x00005608ea254967 in dfuse_cb_setattr (req=0x7f68ec0042f0, ie=0x7f68ec003830, attr=0x7f68f3ffe2f0, to_set=0) at src/client/dfuse/ops/setattr.c:108
+#17 0x00005608ea221ba7 in df_ll_setattr (req=0x7f68ec0042f0, ino=<optimized out>, attr=0x7f68f3ffe2f0, to_set=1056, fi=<optimized out>) at src/client/dfuse/dfuse_fuseops.c:245
+#18 0x00007f693c09ef6a in do_setattr () from /lib64/libfuse3.so.3
+#19 0x00007f693c0a0dba in fuse_session_process_buf_int () from /lib64/libfuse3.so.3
+#20 0x00005608ea22599a in dfuse_do_work (arg=0x5608ec70e470) at src/client/dfuse/dfuse_thread.c:60
+#21 0x00007f693d2361ca in start_thread () from /lib64/libpthread.so.0
+#22 0x00007f693ba9de73 in clone () from /lib64/libc.so.6
+
+
+
+
+Snappy 是一个压缩/解压库。 它的目的不是最大程度地压缩或与任何其他压缩库兼容； 相反，它旨在实现非常高的速度和合理的压缩。 例如，与 zlib 的最快模式相比，Snappy 对于大多数输入来说要快一个数量级，但生成的压缩文件要大 20% 到 100%。 在 64 位模式的 Core i7 处理器的单核上，Snappy 以大约 250 MB/秒或更多的速度压缩，并以大约 500 MB/秒或更多的速度解压缩。
+压缩/解压: 
+https://github.com/google/snappy
+http://halobates.de/snappy.html
+
+cart主流程:
+1. 日志初始化/注册协议和操作码 crt_init_opt
+2. 创建上下文（fabric->domain->endpoint->cq...） crt_context_create
+3. 创建请求 crt_req_create / crt_corpc_req_create RPC请求集合 传入目的端点 -> ep_rank  DAOS_OBJ_RPC_TGT_UPDATE 回调操作码
+4. 发送请求（请求跟踪和取消跟踪） crt_req_send / dss_rpc_send   shard_update_req_cb 发送回调
+5. 查看请求进度和回调（progress和trigger） crt_progress 超时或有完成事件产生时函数返回
+6. 发送回复 crt_reply_send / crt_reply_get
+
+接收端: 从队列中处理, 执行公共控制器, 执行rpc对应的回调
+
+
+
+crt_context_create
+
+
+engine -> for (;;) 一直循环 -> crt_progress -> crt_hg_progress -> HG_Progress 推进RPC -> HG_Trigger 触发回调
+
+进展/推进/进度
+crt_progress
+  crt_hg_progress
+    do 每轮total = 256
+      HG_Progress
+        HG_Core_progress
+          hg_core_progress
+            do while(now < deadline)
+              context->poll_set
+              hg_core_poll_try_wait
+                NA_Poll_try_wait
+                    na_poll_try_wait -> na_ofi_poll_try_wait
+                       fi_trywait
+                            wait_try -> util_wait_fd_try
+                                rxm_ep_trywait_eq
+                                    fi_trywait
+                                        vrb_trywait
+                                            vrb_save_wc
+                                              insert_tail saved_wc_list
+                                fi_poll -> util_poll_run
+                                    fi_cq_read
+
+                                    fi_eq_read
+                            vrb_save_wc
+              hg_core_poll_wait
+                hg_poll_wait
+                    epoll_wait 等完成队列事件
+                hg_core_progress_na HG_CORE_POLL_NA 处理事件
+                    NA_Trigger
+                        hg_atomic_queue_pop_mc(na_private_context->completion_queue) 有ofi完成事件
+                        completion_data.callback
+                        hg_core_recv_output_cb | hg_core_send_input_cb -> hg_core_complete_na -> hg_core_complete -> push completion_queue
+                    NA_Progress
+                        for(;;)
+                            ops->progress na_ofi_progress
+                            do
+                                fi_wait
+                                na_ofi_cq_read 读完成队列并处理事件 *****
+                                    fi_cq_readfrom
+                                        ofi_cq_readfrom
+                                            cq->progress(cq) ofi_cq_readfrom
+                                            cq->read_entry cirq aux_queue 辅助队列 ofi_cq_init中设置read_entry方法=read_func, util_cq_read_tagged ...
+                                    fi_cq_readerr(rxm_ep->msg_cq,...) fi_cq_err_entry
+                                      ofi_cq_readerr
+                                        ofi_cirque_head 从环形链表上取出1个元素
+                                        ofi_cirque_discard
+                                na_ofi_cq_process_event 接收端通过tag关联发送端的请求,接收到请求
+                                na_ofi_cq_process_retries retry_op_queue 处理重试
+                                    fi_tsend
+                                    fi_trecv
+                                    fi_rma_op
+                                    na_ofi_op_cancel
+                                    na_ofi_complete
+
+      HG_Trigger
+        hg_core_rpc_info->rpc_cb -> common回调(crt_rpc_handler_common)
+        hg_cb(&hg_core_cb_info) 转发回调
+  crt_context_timeout_check 超时检查
+  crt_exec_progress_cb 执行回调
+    
+
+crt_context_timeout_check
+  while (1)
+    d_binheap_root
+  crt_exec_timeout_cb
+  crt_req_timeout_hdlr
+    crt_req_timeout_reset
+    switch (rpc_priv->crp_state)
+      default
+        crt_req_abort(&rpc_priv->crp_pub)
+          crt_hg_req_cancel
+            HG_Cancel
+            
+超时取消：
+crt_req_abort
+    crt_hg_req_cancel
+        HG_Cancel
+          Let ony one thread
+          hg_atomic_or32 HG_CORE_OP_CANCELED 设置已取消标记位
+          NA_Cancel
+            na_ofi_cancel
+              NA_OFI_OP_CANCELING 拦截第一次进去后的请求
+              NA_OFI_OP_QUEUED 队列中 则移除队列， 取消入队标记位，设置已取消
+                na_ofi_op_cancel 执行取消
+                  fi_cancel
+                  fi_signal 支持信号通知的不需等待
+                    na_cb_completion_add push completion_queue
+                    NA_Trigger
+                        completion_data.callback(&completion_data.callback_info)
+                        hg_core_send_input_cb
+
+
+
+
+HG_Progress -> hg_core_progress -> hg_core_poll_try_wait -> NA_Poll_try_wait -> na_poll_try_wait -> na_ofi_poll_try_wait -> ctx->fi_cq->fid > fi_trywait -> vrb_save_wc(cq, &wc); 保存完成工作请求 -> hg_core_poll_wait -> hg_poll_wait -> epoll_wait(poll_set->fd -> hg_core_progress_na -> NA_Progress 先执行推进 -> hg_thread_cond_timedwait(&na_private_context->progress_cond -> ops->progress -> na_ofi_progress 处理 ->  na_ofi_cq_read 读完成队列 ->  fi_cq_readfrom -> ofi_cq_readfrom -> na_ofi_cq_process_event 处理完成队列事件 -> 
+通过tag匹配, 发送671 -> 接收端tag: 10000671
+hg_core_recv_input_cb
+  hg_core_process_input 处理输入
+  hg_core_complete_na 完成 期望计数=实际计数
+  crt_swim_srv_cb 执行上层回调 Incoming  rpc注册的控制器 .prf_hdlr = crt_swim_srv_cb
+  crt_reply_send
+    crt_hg_reply_send
+    HG_Core_respond
+
+
+
+
+epoll_wait
+max_events
+realloc poll_set->events  x2
+
+
+
+
+na_ofi_context_create
+    fi_wait_open
+        ofi_wait_fd_open
+            wait->util_wait.wait_try = util_wait_fd_try;
+
+crt_req_send -> crt_req_send_internal -> crt_req_ep_lc_lookup -> crp_hg_addr (na_addr) -> 地址作为 HG_Create 的参数 -> crt_req_send_immediately -> crt_hg_req_create RPC_STATE_REQ_SENT 创建请求,设置状态为发送请求 -> crt_hg_req_send -> HG_Forward -> HG_Core_forward -> forward(hg_core_handle) -> hg_core_forward_na -> NA_Msg_send_unexpected -> na_ofi_msg_send_unexpected -> na_ofi_msg_send -> fi_tsend
+
+
+
+crt_context_create -> ... ->  HG_Core_init_opt -> hg_core_init -> NA_Initialize_opt -> na_info_parse 解析网络抽象信息 -> na_class_table -> check_protocol 检查协议 -> initialize 初始化 -> na_ofi_initialize 网络抽象初始化 -> na_ofi_check_interface 检查接口(getaddrinfo/getifaddrs/inet_ntop) -> HG_QUEUE_INIT(&priv->addr_pool) 初始化地址池 -> na_ofi_domain_open 打开域 -> na_ofi_getinfo 先查看信息 -> fi_fabric/fi_domain 分配保护域数据 ibv_alloc_pd -> hg_mem_pool_create 创建内存池 -> na_ofi_addr_create 创建地址,设置长度,放入地址池 -> na_ofi_endpoint_resolve_src_addr -> fi_getname -> vrb_dgram_ep_getname -> 
+
+
+注册rpc prf回调
+crt_opc_reg(opc_info, opc, prf->prf_flags, crf, prf->prf_hdlr, prf->prf_co_ops);
+
+创建上下文: 
+dss_srv_handler
+  ...
+  tse_sched_init
+  ...
+crt_context_create
+    crt_context_register_rpc_task(dmi->dmi_ctx, dss_rpc_hdlr /* process_cb */, dss_iv_resp_hdlr /* iv_resp_cb */, dx); 注册rpc处理回调
+        cc_rpc_cb = dss_rpc_hdlr 公共RPC回调
+        cc_iv_resp_cb = dss_iv_resp_hdlr  iv RPC回调
+    crt_context_init
+    crt_hg_ctx_init
+        crt_hg_class_init
+            HG_Init_opt
+              HG_Init_opt
+                NA_Initialize_opt 网络抽象类初始化 class: ofi Protocal: verbs;ofi_rxm Hostname: mlx5_bond_1/ip:50177
+                  na_private_class->na_class.ops = na_class_table[plugin_index] 抽象网络表 na_ofi_class_ops_g
+                  na_class.ops->initialize 初始化
+                  na_class_ops NA_PLUGIN_OPS(ofi) 插件实现
+                  fi_getinfo
+                  ofi_check
+            crt_hg_get_addr
+            crt_hg_reg_rpcid
+                crt_hg_reg CRT_HG_RPCID | CRT_HG_ONEWAY_RPCID 单程
+                    crt_proc_in_common
+                    crt_proc_out_common
+                    crt_rpc_handler_common <- hg_proc_info->rpc_cb <- hg_core_rpc_cb <- hg_core_rpc_info->rpc_cb <- hg_core_process
+                HG_Registered_disable_response 单程禁用响应
+        HG_Context_create
+        HG_Context_set_data
+        crt_hg_pool_init
+    crt_hg_get_addr
+    crt_provider_get_ctx_list
+    crt_provider_inc_cur_ctx_num
+    crt_swim_init
+
+
+crt_rpc_handler_common
+    HG_Get_info
+    HG_Context_get_data
+    crt_hg_unpack_header
+    crt_opc_lookup
+    crt_hg_header_copy
+    crt_rpc_priv_init
+      crp_completed = 0
+    crt_rpc_common_hdlr 不是集合rpc
+        crt_grp_priv_get_primary_rank
+        crt_rpc_cb_customized 自定义回调, 并且非心跳rpc, crt_opc_is_swim, 那么就执行自定义回调
+        crt_ctx->cc_rpc_cb(..., crt_handle_rpc) cart的rpc控制器
+        cc_rpc_cb = dss_rpc_hdlr -> sched_create_thread(dx, func -> ABT_thread_create -> crt_handle_rpc
+        ... 入队，出队
+        crt_handle_rpc
+            rpc_priv->crp_opc_info->coi_rpc_cb(rpc_pub) 执行回调,如 obj_req_create DAOS_OBJ_RPC_TGT_UPDATE 对应的 ds_obj_tgt_update_handler
+
+
+更新目标， 落盘
+ds_obj_tgt_update_handler
+    obj_ioc_begin 访问vos前的各种检查
+        obj_ioc_begin_lite 设置 lite IO 上下文，目前仅适用于复合 RPC
+        obj_capa_check
+        obj_ioc_init_oca
+    dtx_handle_resend
+    vos_dtx_commit
+    dtx_begin
+    obj_local_rw
+        obj_local_rw_internal
+            bio_iod_prep
+            obj_bulk_transfer
+            bio_iod_post
+                dma_rw
+                    nvme_rw
+                        spdk_blob_io_write  完成回调 rw_completion
+                            blob_request_submit_op
+                                blob_request_submit_op_single
+                                bs_batch_write_dev
+                                    blob_bdev->bs_dev.write
+                                    bdev_blob_write
+                                    spdk_bdev_write_blocks
+                        spdk_blob_io_read
+
+
+
+crt_hg_progress
+    HG_Trigger
+        hg_core_trigger
+            hg_atomic_queue_pop_mc(context->completion_queue)
+            hg_core_trigger_entry
+                hg_core_process
+
+
+
+
+crt_req_send(req, shard_update_req_cb, remote_arg)  complete_cb = shard_update_req_cb
+    crt_context_req_track
+        crt_set_timeout
+        epi_req_waitq 如果拥塞就进等待队列
+        crt_req_timeout_track
+        epi_req_q 否则进飞行队列
+    crt_req_send_internal
+        crt_req_ep_lc_lookup
+            crt_req_send_immediately
+                crt_hg_req_create
+                    HG_Create
+                      hg_core_create
+                        hg_core_alloc_na 分配操作id
+                    HG_Reset 重用 rpc_priv->crp_hdl_reuse
+                crt_hg_req_send
+                    HG_Forward(hdl, crt_hg_req_send_cb,...) 回调机制:forward_cb -> request_callback -> hg_cb(由HG_Trigger执行回调)
+                        HG_Core_get_rpc_data
+                        hg_set_struct
+                            proc_cb in_proc_cb|out_proc_cb  crt_proc_common_hdr 被 HG_Register 注册
+                        HG_Core_forward(...,hg_core_forward_cb,...)
+                            forward(hg_core_handle) hg_core_forward_na|hg_core_forward_self
+                                hg_core_forward_na
+                                    hg_core_gen_request_tag
+                                    NA_Msg_recv_expected hg_core_recv_output_cb NA_OFI_OP_RESET
+                                    NA_Msg_send_unexpected hg_core_send_input_cb
+                                        na_ofi_msg_send_unexpected
+                                            na_ofi_msg_send
+                                                fi_rx_addr index, bits, 偏移和位运算计算出地址
+                                                fi_tsend -> rxm_ep_tsend
+                                                    ssize_t rxm_get_conn 新建或复用连接
+                                                    rxm_send_common
+                                                na_ofi_op_retry -> na_ofi_cq_process_retries HG_QUEUE_POP_HEAD
+
+
+
+
+
+
+
+# cart 流程
+
+## 简介
+CaRT 是用于大数据和 百万兆级 HPC 的开源 RPC 传输层。 它支持传统的 P2P RPC 发送和集体 RPC，后者在一组目标服务器上调用 RPC，并具有可扩展的基于树的消息传播。
+在项目中，主要提供RPC和BULK(大块)数据传输， swim协议（集群心跳检测）， rank组员管理， IV接口等功能
+
+
+## 术语
+cart： 支持集合和单个RPC请求的传输模块
+iv： incast variable， IV变量
+
+
+## 主流程
+
+1. 日志初始化/注册协议和操作码 crt_init_opt(带选项初始化)， 在 engine  -> init.c -> server_init 中初始化网络层
+2. 创建上下文 （fabric->domain->endpoint->cq...） crt_context_create， 在engine -> srv.c -> dss_srv_handler 中创建单个cart上下文(dss_xstreams_init 中指定个数)
+3. 创建请求 crt_req_create / crt_corpc_req_create RPC请求集合 传入目的端点 -> ep_rank
+4. 发送请求（请求跟踪和取消跟踪） crt_req_send / dss_rpc_send
+5. 查看请求进度和回调（progress和trigger） crt_progress 超时或有完成事件产生时函数返回
+6. 发送回复 crt_reply_send / crt_reply_get
+
+
+带选项初始化：主要完成日志初始化， 分配超时回调， 事件控制器， 注册RPC协议和操作码
+crt_init_opt daos_crt_init_opt_get
+    d_log_init
+    crt_setup_log_fac 设置日志基础设施
+      注册日志设施
+    d_fault_inject_init 故障注入
+    data_init
+        dump_envariables 打印环境变量
+        start_rpcid 随机生成起始rpcid
+        d_tm_add_metric 添加指标等
+    prov_data_init 设置提供者属性，初始化上下文双向链表
+      D_INIT_LIST_HEAD cpg_crt_list 上下文列表
+    crt_hg_init 设置hg日志流， 可强制设置为debug
+        hg_log_set_func(crt_hg_log) 设置日志方法 
+        HG_Set_log_level 日志级别和模块hg,na
+          hg_log_name_to_level 字符串 宏 enum枚举
+            X(a, b, c) b, HG_LOG_LEVELS
+    crt_grp_init 初始化组
+        crt_primary_grp_init
+            crt_grp_priv_create
+            grp_priv_init_membs
+            crt_grp_lc_create
+                d_hash_table_create_inplace gp_lookup_cache
+                d_hash_table_create_inplace gp_uri_lookup_cache
+    crt_plugin_init
+        cpg_timeout_cbs 分配超时回调
+        cpg_event_cbs 事件控制器回调
+    crt_self_test_init
+    crt_opc_map_create
+        crt_opc_map_L2_create 初始化前16个entry， L2分配32个entry
+    crt_internal_rpc_register
+        crt_proto_register_internal(&cpf)
+            crt_proto_reg_L1
+                crt_proto_reg_L2
+                    crt_proto_reg_L3
+        crt_proto_register(&cpf)
+
+
+HG_Set_log_level
+  hg_log_get_subsys
+    hg_log_subsys_g
+  hg_log_set_level(log_level)
+    hg_log_outlet_update_all()
+      HG_QUEUE_FOREACH 
+  hg_log_set_subsys(new_subsys_ptr) set hg
+    hg_log_outlet_reset_all
+    enable
+    hg_Log_outlet_update_all
+
+
+
+队列：mercury_queue.h
+HG_QUEUE_HEAD
+HG_QUEUE_ENTRY(hg_log_outlet) entry 
+
+
+
+## QA
+
+
+
+目标对象更新
+obj_tgt_update -> ds_obj_remote_update -> DAOS_OBJ_RPC_TGT_UPDATE -> crt_req_send(req, shard_update_req_cb, remote_arg) 发送RPC -> 
+
+
+
+
+obj_req_create DAOS_OBJ_RPC_TGT_UPDATE 获取模块的上下文:dss_get_module_info()->dmi_ctx
+    crt_req_create
+        crt_req_create_internal
+            crt_rpc_priv_alloc
+                crt_opc_lookup 查找操作码
+            crt_rpc_priv_init rpc初始化
+                rpc_priv->crp_completed = 0 完成状态初始化为0
+                crt_common_hdr_init 服务端
+                crt_rpc_inout_buff_init 转发请求复用父RPC的输入缓冲区 输入/输出缓冲区初始化
+
+                  
+
+
+
+
+
+参考：
+DAOS 使用 IV（incast 变量）在单个 IV 命名空间下的服务器之间共享值和状态，该命名空间被组织为树。 树根称为 IV 领导者，服务器可以是叶子或非叶子。 每个服务器维护自己的 IV 缓存。 在 fetch 期间，如果本地缓存不能满足请求，它将请求转发给它的父节点，直到到达根节点（IV leader）。 至于更新，它首先更新它的本地缓存，然后转发给它的父节点直到它到达根节点，然后根节点将更改传播到所有其他服务器。 IV 命名空间是每个池的，它在池连接期间创建，并在池断开连接期间销毁。 要使用 IV，每个用户都需要在 IV 命名空间下注册自己以获得一个标识，然后它将使用这个 ID 来获取或更新自己在 IV 命名空间下的 IV 值。
+
+
+
+
+
+
+
+
+dss_rpc_hdlr -> sched_req_enqueue 调度请求入队 -> should_enqueue_req?(dx->dx_main_xs) 主线程才入队(如VOS) ->  req_get(对端 req_put) -> req_enqueue 请求入队 -> d_list_add_tail(&req->sr_link, &sri->sri_req_list) -> d_list_for_each_entry_safe(req, tmp, list, sr_link) 遍历队列另一端(process_req_list)
+
+process_all -> policy_ops[sched_policy].process_io(dx) -> .process_io = policy_fifo_process -> process_req_list -> process_req -> req_kickoff(dx, req) 开始处理请求 -> crt_handle_rpc
+
+rpc公共回调
+dss_rpc_hdlr(...,crt_handle_rpc...)
+  opc_get_mod_id(rpc->cr_opc) 获取模块id 偏移+掩码 ubip_modeul_id
+  SCHED_REQ_ANONYM 匿名 sra=调度请求属性
+  struct dss_module	*module = dss_module_get(mod_id);
+  module->sm_mod_ops->dms_get_req_attr 获取属性
+  sched_req_enqueue 入队  real_rpc_hdlr = crt_handle_rpc req->sr_func
+    should_enqueue_req SCHED_REQ_ANONYM 匿名不入队列
+    req_enqueue
+      d_list_add_tail(&req->sr_link, &sri->sri_req_list)
+
+
+
+
+
+dss_sched_init
+  sched_run
+    sched_start_cycle(data, pools)
+      process_all
+        policy_ops[sched_policy].process_io(dx) 处理io
+          policy_fifo_process 先进先出
+            process_req_list
+              req_kickoff
+                req_kickoff_internal(dx, &req->sr_attr, req->sr_func,req->sr_arg)  sr_func -> crt_handle_rpc 不入队列，直接处理回调
+                  sched_create_thread(dx, func func -> crt_handle_rpc
+                    ABT_thread_create(abt_pool, func, arg, t_attr, thread)
+                      crt_handle_rpc
+
+
+
+常见操作码 注册操作码
+.cpf_name   =  "pool"
+src/cart/crt_register.c:488 crt_proto_register_common()
+internal  0xff000000
+management, 0x1000000
+pool, 0x2000000
+cont, 0x3000000
+ubip-object, 0x4000000
+swim, 0xfe000000
+...
+
+打开调试
+HG_LOG_LEVEL=debug
+FI_LOG_LEVEL=debug
+
+D_LOG_MASK=DEBUG
+DD_SUBSYS=all  |hg,external,mercury,rpc,corpc
+DD_MASK=all
+
+重要结构：
+struct crt_proto_rpc_format 协议rpc格式
+prf_flags = 是否排队（队列头） CRT_RPC_FEAT_QUEUE_FRONT coi_queue_front
+prf_hdlr = 回调控制器
+prf_req_fmt = 输入/输出格式
+
+
+rdma write, 单边写, 
+NA_Put
+na_ofi_put
+na_ofi_rma fi_writemsg = fi_rma_op   .writemsg = 
+.writemsg = vrb_msg_ep_rma_writemsg
+vrb_msg_ep_rma_writemsg -> prov/verbs/src/verbs_rma.c
+  struct ibv_send_wr wr
+  wr.opcode = IBV_WR_RDMA_WRITE | wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM 写|立即数写
+  vrb_send_iov(ep, &wr, msg->msg_iov, msg->desc -> ssize_t vrb_send_iov
+    wr->sg_list = alloca(sizeof(*wr->sg_list) * count)
+    wr->sg_list[i].addr = (uintptr_t) iov[i].iov_base
+    wr->sg_list[i].length = iov[i].iov_len;
+    wr->send_flags = IBV_SEND_INLINE ?IBV_SEND_FENCE
+    wr->sg_list[0]
+    wr->num_sge =
+    vrb_post_send(ep, wr, flags) -> prov/verbs/src/verbs_ep.c -> ssize_t vrb_post_send
+      ibv_post_send(ep->ibv_qp, wr, &bad_wr)
+
+
+
+
+vrb_poll_cq
+    ibv_poll_cq
+
+
+ufuse_core_dump:
+
+HG_Forward
+    crt_proc_coon_hdr
+        crt_proc_memcpy
+
+
+crp_req_hdr
+
+vrb_eq_cm
+
+
+ds_pool_list_cont_handler
+
+
+bulk rdma收发文件
+
+server:
+./server addr
+main
+  HG_Init
+  HG_Addr_self
+  HG_Addr_to_string
+  HG_Context_create
+  HG_Register_data
+  do
+    HG_Trigger
+    HG_Progress
+  save
+    HG_Bulk_transfer origin and local 对齐
+  HG_Context_destroy
+  HG_Finalize
+
+client
+./client protocal server_addr filename
+main
+  access(save_op.filename, F_OK) 检查文件是否存在
+  lookup_callback  
+    save_operation* save_op = (save_operation*)(callback_info->arg); 回调通过指针传递参数
+    FILE* file = fopen(save_op->filename,"r");
+    fseek(file, 0L, SEEK_END)
+    save_op->size = ftell(file) 计算文件位置
+    fseek(file, 0L, SEEK_SET);
+    save_op->buffer = calloc(1, save_op->size);
+    fread(save_op->buffer,1,save_op->size,file)  // fread和fwrite的用法详解（以数据块的形式读写文件）
+    HG_Bulk_create (void**) &(save_op->buffer) 传入文件内容buf指针地址（二级指针）
+      hg_buld malloc/memset 0
+      hg_atomic_init32 ref_count 1 初始化引用计数
+      转分段 注册分段 hg_bulk_register_segments 最大静态段=8， HG_BULK_STATIC_MAX
+      hg_bulk_create_na_mem_descs 单独注册内存描述 individually 分为静态staic和动态数组dynamic
+        hg_bulk_register 注册段 传递索引i
+          NA_Mem_handle_create
+            mem_handler_create -> na_ofi_mem_handler_create
+              NA_UNUSED 编译参数 忽略编译告警
+              calloc
+              na_ofi_mem_desc s[0] 单段， d 多段
+              flags & 0xff 全1
+          NA_Mem_register
+            mem_register na_ofi_mem_register
+              requested_key 自增
+              NA_MEM_READ_ONLY 
+              access = FI_REMOTE_READ | FI_WRITE 远程读和本地写
+              fi_mr_regv 注册内存向量
+                rxm_mr_regv
+                  rxm_mr_get_msg_access
+                  fi_mr_regv
+                    vrb_mr_regv
+                      vrb_mr_cache_reg
+                        ofi_mr_rbt_find 如果有缓存就找红黑树
+                        util_mr_cache_create
+                        add_region
+                          vrb_mr_reg_common
+                            ibv_reg_mr 注册内存
+                            md->mr_fid.key = md->mr->rkey 远程键
+                            md->lkey = md->mr->lkey 本地键
+                            vrb_eq_write_event 写完成事件
+                  rxm_mr_init
+              fi_mr_key 取回内存key
+              ...desc.info.fi_mr_key = 远程键
+          NA_Mem_handle_get_serialize_size na_ofi_mem_handle_get_serialize_size
+            sizeof iovec info + iovcnt
+    HG_Forward
+    save_completed
+
+example_snappy_server
+main
+  HG_Version_get
+  fopen
+  fpritnf
+  fclose
+
+client
+main
+  fgets(target_addr_string, PATH_MAX, na_config)
+  strrchr char *strrchr(const char *str, int c) 在参数 str 所指向的字符串中搜索最后一次出现字符 c（一个无符号字符）的位置
+
+
+
+
+
+fi_cq_init
+    slist_init(&cq->aux_queue) 辅助队列
+
+util/cq：将 oflow_err_list 重命名为 aux_queue auxiliary queue
+溢出/错误列表是引用的辅助队列由主要CQ。 用于记录错误完成以及当主 CQ 已满时的成功完成。这两种情况都是意想不到的，但可能会发生，例如，当冲洗张贴收到。 这经常发生在清理期间使用 RxM。重命名是澄清和修复的更大努力的一部分如何使用主CQ和辅助队列。
+
+
+fi_cancel
+  rxm_ep_cancel
+    rxm_passthru_info 直通 FI_PROTO_RXM_TCP
+    fi_cancel
+    rxm_ep_cancel_recv
+      ofi_ep_lock_acquire
+      dlist_remove_first_match
+      err_entry.err = FI_ECANCELED
+      ofi_cq_write_error
+        ofi_cq_insert_error(cq, err_entry)
+            ofi_cq_insert_aux(cq, entry) 插入元素到辅助队列尾部 cq满后，往辅助队列插入元素
+                ofi_cirque_tail(cq->cirq)
+                slist_insert_tail(&entry->list_entry, &cq->aux_queue) 在fi_cq_readfrom中读取 cq->read_entry cirq aux_queue 关键队列(辅助队列)
+        cq->wait->signal(cq->wait) fd
+
+HG_Cancel
+    NA_OFI_OP_QUEUED 队列中，则移除 HG_QUEUE_REMOVE
+
+
+
+swim:
+crt_req_send crt_swim_cli_cb
+
+HG_Context_create
+    NA_Context_create_id
+    NA_Poll_get_fd
+        na_ofi_pool_get_fd na_pool_get_fd 从网络插件获取方法
+            fi_control FI_GETWAIT fi_cq->fd
+                ofi_cq_control
+                    memcpy pollfds->fds
+
+        HG_POLLIN 服务端监听可读事件
+        hg_poll_create
+            hg_poll_set->fd = epoll_create1  轮询集
+        hg_poll_add(context->poll_set, na_poll_fd, &event)  关键fd = na_poll_fd 拿到cq对应的fd，加入到epoll里面
+            struct epoll_event ev
+            epoll_ctl(poll_set->fd,...)
+
+
+
+na_ofi_context
+
+rxm_cq_open
+    ofi_cq_init ofi_cq_readfrom
+    rxm_ep_progress
+        fi_cq_read
+        rxm_handle_comp_error 错误处理 rxm_err
+
+    
+hg_log_write
+  buf 256B
+  hg_time_get_current(&tv) 获取当前时间
+  vsnprintf
+  hg_log_func_g fprintf 
+  ERROR && debug_Log && level >= MIN_DEBUG 日志级别为ERR
+    hg_dlog_dump
+    hg_dlog_resetlog
+
+
+
+
+
+fi_trecv 往自己的接收队列中防止WQE，无需建立连接
+    rxm_ep_trecv_comm
+
+reboot -f eio比超时来的慢， 延迟超过30s
+cancel status:4 posted
+
+1. 取消的时候，send没有调回掉
+2. reboot -f, 原来的连接发不通
+
+
+
+
+na_ofi_cancel
+
+
+client io 跌零原因：
+1. io超时
+
+
+hg,ofi日志原理：
+
+dump_envariables()
+
+autotest
+
+hg_log_set_subsys_level
+    subsys:hg
+
+
+
+setlinebuf
+
+环境变量:
+env_vars
+setupGrpc
+  getGrpcOpts
+  grpc.NewServer(srvOpts...)
+  ctlpb.RegisterCtlSvcServer(srv.grpcServer, srv.ctlSvc)
+  getSrxSetting
+    EnvVars 配置文件: type Config struct
+    engineVals
+  mgmtpb.RegisterMgmtSvcServer(srv.grpcServer, srv.mgmtSvc)
+  srv.sysdb.ConfigureTransport(srv.grpcServer, tSec)
+
+  
+
+updateFabricEnvars
+  deviceAlias, err := netdetect.GetDeviceAlias(ctx, cfg.Fabric.Interface)
+  "OFI_DOMAIN=" + deviceAlias
+  cfg.WithEnvVars(envVar)
+    mergeEnvVars(c.EnvVars, newVars)
+
+setDaosHelperEnvs(cfg, os.Setenv)
+
+启动服务器
+server_start: /usr/bin/ubip_server start
+func main()
+  parseOpts(os.Args[1:], &opts, log) 解析参数
+    cfgCmd.loadConfig(opts.ConfigPath) 加载配置
+    cmd.Execute(cmdArgs)
+
+
+src/control/cmd/daos_server/start.go
+func (cmd *startCmd) Execute(args []string)
+  func Start(log *logging.LeveledLogger, cfg *config.Server)
+    processConfig
+    newServer(ctx, log, cfg, faultDomain)
+    createServices
+    initNetwork 初始化网络
+      func netInit
+        netdetect.Init(ctx)
+          initLib  
+            version := C.hwloc_get_api_version()  hwloc.h 查看cpu拓扑: https://blog.csdn.net/whatday/article/details/106170613
+            https://www.open-mpi.org/projects/hwloc/doc/
+            topology, err := hpa.topology_init()
+              hwloc_topology_init
+          numNUMANodes
+          getCoreCount
+          initDeviceScan
+        netdetect.NumNumaNodes(ctx)
+        cfg.CheckFabric(ctx)
+          GetDeviceClassFn  func GetDeviceClass  cat /sys/class/net/enp2s0/type
+        updateFabricEnvars
+    initStorage 初始化存储
+      prepBdevStorage iommuDetected iommu内存管理
+      NvmePrepare
+        PrepareBdevs
+          func (p *Provider) Prepare
+            BdevPrepare
+              func (h *bdevPrepHandler) Handle
+                h.bdevProvider.Prepare(pReq)
+                  func (s *spdkSetupScript) Prepare  spdkSetupPath      = "../share/daos/control/setup_spdk.sh"
+                  s.runCmd(s.log, env, s.scriptPath)
+      大页检查 hugePages, err := hpiGetter()  func GetHugePageInfo()  cat /proc/meminfo | grep -e "^Huge"
+      srv.ctlSvc.Setup()
+        func (n *NvmMgmt) Discover()
+        C.nvm_get_number_of_devices https://github.com/intel/ipmctl ipmctl is a utility for configuring and managing Intel® Optane™ Persistent Memory modules (PMem).
+        C.nvm_get_devices
+        func (cr *cmdRunner) GetPmemNamespaces()
+          ndctl list -N -v
+        scs.NvmeScan
+        scs.storage.SetBdevCache(*nvmeScanResp)
+    addEngines
+      registerTelemetryCallbacks
+      NvmeScan
+      createEngine
+      SetBdevCache
+      AddInstance
+    setupGrpc
+    registerEvents
+    srv.start(ctx, shutdown)
+      func (h *EngineHarness) Start
+        for _, ei := range h.Instances()
+          ei.Run
+
+func (ei *EngineInstance) Run
+  ei.format
+    awaitStorageReady
+    createSuperblock
+  ei.start
+  func (r *Runner) Start
+    r.Config.CmdLineArgs
+    r.Config.CmdLineEnv
+    return r.run(ctx, args, env, errOut)
+    func (r *Runner) run
+      binPath, err := common.FindBinary(engineBin) daos_engine
+      cmd := exec.Command(binPath, args...)
+      cmd.Env = env
+      cmd.Start() 启动engine
+
+
+processConfig
+  cfg.Validate(log)
+  checkFabricInterface(ec.Fabric.Interface, lookupNetIF)
+    net.InterfaceByName(name)
+  SaveActiveConfig
+    cfg.SaveToFile(activeConfig)
+  setDaosHelperEnvs
+     setenv(pbin.DaosAdminLogFileEnvVar, cfg.HelperLogFile) 特权帮助日志 DAOS_ADMIN_LOG_FILE DAOS_FIRMWARE_LOG_FILE
+  getFaultDomain
+    getDefaultFaultDomain
+      system.NewFaultDomainFromString(domainStr) /rack0/pdu1/hostname PDU（Power Distribution Unit） 电源分配单元
+
+
+type server struct
+newServer(ctx, log, cfg, faultDomain)
+  harness := NewEngineHarness(log).WithFaultDomain(faultDomain) type EngineHarness struct 引擎套子
+
+
+
+srv.createServices(ctx) scaffolding 创建rpc，事件服务等脚手架
+  dbReplicas, err := cfgGetReplicas 访问点
+  sysdb, err := system.NewDatabase  control_raft
+    RaftDir:    cfgGetRaftDir(srv.cfg)
+    db.setReplica(repAddr)
+  srv.membership = system.NewMembership
+  cliCfg := control.DefaultConfig localhost:10001
+  rpcClient := control.NewClient
+  srv.pubSub = events.NewPubSub(ctx, srv.log) 事件分发原语
+    go ps.eventLoop(ctx)
+      for
+        select
+          ps.handlers[newSub.topic]
+          ps.publish(ctx, event)
+          ps.updateFilter(fu)
+  srv.OnShutdown(srv.pubSub.Close)
+  srv.evtForwarder = control.NewEventForwarder(rpcClient, srv.cfg.AccessPoints)
+  srv.evtLogger = control.NewEventLogger(srv.log)
+    newSyslogger(sev.SyslogPriority(), flags)
+  srv.ctlSvc = NewControlService(srv.log, srv.harness, srv.cfg, srv.pubSub)
+    NewStorageControlService
+      newStorageControlService DefaultProvider
+  srv.mgmtSvc = newMgmtSvc(srv.harness, srv.membership, sysdb, rpcClient, srv.pubSub)
+
+os.Setenv
+
+
+srx: 共享接收上下文
+
+NewCommandLineErrorLogger
+
+ofi错误级别日志: ERROR: daos_engine:0 libfabric
+cmd.Stderr = &cmdLogger{
+  logFn:  r.log.Error,
+  prefix: fmt.Sprintf("%s:%d", engineBin, r.Config.Index),
+}
+
+
+ofi动态开日志设计思路：
+1. ofi暴露修改日志级别的接口 fi_set_log_level
+2. hg暴露
+3. 
+
+op->cancel
+
+
+cgo
+ubip
+ValidateProviderConfig
+  fi_getinfo
+
+
+
+动态开日志：
+d_logfac_is_enabled
+d_log_setmasks
+
+cart_ctl
+  crt_fill_set_log
+  
+
+
+self_test -u --group-name daos_server --endpoint 1:2 --message-size "(0 0)" --max-inflight-rpcs 16 --repetitions 1000
+
+cross_server
+self_test -u --group-name daos_server --endpoint 0-2:2 --message-size "(0 0) (b1048578 0) (0 b1048578)" --max-inflight-rpcs 16 --repetitions 100
+self_test -u --group-name daos_server --endpoint 0-2:2   --master-endpoint 0:2   --message-sizes "b1048576"   --max-inflight-rpcs 16 --repetitions 100
+self_test -u --group-name daos_server --endpoint 0-2:2    --message-sizes "b1048576"   --max-inflight-rpcs 16 --repetitions 100
+
+b1048576     1Mb bulk transfer Get and Put
+b1048576 0   1Mb bulk transfer Get only
+0 b1048576   1Mb bulk transfer Put only
+I2048        2Kb iovec Input and Output
+i2048 0      2Kb iovec Input only
+0 i2048      2Kb iovec Output only
+
+self_test.c
+cart_self_test
+main
+  d_log_init
+  parse_message_sizes_string
+  run_self_test
+    self_test_init
+    crt_group_rank
+    crt_group_lookup
+    qsort st_compare_endpts
+    D_ALLOC_ARRAY(latencies, num_ms_endpts); 一级指针,二级指针均可分配
+    for master endpoint
+      d_iov_set 设置io向量
+    crt_bulk_create CRT_BULK_RW 创建大块数据handler
+    randomize_endpts 是否随机化endpoint
+    test_msg_size
+      crt_req_create CRT_OPC_SELF_TEST_START
+      crt_req_send start_test_cb
+      sched_yield()确保当前进程在资源竞争严重时，给其他进程执行机会来提高性能
+      poll master node 轮训主节点
+      crt_req_create CRT_OPC_SELF_TEST_STATUS_REQ 查看进度
+      crt_req_send  status_req_cb
+      print_results 打印结果
+
+
+输入: sizes_ptr:b1048576, tuple_tokens:(),
+输出token数量
+两层遍历
+
+对端收到rpc,执行CRT_OPC_SELF_TEST_START对应的回调
+crt_self_test_start_handler
+  (args->endpts.iov_buf_len & 0x7) != 0) 不是8的倍数
+  D_ALLOC_PTR(g_data) 分配全局数据
+  d_iov_set
+  crt_bulk_create CRT_BULK_RO
+  memset(cb_args->buf, 0xC5, alloc_buf_len); 填充随意的数据
+  d_iov_set crt_st_get_aligned_ptr 对齐
+  crt_bulk_create
+  open_sessions(); 打开会话
+    ST_SET_NUM_INFLIGHT(g_data->num_endpts);
+    for (i = 0; i < g_data->num_endpts; i++) 遍历端点 
+      crt_req_create CRT_OPC_SELF_TEST_OPEN_SESSION  crt_self_test_open_session_handler
+      crt_req_send open_session_cb
+
+
+crt_self_test_open_session_handler
+  alloc_buf_entry
+  found_session = find_session(session_id, NULL);
+  addref_session(new_session);
+  crt_reply_send(rpc_req)
+
+
+
+open_session_cb
+
+
+stop server then start
+rxm_handler_error fi_eq_readerr 111 connection refused
+
+
+TAILQ_INIT(&targets)
+
+环境变量：
+en_variables.md
+
+
+
+
+
+objectCmd
+poolCmd
+
+fsCmd
+containerCmd
+
+ubip
+src/control/cmd/ubip/main.go
+  main()
+    parseOpts
+      p.ParseArgs(args)
+        CommandHandler 命令控制器， 执行命令
+          poolSetAttrCmd
+            Execute 执行命令
+
+func (cmd *poolSetAttrCmd) Execute
+  resolveAndConnect
+    cmd.connectPool
+       C.daos_pool_connect2
+        dc_task_create(dc_pool_connect, NULL, ev, &task)
+        return dc_task_schedule(task, true);
+  setDaosAttribute 设置池属性
+    daos_pool_set_attr
+      dc_task_create(dc_pool_set_attr, NULL, ev, &task)
+        dc_pool_set_attr
+          attr_check_input
+          pool_req_prepare POOL_ATTR_SET ds_pool_attr_set_handler
+            rsvc_client_choose 
+            pool_req_create
+          attr_bulk_create
+          tse_task_register_comp_cb(task, pool_req_complete
+          daos_rpc_send(cb_args.pra_rpc, task)
+            crt_req_send(rpc, daos_rpc_cb, task)
+
+          
+
+
+dc_pool_connect
+  pool = dc_task_get_priv(task)
+  init_pool
+  dc_pool_connect_internal
+
+
+ds_pool_attr_set_handler
+  pool_svc_lookup_leader
+  rdb_tx_begin
+  ds_rsvc_set_attr
+    crt_bulk_get_len
+    d_iov_set
+    crt_bulk_create
+    attr_bulk_transfer CRT_BULK_GET
+      crt_bulk_transfer bulk_cb -> ABT_eventual_set 唤醒等待的协程 -> ABT_eventual_wait
+    rdb_tx_update
+  rdb_tx_commit
+  ds_rsvc_set_hint
+  pool_svc_put_leader
+  crt_reply_send
+
+
+2007 update pool
+
+
+
+客户端
+dfuse
+dfuse_get_fuse_ops 函数操作表
+
+
+debug log summary
+
+
+0x38 RPC_STATE_REQ_SENT
+
+
+NA_LOG_DEBUG
+  HG_LOG_WRITE_DEBUG
+    HG_LOG_OUTLET level
+    hg_dlog_addlog 添加日志记录到dlog
+    hg_log_write
+      hg_dlog_dump 导出日志文件到指定的流
+      hg_dlog_resetlog 
+
+
+客户端分片
+cli_shard.c
+dc_obj_shard_query_key
+  tse_task_register_comp_cb(task, obj_shard_query_key_cb, &cb_args, sizeof(cb_args))
+  obj_shard_query_key_cb 2007 pool老旧需要更新stale 由 dtc_cb 触发执行 D_FOREACH_UBIP_ERR  D_FOREACH_DAOS_ERR DER_STALE 陈旧错误
+
+
+
+
+ 
+
+obj_shard_open
+
+
+
+
+reclaim completed pool 2007
+
+
+na_ofi_complete
+  na_cb_completion_add
+    push completion_queue
+      HG_Progress ... NA_Trigger
+
+
+
+已经完成，可能是由于重复完成 already completed, possibly due to duplicated completions
+疑点
+1.设置REPLY_RECVED后又会恢复, timeout中的0x39如果设置上的? 超时先进来,读到0x39, 
+2.untrack失败?
+3.同一个rpc, 并行没锁住?
+
+
+crt_hg_req_send_cb
+  crp_complete_cb -> complete_cb
+  调用 crt_req_send 传入的回调，如： shard_update_req_cb
+  crt_context_req_untrack 取消rpc超时跟踪(注意超时后也可能会执行此动作)
+
+
+
+mgmt_svc_map_dist_cb
+  ntf_crtctx_update
+
+
+分配操作id
+hg_core_alloc_na
+  NA_Op_create
+
+释放
+NA_OFI_OP_RELEASE
+
+
+hg_client
+
+
+
+hg_server
+
+
+
+
+tse_task_reint_with_dely
+
+
+客户端coredump, 安全遍历链表出现段错误, d_list_for_each_entry_safe signal 11 Segmentation fault, 客户端读文件
+ufuse_do_work
+  ufuse_do_work
+    ufuse_cb_read dfuse_cb_read
+    ufs_read
+    ufs_read_int dfs_read_int
+    dc_task_schedule
+    tse_task_schedule
+    tse_task_schedule_with_delay
+    dc_array_read
+    dc_array_io   task1
+    tse_sched_progress  task2
+    tse_sched_run
+      processed += tse_sched_process_init(dsp) -> 处理调度程序的初始化列表和休眠列表。 这首先将所有现在应该醒来的任务从睡眠列表移动到初始化列表的尾部，然后执行调度程序初始化列表中没有依赖项的所有任务的所有主体函数, 调度器主函数, 在队列间移动任务
+      processed += tse_sched_process_complete(dsp)
+        d_list_splice_init(&dsp->dsp_complete_list, &comp_list) -> 连接两个列表并重新初始化空列表。 列表的内容添加到头部的开头。 返回时列表为初始化为空(可理解为从一个队列移动到新的队列)
+        d_list_for_each_entry_safe(dtp, tmp, &comp_list, dtp_list) -> 遍历新的完成队列
+        d_list_del_init(&dtp->dtp_list)
+        tse_task_post_process(task) -> 检查完成列表中的任务、依赖任务状态检查、调度状态更新等。此后任务将移至完成列表
+          while (!d_list_empty(&dtp->dtp_dep_list))  -> 任务依赖队列不为空(还有依赖任务)
+            ...
+      completed = tse_sched_check_complete(sched) -> 检查调度器是否是完成状态, 即: 初始队列和睡眠队列都为空, 且无飞行的任务
+    tse_task_prep_callback
+    check_short_read_cb
+    tse_task_complete
+    check_short_read_cb
+    tse_task_complete
+    tse_sched_process_complete
+    tse_task_post_process
+    tse_task_complete_callback
+    task_comp_event
+    daos_event_complete(struct daos_event *ev, int rc) 事件完成
+      daos_event_complete_locked
+        daos_evx2ev(evx)  字段间的转换 container_of | (struct daos_event_private *)&ev->ev_private = daos_ev2evx
+        daos_event_complete_cb 事件完成回调
+          d_list_for_each_entry_safe 遍历给定类型的列表以防止删除列表条目
+            d_list_del_init(&ecl->op_comp_list)
+            err = ecl->op_comp_cb(ecl->op_comp_arg, daos_evx2ev(evx), rc) 执行回调 -> cb -> 
+
+
+
+
+
+dsc_progress_start
+  dss_ult_create(dsc_progress, dx, DSS_XS_SELF, 0, DSS_DEEP_STACK_SZ, NULL)
+  dsc_progress
+    tse_sched_progress
+
+
+
+daos_progress
+  tse_sched_progress
+
+
+条件回调, 进度回调
+eq_progress_cb
+  tse_sched_progress
+  d_list_for_each_entry_safe
+
+
+
+dc_obj_query_key_task_create
+  dc_task_create dc_obj_query_key -> dtp_func
+
+查找
+df_ll_lookup
+cb_lookup
+lookupx
+lookup_rel_int
+array_get_size
+  dc_task_create(dc_array_get_size, NULL, ev, &task)
+  dc_task_schedule
+    daos_event_priv_wait 如果关联事件是私有事件，这个函数会等到完成，否则它立即返回
+      ev_progress_cb
+        tse_sched_progress
+          dtp_func -> dc_obj_query_key
+
+踩内存
+git show 4002fb82e25ef26e38750ffb884e7416842356e8
+daos_event_priv_wait -> crt_progress_cond(evx->evx_ctx, 0, ev_progress_cb, &epa) -> ev_progress_cb -> 
+daos_event_init -> D_MUTEX_INIT
+
+
+pool_map_update
+故障流程 心跳 swim swim_progress
+c -> s
+kill s
+swim ping timeout
+swim suspect
+swim suspect timeout
+swim confirm dead swim_member_dead
+notify dead swim_updates_notify -> crt_swim_notify_rank_state
+group_map_update to leader
+group_map update bcast
+making Excluded
+
+疑问:
+1. confirm dead 只需要14s, 但是从 notify 到 excluded 却要70s?
+2. rank重新加入, io为何跌零?
+3. Invalid Handle 问题跟踪? 社区?
+
+
+无效控制器 invalid handle 1002
+ds_pool_start
+  dss_ult_create pool_fetch_hdls_ult
+  pool_fetch_hdls_ult
+    ds_pool_iv_conn_hdl_fetch
+
+
+DTX_ABORT
+dtx_handler
+  case DTX_ABORT
+    vos_dtx_abort
+    dout->do_status = rc
+    rc = crt_reply_send(rpc)
+
+
+dtx_refresh_internal | dtx_rpc_internal
+dtx_req_list_send
+  ABT_future_create(len, dtx_req_list_cb, &future)
+    abort
+      drr_result -1002
+
+1. drr->drr_result = -1002
+2. dra->dra_result = -1002
+
+dtx_req_list_cb invalid handle 1002
+
+
+dtx中断, 中断dtx
+dtx_abort
+  dtx_rpc_prep DTX_ABORT
+    dha->dha_opc = opc = DTX_ABORT
+    dss_ult_create(dtx_rpc_helper
+    dtx_rpc_internal
+      dtx_req_list_send
+        ABT_future_create(len, dtx_req_list_cb, &future) 创建未来, 在 dtx_handler 中执行 dtx_req_list_cb 回调
+        dra->dra_future = future
+        dtx_req_send
+        ABT_thread_yield
+  vos_dtx_abort
+  dtx_rpc_post
+
+
+
+
+tse子任务
+obj_shard_task_sched
+  tsa_sched == false
+  tse_task_complete 父子任务调度
+
+
+查询缓存的池映射
+create_map_refresh_rpc
+  POOL_TGT_QUERY_MAP
+  ds_pool_tgt_query_map_handler
+
+
+
+obj_ioc_init
+
+
+umount -t fuse.ubip /home/cont_ssd
+dfuse_launch_fuse 阻塞,直到完成
+  fuse_session_unmount
+停止文件系统
+dfuse_fs_stop
+  ino_flush
+
+
+
+vos_obj_iter_fini
+  daos_handle_is_inval 无效控制器
+
+evt_iter_delete
+
+
+vos_obj_iter_prep
+iter_decref
+vos_iter_finish
+
+ufuse异常退出, agent触发, system stop
+libabt.so
+make_fcontext
+  ABTD_ythread_func_wrapper
+    crt_handle_rpc <- crt_rpc_common_hdlr
+      ds_pool_evict_handler POOL_EVICT 驱逐池
+        pool_disconnect_hdls
+          ds_cont_close_by_pool_hdls
+            rdb_lc_interate
+              rdb_vos_iterate
+                vos_iter_prepare
+                  vos_obj_iter_fini
+
+
+ds_pool_svc_check_evict
+  pool_req_create(info->dmi_ctx, &ep, POOL_EVICT, &rpc)
+
+
+cont_snapshots_refresh_ult
+  cont_iv_snapshots_refresh
+    ds_iv_fetch
+
+查看符号表
+strings xxx
+
+
+do_target_id
+pool_map_target
+
+
+发送集合请求
+crt_corpc_req_hdlr
+  co_pre_forward
+    crt_iv_sync_corpc_pre_forward 在集合rpc发送前执行cart iv同步
+      call_pre_sync_cb
+        ivo_pre_sync ivc_pre_sync
+        pool_iv_pre_sync
+          ABT_cond_signal(pool->sp_fetch_hdls_cond) 满足条件, 触发信号,唤醒等待该信号的线程继续执行
+            pool_fetch_hdls_ult
+
+
+
+pool_iv_update
+
+
+crt_ivsync_rpc_issue
+
+
+ds_rsvc_start
+
+
+na_ofi_mem_buf_register
+
+
+
+
+daos_engine
+
+daos_server start
+opts.name = "daos_engine"
+engine/init.c
+main(int argc, char **argv)
+engine启动
+parse 解析命令行参数: /usr/bin/ubip_engine -t 24 -x 2 -g ubip_server -d /var/run/ubip_server -T 2 -n /mnt/ubip0/ubip_nveme.conf -p 0 -I 0 -r 24567 -H 2 -s /mnt/ubip0
+-p 绑定到哪个numa节点(pinned_numa_node)
+-t 24 targets数量
+-x xshelpernr 2个辅助线程
+
+docker
+"/opt/daos/bin/daos_engine",  "-t",  "1",  "-x",  "0",  "-g",  "daos_server",  "-d",  "/var/run/daos_server",  "-T",  "2",  "-n",  "/mnt/daos/daos_nvme.conf",  "-I",  "0",  "-r",  "8192",  "-H",  "2",  "-s",  "/mnt/daos"
+
+禁用透明大页
+daos_register_sighand(SIGILL, print_backtrace); 注册自己的信号和打印堆栈
+server_init
+  hlc_recovery_begin
+  gethostname
+  daos_debug_set_id_cb(server_id_cb)
+  daos_debug_init 日志级别 d_debug_data dlog_fac d_log_open D_LOG_STDERR_IN_LOG 合并错误消息 如何接管fabric日志？ if （merge）客户端动态开日志
+  freopen setlinebuf fileno
+  d_tm_init 遥测指标初始化
+  dss_engine_metrics_init
+  d_tm_record_timestamp
+  drpc_init 初始化drpc客户端
+  register_dbtree_classes 注册数据库树, b树
+    dbtree_class_register
+  dss_topo_init 初始服务器拓扑, numa, cpu core, bitmap位图等
+  abt_init argobots初始化, 机器人,
+    atoi(env) 环境变量转整型
+    set_abt_max_num_xstreams(max(nrequested, nrequired)) 两者中的较大值, 设置环境变量 ABT_MAX_NUM_XSTREAMS, 输入整型, 转为字符串char*
+      D_ASPRINTF(value, "%d", n);
+    ABT_init(argc, argv)
+  dss_module_init 服务端模块初始化
+    drpc_hdlr_init 注册表 static drpc_handler_t *registry_table 静态 drpc_handler_t *注册表, 函数指针
+  dss_ctx_nr_get 获取cart上下文总数
+  crt_init_opt 初始化网络层
+  if (dss_mod_facs & DSS_FAC_LOAD_CLI) 如果需要加载客户端软件栈,默认不执行
+    daos_init 
+  daos_hhash_init 初始化hash表
+    daos_hhash_init_feats(D_HASH_FT_GLOCK | D_HASH_FT_LRU)
+      d_hhash_create(feats | D_HASH_FT_NO_KEYINIT_LOCK, D_HHASH_BITS, &daos_ht.dht_hhash) 创建全局hash表 daos_ht
+  pl_init 初始化放置模块, 创建放置映射hash表
+  d_hhash_set_ptrtype 服务端使用指针类型的控制器
+  ds_iv_init
+    D_INIT_LIST_HEAD(&ds_iv_ns_list) 初始化iv,ns链表头
+    D_INIT_LIST_HEAD(&ds_iv_class_list)
+    ds_iv_ns_tree_topo = crt_tree_topo(CRT_TREE_KNOMIAL, 4) 初始化树拓扑,位运算,移位,或
+  modules_load 加载模块信息: vos, rdb, rsvc, security, mgmt, dtx, pool, cont, obj, rebuild
+    dss_module_load
+      lmod->lm_dss_mod = smod 设置加载模块为动态打开的模块
+      d_list_add_tail(&lmod->lm_lk, &loaded_mod_list) 动态打开 dlopen,并加入链表
+  mem_leak_check_start();
+  hlc_recovery_end 结束 HLC 恢复
+  dss_set_start_epoch
+  dss_module_init_all
+    dss_register_key
+    d_list_for_each_entry_safe(lmod, tmp, &loaded_mod_list 遍历之前加载的模块链表
+      dss_module_init_one(lmod, &fac)
+        rc = smod->sm_init() // vos_mod_init, 
+  dss_srv_init 初始化服务(服务初始化)
+    dss_tls_init(DAOS_SERVER_TAG, 0, -1)
+    vos_db_init(dss_storage_path)  sys_db.c dss_storage_path=/mnt/daos
+    bio_nvme_init 全局nvme初始化
+      d_getenv_bool
+      open(nvme_conf, O_RDONLY, 0600) 打开nvme配置文件
+      smd_init(db) 服务元数据管理(每个服务) Per-Server Metadata Management (SMD),smd使用sysdb作为kv存储元数据
+      spdk_bs_opts_init 将 spdk_bs_opts 结构初始化为默认的 blobstore 选项值。
+      bio_spdk_env_init 环境初始化
+        spdk_env_opts_init(&opts) 初始化选项 lib/env_dpdk/init.c
+        bio_add_allowed_alloc
+          read_config
+            spdk_json_parse
+          spdk_json_find_array
+          check_vmd_status
+          add_bdevs_to_opts
+        spdk_env_init 初始化或重新初始化环境库。 对于初始化，必须在使用此库中的任何其他函数之前调用它。 对于重新初始化，参数 `opts` 必须设置为 NULL，并且必须在同一进程中通过 spdk_env_fini() 完成环境库后调用
+          pci_env_reinit
+          build_eal_cmdline
+            push_arg
+          rte_eal_init(g_eal_cmdline_argcount, dpdk_args)  初始化环境抽象层 (EAL)。 此函数将仅在 MAIN lcore 上执行，并尽快在应用程序的 main() 函数中执行。 它将 WORKER lcores 置于 WAIT 状态。
+          spdk_env_dpdk_post_init
+        spdk_unaffinitize_thread 移除当前线程cpu亲和性
+        spdk_thread_lib_init 初始化线程库。 必须在分配任何线程之前调用一次。
+    bio_register_bulk_ops(crt_bulk_create, crt_bulk_free)
+    dss_xstreams_init
+    bio_nvme_ctl  操纵全局 NVMe 配置/状态
+    drpc_listener_init 启动drpc监听
+      generate_socket_path 生成socket路径 drpc_listener_socket_path=/var/run/daos_server/daos_engine_pid_sock
+        drpc_listener_start_ult
+  server_init_state_init
+  drpc_notify_ready
+  server_init_state_wait
+  dss_module_setup_all 初始化服务端所有模块
+  crt_register_event_cb(dss_crt_event_cb, NULL)
+  crt_register_hlc_error_cb(dss_crt_hlc_error_cb, NULL)
+  dss_xstreams_open_barrier
+  d_tm_record_timestamp
+  d_tm_set_counter(metrics->rank_id, dss_self_rank())
+
+
+
+vos_db_init
+  vos_db.db_pub.sd_fetch	  = db_fetch
+  ...
+  db_open_create
+    mkdir(vdb->db_path, 0777)
+    vos_pool_create
+    vos_pool_open
+    vos_cont_create
+    db_upsert
+
+
+dss_xstreams_init
+  dss_start_xs_id 0,1..., 计算偏移, 如: xs_id = dss_sys_xs_nr + dss_tgt_nr + i;
+    hwloc_bitmap_first 计算位图中的第一个索引（最低有效位）
+    dss_start_one_xstream(obj->cpuset, xs_id) 用计算的cpu集启动, 内部绑核
+      dss_xstream_alloc(cpus)
+        dx->dx_cpuset = hwloc_bitmap_dup(cpus)
+      dss_sched_init
+        ABT_sched_def		sched_def
+        .init	= sched_init,
+        .run	= sched_run,
+        sched_info_init(dx)
+          info->si_cur_ts = daos_getmtime_coarse() 毫秒
+          d_hash_table_create si_pool_hash 创建hash表 大小为2的4次方=16
+          prealloc_requests(info, SCHED_PREALLOC_INIT_CNT) 预分配请求 8192
+            D_ALLOC_PTR(req)
+            D_INIT_LIST_HEAD(&req->sr_link)
+            d_list_add_tail(&req->sr_link, &info->si_idle_list) 插入链表 
+        sched_create_pools(dx); 创建3个池 从预定义类型创建新池。 ABT_pool_create_basic() 创建一个新池，由池类型 kind、访问类型 access 和自动标志 automatic 给出，并通过 newpool 返回其句柄。 kind 指定 newpool 的实现。 有关预定义池的详细信息，请参阅#ABT_pool_kind。 access 提示创建的池的使用。 Argobots 可以为具有更受限制的访问类型的池选择优化的实现（#ABT_POOL_ACCESS_PRIV 是最严格的访问类型）。 有关详细信息，请参阅#ABT_pool_access。 如果 automatic 为 ABT_FALSE，则 newpool 不会自动释放，因此 newpool 在使用后必须由 ABT_pool_free() 释放，除非 newpool 与主执行流的主调度程序相关联。
+          ABT_pool_create_basic(ABT_POOL_FIFO, ABT_POOL_ACCESS_MPSC 创建的池可能只被一个执行流弹出
+          ABT_sched_config_create
+          ABT_sched_create 
+          使用调度程序定义创建新的调度程序。ABT_sched_create() 创建一个新的调度器，由定义 def 和调度器配置 config 定义，并通过 newsched 返回它的句柄。def 必须定义所有非可选函数。 有关详细信息，请参阅 ABT_sched_def。newsched 与 pools 数组关联，它有 num_pools 个 ABT_pool 句柄。 如果池的第 i 个元素是 ABT_POOL_NULL，则新创建具有默认池配置的默认 FIFO 池并用作第 i 个池。
+      ABT_xstream_create_with_rank 创建具有特定等级的新执行流。 ABT_xstream_create_with_rank() 使用调度程序 sched 创建一个新的执行流，并通过 newxstream 返回其句柄。 如果 sched 为 ABT_SCHED_NULL，则使用具有基本 FIFO 队列和默认调度程序配置的默认调度程序。
+      ABT_thread_attr_create
+      ABT_thread_attr_set_stacksize 在 ULT 属性中设置堆栈大小。 ABT_thread_attr_set_stacksize() 设置 ULT 属性 attr 中的堆栈大小 stacksize（以字节为单位）。 如果堆栈内存已由 ABT_thread_attr_set_stack() 设置，此例程将更新堆栈大小，同时将堆栈内存保留在 attr 中。
+      ABT_thread_create dss_srv_handler
+
+
+dss_srv_handler 服务控制器，设置cpu亲和性，初始化TLS，crt， nvme，gc, nvme, 启动网络poll
+  dss_xstream_set_affinity 设置亲和性
+  hwloc_set_cpubind 绑核
+  hwloc_set_membind 将当前进程或线程的默认内存绑定策略设置为更喜欢由 set 指定的 NUMA 节点。 这是最便携的形式，因为它允许 hwloc 使用基于进程的操作系统功能或基于线程的操作系统功能，具体取决于可用的功能。 如果指定了 ::HWLOC_MEMBIND_BYNODESET，则集合被视为节点集。 否则它是一个cpuset。
+  dss_tls_init 初始化本地存储, 为特定线程分配 dss_thread_local_storage 并将指针存储在特定于线程的值中，该值可以随时使用 dss_tls_get() 获取。
+    dss_thread_local_storage_init obj_tls_init
+      dtls->dtls_values[i] = dmk->dmk_init(xs_id, tgt_id) 
+      dmk->dmk_init(xs_id, tgt_id) -> dss_srv_tls_init | vos_tls_init 
+    pthread_setspecific(dss_tls_key, dtls)
+  dss_get_module_info
+    dss_module_key_get
+  crt_context_create
+  crt_context_register_rpc_task dss_rpc_hdlr dss_iv_resp_hdlr 注册两个公共回调
+  crt_context_idx
+  tse_sched_init 使用可选的完成回调和指向用户数据的指针初始化调度程序。 调用者负责完成或取消调度程序。
+  bio_xsctxt_alloc 初始化spdk环境和nvme上下文 
+  dss_nvme_poll_ult
+  for (;;) 死循环
+    crt_progress
+
+vos_tls_init 初始化vos本地线程存储
+  D_INIT_LIST_HEAD(&tls->vtl_gc_pools)
+  vos_obj_cache_create(LRU_CACHE_BITS 创建lru
+  d_uhash_create vtl_pool_hhash vtl_cont_hhash
+  umem_init_txd(&tls->vtl_txd) 为避免为每个事务分配阶段数据，umem 用户应准备每个 xstream 阶段数据并通过 umem_init_txd() 对其进行初始化，此每个 xstream 阶段数据将用于同一 xstream 中的所有事务
+    txd->txd_magic = UMEM_TX_DATA_MAGIC
+  vos_ts_table_alloc
+    vos_ts_copy VOS_TS_TYPE_CONT 不执行此逻辑
+      daos_dti_copy
+        *des = *src 赋值
+        memset(des, 0, sizeof(*des)) 置0
+    lrua_array_alloc
+  d_tm_add_metric
+
+dss_nvme_poll_ult
+  dss_get_module_info
+  dss_current_xstream
+  bio_nvme_poll poll nvme完成事件
+    spdk_thread_poll
+    is_bbs_owner
+    bio_bs_monitor
+    is_init_xstream
+    scan_bio_bdevs
+    bio_led_event_monitor
+  ABT_thread_yield
+
+
+vos线程模型
+bio_nvme_poll
+
+
+nvme配置文件
+/mnt/ubip1/ubip_nvme.conf
+
+subsystem: bdev
+trtype: PCIe
+method: bdev_nvme_attach_controller
+
+
+核心数
+主线程XS
+首选线程数
+
+dss_topo_init 初始化拓扑
+  numa_obj = hwloc_get_obj_by_depth
+  dss_tgt_nr = dss_tgt_nr_get numa，核， 分配算法  超额认购 oversubscribe 计算每个引擎多少个target
+
+
+core 核。 一个计算单元（可以由多个 PU Processing Unit，也就是逻辑处理器共享）
+处理器单元的缩写（不是进程！）。 hwloc 识别的最小物理执行单元。 例如，一个核心上可能有多个 PU（例如，硬件线程）。
+当多台机器形成整体单一系统映像 (SSI) 时，可以使用附加系统类型，例如 Kerrighed。
+最后，请注意，一个对象可以由其在拓扑图中的数字“深度”表示。
+水平类型的宽度: 
+
+深度
+查看硬件信息 hwloc-info 
+depth 0:	1 Machine (type #1)
+depth 1:	2 NUMANode (type #2)
+depth 2:	2 Package (type #3) 
+depth 3:	2 L3Cache (type #4)
+depth 4:	56 L2Cache (type #4)
+depth 5:	56 L1dCache (type #4)
+depth 6:	56 L1iCache (type #4)
+depth 7:	56 Core (type #5)
+depth 8:	56 PU (type #6)
+Special depth -3:	9 Bridge (type #9)
+Special depth -4:	7 PCI Device (type #10)
+Special depth -5:	10 OS Device (type #11)
+
+
+
+学习路线:
+  初始化  *
+  格式化
+  创建池
+  创建容器
+  挂载
+  IO路径
+  故障后的重建,rebuild
+
+
+register_dbtree_classes
+  dbtree_class_register(DBTREE_CLASS_KV dbtree_kv_ops
+    if (!(tree_feats & (BTR_FEAT_UINT_KEY | BTR_FEAT_DIRECT_KEY))) 利用位运算判断, 如果没有设置唯一键或直接键
+    btr_class_registered[tree_class].tc_ops = ops 注册操作(利用数组index索引树的类型)
+    btr_class_registered[tree_class].tc_feats = tree_feats 注册树类型特征位
+
+
+dss_module_init_one
+  rc = smod->sm_init() 初始化单个模块 -> vos_mod_init
+  dss_register_key(smod->sm_key)
+  daos_rpc_register(smod->sm_proto_fmt[i], smod->sm_cli_count[i]... 注册RPC CRT_PROTO_OPC
+  drpc_hdlr_register_all(smod->sm_drpc_handlers) 注册所有控制器
+    drpc_hdlr_register
+      registry_table[module_id] = handler 注册drpc控制器, 模块id也就是对应的drpc枚举中的索引号
+
+
+模块列表, 模块初始化, vos,rdb,rsvc,security,mgmt,dtx,pool,cont,obj,rebuild
+关键字: .sm_name 模块名
+enum daos_module_id 模块ID
+vos_srv -> vos_srv_module
+vos_mod_init vos初始化
+  vos_pool_settings_init vos池初始化设置
+    pmemobj_ctl_set(NULL, "heap.arenas_assignment_type", &atype) 线程使用1个全局的arena POBJ_ARENAS_ASSIGNMENT_GLOBAL 全局模式
+  vos_cont_tab_register 注册容器 VOS_BTR_CONT_TABLE class: 14
+  vos_dtx_table_register
+    dbtree_class_register(VOS_BTR_DTX_ACT_TABLE 注册DTX活动表
+    dbtree_class_register(VOS_BTR_DTX_CMT_TABLE 注册提交表
+  vos_obj_tab_register
+    dbtree_class_register(VOS_BTR_OBJ_TABLE 注册对象索引表(OI) 
+  obj_tree_register
+    dbtree_class_register(ta->ta_class, ta->ta_feats 注册db树 vos_btr_attrs: VOS_BTR_DKEY, VOS_BTR_AKEY, VOS_BTR_SINGV, vos_dkey, vos_akey, singv
+  vos_ilog_init 初始化全局化身日志
+    ilog_init
+  d_getenv_int DAOS_VOS_AGG_THRESH 触发vos聚合的块数=256块, 总大小256*4K=1MB
+
+
+rdb初始化
+rdb_module_init
+  rdb_hash_init
+    d_hash_table_create_inplace rdb_hash 加锁创建rdb_hash表
+
+
+rsvc初始化
+rsvc_module_init
+  d_hash_table_create_inplace rsvc_hash
+
+安全模块security默认加载
+init
+  ds_sec_server_socket_path = /var/run/daos_server/daos_server.sock
+
+mgmt 管理模块初始化
+ds_mgmt_init
+  ds_mgmt_system_module_init
+    crt_group_lookup
+    d_iov_set
+    ds_rsvc_class_register(DS_RSVC_CLASS_MGMT, &mgmt_svc_rsvc_class)
+      rsvc_classes[id] = class 将类添加到rsvc类的数组中
+
+
+dtx 初始化
+dtx_init
+  设置阈值
+  dbtree_class_register(DBTREE_CLASS_DTX_CF
+  dbtree_class_register(DBTREE_CLASS_DTX_COS
+
+
+池初始化
+pool
+init(void) .sm_init	= init
+  ds_pool_cache_init 缓存初始化
+    daos_lru_cache_create 创建lru缓存,内存中
+      d_hash_table_create_inplace D_HASH_FT_LRU dlc_htable 创建lru_hash表
+      D_INIT_LIST_HEAD 初始化链表头 驱逐LRU缓存条目时避免全扫描
+  ds_pool_hdl_hash_init
+    d_hash_table_create pool_hdl_hash 创建池控制器哈希表
+  ds_pool_iv_init 添加服务器 iv 树以在服务器之间共享值。 通过iv tree共享pool map，只先做同步更新
+    ds_iv_class_register IV_POOL_MAP 通过iv传播属性
+  ds_pool_prop_default_init DAOS-7254 聚合：将 EC 聚合与 VOS 聚合分开 (#5667), 将 EC agg 和 VOS aggregate 分离成两个 ULT，避免 iv fetch，dsc_pool/container open 每次回调，同时保证 EC aggregation 可以在删除快照时触发。添加 DAOS_EC_AGG 环境以禁用 EC 聚合以进行测试
+    entry = daos_prop_entry_get(&pool_prop_default, DAOS_PROP_PO_ACL)
+    &prop->dpp_entries[i]
+    entry->dpe_val_ptr = ds_sec_alloc_default_daos_pool_acl()
+      alloc_default_daos_acl_with_perms
+        alloc_ace_with_access
+          daos_ace_create
+        daos_acl_create
+          flatten_aces 扁平化
+  ds_pool_rsvc_class_register DS_RSVC_CLASS_POOL 注册副本服务
+  bio_register_ract_ops 设置nvme操作表, 故障回调, 重新加入的回调, io错误的回调
+
+
+cont 初始化容器服务
+init(void)
+  ds_oid_iv_init
+    ds_iv_class_register 注册iv类
+  ds_cont_iv_init
+    ds_iv_class_register 注册各种类
+  ds_cont_prop_default_init
+
+obj 对象初始化
+obj_mod_init(void)
+  obj_utils_init
+  obj_class_init
+    D_ALLOC_ARRAY(oc_ident_array, OC_NR)
+  obj_ec_codec_init
+
+
+rebuild 重建初始化
+init(void)
+  D_INIT_LIST_HEAD rg_tgt_tracker_list 所有tagert
+  rg_global_tracker_list 主
+  ABT_mutex_create(&rebuild_gst.rg_lock) 重建全局锁
+  rebuild_iv_init
+    ds_iv_class_register
+
+启动drpc监听用户级线程
+drpc_listener_start_ult
+  setup_listener_ctx(&ctx)
+    unlink(sockpath)
+    listener = drpc_listen(sockpath, drpc_hdlr_process_msg)  unix domain socket 域套接字, 创建了一个新系统 XS (1)，绑定到与 XS 0 相同的 CPU 核心。dRPC 侦听器循环专门在这个 XS 上运行。 当 dRPC 消息到达时，drpc_progress 在 XS 0 上启动一个新的 ULT 来处理消息。 它必须在 XS 0 上才能与只能在 XS 0 上运行的服务进行交互。为 dRPC 上下文结构添加了引用计数。 drpc_close 现在要么减少引用计数，要么如果这是最后一个引用，则关闭/释放套接字。 删除了现在不再使用的 drpc_recv
+    drpc_hdlr_process_msg drpc处理消息的控制器
+      unixcomm_listen(sockaddr, O_NONBLOCK, &comm)
+        new_unixcomm_socket(flags, &comm)
+          comm->fd = socket(AF_UNIX, SOCK_SEQPACKET, 0) 创建socket , SOCK_SEQPACKET为固定最大长度的数据报提供有序的、可靠的、基于双向连接的数据传输路径； 消费者需要在每次输入系统调用时读取整个数据包, 协议参数, 该协议指定要与套接字一起使用的特定协议。 通常只存在一个协议来支持给定协议族中的特定套接字类型，在这种情况下 protocol 可以指定为 0。但是，可能存在许多协议，在这种情况下必须在此指定一个特定的协议 方式。要使用的协议号特定于要进行通信的“通信域”； 请参阅协议 (5)。 有关如何将协议名称字符串映射到协议编号的信息，请参阅 getprotoent(3)
+          fcntl(comm->fd, F_SETFL, flags)
+        fill_socket_address(sockaddr, &address)
+        bind(comm->fd 在 SOCK_STREAM 套接字可以接收连接之前，通常需要使用 bind() 分配本地地址（请参阅 accept(2)）
+        listen(comm->fd, SOMAXCONN) listen() 将 sockfd 引用的套接字标记为被动套接字，即，作为将用于使用 accept(2) 接受传入连接请求的套接字。
+sockfd 参数是一个文件描述符，它引用 SOCK_STREAM 或 SOCK_SEQPACKET 类型的套接字。
+backlog 参数定义了 sockfd 的挂起连接队列可能增长到的最大长度。 如果连接请求在队列已满时到达，则客户端可能会收到带有 ECONNREFUSED 指示的错误，或者，如果底层协议支持重传，则可能会忽略该请求，以便稍后重新尝试连接成功
+      init_drpc_ctx(ctx, comm, handler)
+        ctx->handler = handler 赋值 = drpc_hdlr_process_msg
+    *new_ctx = drpc_progress_context_create(listener)
+  dss_ult_create(drpc_listener_run
+    ult_create_internal(func
+      stream_id = sched_ult2xs(xs_type, tgt_idx) 获取执行流id, 根据映射关系
+      dx = dss_get_xstream(stream_id) 通过数组角标
+      ABT_thread_attr_set_stacksize(attr, stack_size)
+      sched_create_thread(dx, func, arg, attr, ult, flags)
+        sched_xstream_stopping?
+         daos_abt_thread_create(cur_dx->dx_sp, dss_free_stack_cb, abt_pool, func, arg, t_attr, thread)  max_map_count文件包含限制一个进程可以拥有的VMA(虚拟内存区域)的数量: sysctl vm.max_map_count 默认 64K
+         ABT_thread_create -> drpc_listener_run
+          set_listener_running(true)
+          while (is_listener_running()) 
+          rc = drpc_progress(ctx, 1000)
+            drpc_progress_context_to_unixcomms(ctx, &comms)
+              num_comms = get_open_drpc_session_count(ctx)
+            unixcomm_poll(comms, num_comms, timeout_ms)
+              fds[i].events = POLLIN | POLLPRI
+              poll_rc = poll(fds, num_comms, timeout_ms) 轮训
+              comms[i].activity = poll_events_to_unixcomm_activity 获取激活原因
+            process_activity(ctx, comms, num_comms) 处理激活的事件
+              process_all_session_activities(ctx, comms, num_comms)
+                process_session_activity
+                  handle_incoming_call
+                    drpc_recv_call
+                      get_incoming_call
+                        unixcomm_recv
+                        drpc__call__unpack
+                    drpc_response_create
+                    create_call_ctx
+                    dss_ult_create(drpc_handler_ult
+              process_listener_activity(ctx, comms, num_comms)
+                drpc_accept
+                d_list_add(&session_node->link
+          ABT_thread_yield()
+          drpc_progress_context_close(ctx)
+
+
+drpc_handler_ult 执行控制器
+  ctx->session->handler(ctx->call, ctx->resp) -> drpc_hdlr_process_msg
+  drpc_hdlr_process_msg
+    handler = drpc_hdlr_get_handler(request->module) 根据请求中的模块id, 获取请求对应的模块
+      handler = registry_table[module_id] 从注册表中获取控制器
+    handler(request, resp) 处理请求
+  rc = drpc_send_response(ctx->session, ctx->resp)
+free_call_ctx(ctx)
+
+
+static struct vos_sys_db	vos_db
+vos_db_init vos初始化 元数据初始化
+  vos_db_init_ex(db_path, NULL, false, false)
+  memset(&vos_db, 0, sizeof(vos_db)) 系统db置零 /mnt/daos/daos_sys/sys_db 系统数据库sys_db
+  vos_db.db_poh = DAOS_HDL_INVAL
+  vos_db.db_pub.sd_fetch	  = db_fetch ...
+  uuid_parse(SYS_DB_POOL, vos_db.db_pool) 保留系统池,容器的uuid
+  db_open_create(&vos_db.db_pub, !!create) 创建或打开 vos_pool_open
+    access 先检查文件是否存在 第二轮创建
+    vos_pool_create 创建vosp 系统scm池(128MB) jump
+    vos_cont_create(vdb->db_poh, vdb->db_cont) 在vos池中(vpool)创建一个容器
+      cont_df_lookup(vpool, &ukey, &args)
+        dbtree_lookup(vpool->vp_cont_th, &key, &value) b树搜索
+          dbtree_fetch(toh, BTR_PROBE_EQ, DAOS_INTENT_DEFAULT, key, NULL 探测键等于提供键的记录
+            btr_probe_key(tcx, opc, intent, key)
+              btr_hkey_gen(tcx, key, hkey)
+              btr_probe(tcx, probe_opc, intent, key, hkey) 查找b树
+                btr_context_set_depth
+                btr_cmp 二分查找
+                btr_node_is_leaf
+                btr_trace_set
+                btr_node_child_at
+                ... b树
+      umem_tx_begin(vos_pool2umm(vpool), NULL)
+      dbtree_update(vpool->vp_cont_th, &key, &value)
+        btr_upsert(tcx, BTR_PROBE_EQ, DAOS_INTENT_UPDATE, key, val) 更新或插入
+      umem_tx_end(vos_pool2umm(vpool), rc)
+    vos_cont_open(vdb->db_poh, vdb->db_cont, &vdb->db_coh)
+      cont_lookup(&ukey, &pkey, &cont)
+        d_uhash_link_lookup(vos_cont_hhash_get(), key, pkey)
+      cont_df_lookup(pool, &ukey, &args)
+      uuid_copy(cont->vc_id, co_uuid)
+      cont->vc_pool	 = pool 设置容器属性
+      D_INIT_LIST_HEAD(&cont->vc_dtx_act_list)
+      gc_check_cont(cont) 检查是否需要加入gc列表
+        D_INIT_LIST_HEAD(&cont->vc_gc_link)
+        d_list_add_tail(&cont->vc_gc_link, &cont->vc_pool->vp_gc_cont)
+      dbtree_open_inplace_ex(&cont->vc_cont_df->cd_obj_root
+      lrua_array_alloc(&cont->vc_dtx_array 分配LRU数组, 活动的dtx记录
+      dbtree_create_inplace_ex(VOS_BTR_DTX_ACT_TABLE
+      dbtree_create_inplace_ex(VOS_BTR_DTX_CMT_TABLE
+      vea_hint_load(&cont->vc_cont_df->cd_hint_df[i]
+      vos_dtx_act_reindex(cont)
+        lrua_allocx_inplace(cont->vc_dtx_array
+        dbtree_upsert(cont->vc_dtx_active_hdl
+        dae->dae_start_time = crt_hlc_get()
+        d_list_add_tail(&dae->dae_link, &cont->vc_dtx_act_list) dtx可能在其他线程中遍历此链表
+      cont_insert(cont, &ukey, &pkey, coh)
+        d_uhash_ulink_init(&cont->vc_uhlink, &co_hdl_uh_ops)
+        d_uhash_link_insert(vos_cont_hhash_get(), key 插入uuid hash表
+    rc = db_upsert(db, SYS_DB_MD, &key, &val) metadata元数据,做容器dkey
+      db_io_init(&io, table, key, val)
+        io->io_iod.iod_type = DAOS_IOD_SINGLE 一个不可分割的值以原子方式更新
+      vos_obj_update(vdb->db_coh 更新指定对象的记录。 如果sql中没有提供输入缓冲区，则该函数返回新分配的地址来存放记录，上层可以直接向这些地址写入数据（rdma模式）
+        vos_obj_update_ex
+          vos_update_begin
+            vos_check_akeys(iod_nr, iods)
+            vos_ioc_create
+              vos_ilog_fetch_init(&ioc->ic_dkey_info)
+                ilog_fetch_init(&info->ii_entries)
+              vos_ilog_fetch_init(&ioc->ic_akey_info)
+              vos_ioc_reserve_init(ioc, dth)
+              vos_ts_set_allocate
+                vos_kh_clear()
+                vos_ts_set_append_cflags(*ts_set, cflags)
+              bio_iod_alloc
+              bsgl = bio_iod_sgl(ioc->ic_biod, i)
+              rc = bio_sgl_init(bsgl, iov_nr)
+            vos_space_hold(vos_cont2pool
+              vos_space_query(pool, &vps, false)
+                pmemobj_ctl_get(pool->vp_umm.umm_pool stats.heap.curr_allocated
+                vea_query(pool->vp_vea_info, attr, stat) 查询nvme
+                  dbtree_iterate(vsi->vsi_md_free_btr count_free_persistent
+                    verify_free_entry
+                  dbtree_iterate count_free_transient
+                  d_binheap_size
+                  d_binheap_root
+                    d_binheap_find
+                      d_binheap_find_locked
+                        d_binheap_pointer
+              estimate_space 估计更新请求将消耗多少空间。 这个保守的估计总是假设新对象、dkey、akey 将被创建用于更新
+                umem_slab_usize
+                scm += estimate_space_key(umm, dkey)
+                vos_media_select
+            dkey_update_begin(ioc)
+              iod_set_cursor
+              akey_update_begin
+                vos_media_select(vos_cont2pool(ioc->ic_cont)
+                vos_reserve_single(ioc, media, size)
+                  reserve_space(ioc, DAOS_MEDIA_SCM, scm_size, &off)
+                    vos_reserve_scm
+                      umem_reserve
+                    vos_reserve_blocks
+                      vea_reserve
+                  vos_irec_init_csum(irec, value_csum)
+                  bio_addr_set_hole
+                vos_reserve_recx(ioc, media, size, recx_csum
+                  bio_addr_set_hole
+                  vos_dedup_lookup 去重
+                    d_hash_rec_find(pool->vp_dedup_hash
+                  iod_reserve
+                    bio_iod_sgl 获取 io 描述符的指定 SG 列表的辅助函数
+          vos_obj_copy
+            bio_iod_prep
+              iterate_biov(biod, arg ? bulk_map_one : dma_map_one, arg)
+              dma_rw(biod)
+            bio_iod_copy
+              iterate_biov(biod, copy_one, &arg)
+            bio_iod_post
+              dma_rw(biod)
+              bdb = iod_dma_buf(biod)
+              dma_drop_iod(bdb)
+                ABT_cond_broadcast(bdb->bdb_wait_iods)
+          vos_update_end
+            vos_dedup_verify_fini
+            vos_ts_set_add
+            vos_tx_begin
+            vos_dtx_commit_internal
+            vos_obj_hold(vos_obj_cache_current()
+            dkey_update
+            vos_ts_set_check_conflict
+            vos_space_unhold
+
+dss_srv_tls_init
+
+
+dsm_tls_init
+  ds_cont_child_cache_create
+  daos_lru_cache_create cont_child_cache_ops
+  ds_cont_hdl_hash_create
+
+obj_tls_init
+  每个IO指标
+
+
+
+
+  daos_pool
+创建池
+daos pool create xxx
+[root@c1f82c52f85d daos]# dmg pool create sxb -z 4g
+Creating DAOS pool with automatic storage allocation: 4.0 GB total, 6,94 tier ratio
+{
+  "properties": [
+    {
+      "number": 1,
+      "Value": {
+        "Strval": "sxb"
+      }
+    }
+  ],
+  "Sys": "",
+  "HostList": null,
+  "User": "",
+  "UserGroup": "",
+  "ACL": null,
+  "NumSvcReps": 0,
+  "TotalBytes": 4000000000,
+  "TierRatio": [
+    0.06,
+    0.94
+  ],
+  "NumRanks": 0,
+  "Ranks": [],
+  "TierBytes": null
+}
+
+{"uuid":"d8854013-e811-498a-b121-e653e289e7c1","sys":"daos_server","user":"root@","usergroup":"root@","properties":[{"number":1,"Value":{"Strval":"sxb"}}],"faultDomains":[2,1,3,1,4,1,1,6,1,1,2,1,1,2,0],"numsvcreps":3,"tierratio":[0,0],"ranks":[0,1,2],"tierbytes":[80000000,1253333333]}
+
+type PoolCreateCmd struct 参数 打印参数: data, _ := json.Marshal(req)
+src/control/cmd/dmg/pool.go
+PoolCreateCmd
+control.PoolCreate PoolCreateReq
+    mgmtpb.NewMgmtSvcClient(conn).PoolCreate(ctx, pbReq)
+        func (svc *mgmtSvc) PoolCreate(ctx context.Context, req *mgmtpb.PoolCreateReq)
+            checkLeaderRequest 在leader上创建池
+                CheckLeader
+                checkSystemRequest(req)
+            svc.harness.CallDrpc(ctx, drpc.MethodPoolCreate, req)
+            C.DRPC_METHOD_MGMT_POOL_CREATE  src/control/drpc/modules.go
+            process_drpc_request
+                case DRPC_METHOD_MGMT_POOL_CREATE
+                ds_mgmt_drpc_pool_create(drpc_req, drpc_resp)  src/mgmt/srv_drpc.c
+                  conv_req_props 解析请求中的池属性
+                  targets = uint32_array_to_rank_list(req->ranks, req->n_ranks)
+                  uuid_parse(req->uuid, pool_uuid)
+                  create_pool_props
+                    ds_pool_svc_rf_from_nreplicas
+                    daos_acl_from_strs
+                    new_prop = daos_prop_alloc(entries) 分配entries个属性
+                  daos_prop_merge 合并属性
+                  ds_mgmt_create_pool 管理面创建池
+
+
+ds_mgmt_create_pool 创建池
+    crt_group_ranks_get(NULL, &pg_ranks)
+    crt_group_size(NULL, &pg_size)
+    pg_ranks = d_rank_list_alloc(pg_size)
+    d_rank_list_dup(&filtered_targets, targets)
+    d_rank_list_filter
+    d_rank_list_identical 比较两个排名列表是否相同
+      qsort(rank_list->rl_ranks, rank_list->rl_nr 先排序,再比较
+      pg_str = d_rank_list_to_str(pg_ranks) rank列表转字符串
+    ds_mgmt_tgt_pool_create_ranks
+        topo = crt_tree_topo(CRT_TREE_KNOMIAL, 4) 创建k项树拓扑
+        opc = MGMT_TGT_CREATE -> ds_mgmt_hdlr_tgt_create 操作码编码 DAOS_RPC_OPCODE, 操作码,模块id,版本
+        crt_corpc_req_create
+        dss_rpc_send 发送rpc到所有目标rank上
+          crt_req_send(rpc, rpc_cb, &eventual)
+          ABT_eventual_wait 等待返回
+        ds_mgmt_hdlr_tgt_create
+    d_rank_list_alloc(svc_nr)
+      ds_mgmt_pool_svc_create 创建svc
+        ds_pool_svc_create
+            select_svc_ranks
+            d_iov_set
+            ds_rsvc_dist_start
+            rsvc_client_init
+            d_backoff_seq_init -> 退避
+            rsvc_client_choose
+            pool_req_create(info->dmi_ctx, &ep, POOL_CREATE, &rpc) 操作码 = POOL_CREATE -> ds_pool_create_handler
+            dss_rpc_send
+            rsvc_client_complete_rpc
+            ds_pool_create_handler
+            ds_pool_start
+
+其他rank收到rpc请求
+ds_mgmt_hdlr_tgt_create(crt_rpc_t *tc_req)
+    cleanup_leftover_pools 清理滞留池以释放空间, 删除spdk blobs和pmemobj
+      zombie_pool_iterate(cleanup_leftover_cb, &dead_list)
+        common_pool_iterate 遍历僵尸目录 调用 cleanup_leftover_cb /ZOMBIES 在ds_mgmt_tgt_setup中设置僵尸目录
+          storage = opendir(path) 打开目录
+          cb(uuid, arg) -> cleanup_leftover_cb
+            dss_thread_collective(tgt_kill_pool, &id, 0)  在所有服务器 xstreams 上共同执行 func(arg)。 只能由 ULT 调用。 只能执行 tasklet 兼容的函数
+              coll_ops.co_func = tgt_kill_pool = carg.ca_future.dfa_func	= ops->co_func
+              dss_collective_internal
+              vos_pool_kill(id->uuid) 执行回调
+                pool_lookup(&ukey, &pool)
+                gc_have_pool(pool)
+                  gc_del_pool(pool)
+                  vos_pool_decref(pool)
+                vos_delete_blob(uuid)
+                  spdk_thread_send_msg(owner_thread(bbs), blob_msg_delete, &bma)
+            d_list_add(&dp->dp_link, dead_list)
+    d_hash_rec_insert(&pooltgts->dpt_creates_ht 将pool uuid 插入hash表, 用于销毁目标: d_hash_rec_find(&pooltgts->dpt_creates_ht
+    pthread_create tgt_create_preallocate 创建预分配线程
+        (void)dss_xstream_set_affinity(tca->tca_dx) 设置cpu亲和性
+        ds_mgmt_tgt_file
+          path_gen(pool_uuid, dss_storage_path, fname, idx, fpath)
+        access(tca->tca_path, F_OK)
+        dir_fsync(tca->tca_path) 已存在
+          fd = open(path, O_RDONLY|O_DIRECTORY) 打开
+          rc = fsync(fd) 同步
+          (void)close(fd) 关闭
+        path_gen 不存在
+        mkdir(tca->tca_newborn, 0700)
+        tgt_vos_preallocate 针对target预分配vos, 每个执行流创建一个vos文件, 每个scm分区(pm对象)最小16MB
+          path_gen
+          open
+          scm_size = D_ALIGNUP(scm_size, 1ULL << 12) 向上对齐到4KB
+          fallocate(fd, 0, 0, scm_size) 为 vos 文件预分配块以提供一致的性能并避免通过页面错误(缺页异常)进入后端文件系统分配器, 使用 fallocate(2) 而不是 posix_fallocate(3) 因为后者与 tmpfs 是伪造的, fallocate() 允许调用者直接操作为 fd 引用的文件分配的磁盘空间，其字节范围从 offset 开始并持续 len 个字节
+          fallocate -l 50M /data/web/www/html/b.zip 文件预留
+          fsync(fd) 除了刷新文件数据，fsync() 还刷新与文件关联的元数据信息
+    for(;;) 死循环
+    pthread_cancel(thread) 销毁状态,则取消线程
+    pthread_tryjoin_np(thread, &res) 等线程
+    ABT_thread_yield()
+    dss_thread_collective(tgt_vos_create_one, &vpa, 0) 在所有服务流上集体执行 coll_ops.co_func	= tgt_vos_create_one
+      dss_collective_internal
+        dss_thread_collective_reduce(&coll_ops, &coll_args, flags) coll_ops.co_func	= func 集合聚合缩减函数
+          dss_collective_reduce_internal
+    rc = rename(tca.tca_newborn, tca.tca_path)
+    (void)dir_fsync(tca.tca_path) 确认目录已持久化
+    rc = ds_pool_start(tc_in->tc_pool_uuid);
+      daos_lru_ref_hold(pool_cache 查找缓存,获取其引用, 最近最少使用, 查找或插入
+      pool = pool_obj(llink)
+      daos_lru_ref_release(pool_cache, &pool->sp_entry) 已经存在,释放引用
+      daos_lru_ref_hold(pool_cache &arg 带参数创建
+      dss_ult_create(pool_fetch_hdls_ult, pool, DSS_XS_SYS
+      ds_pool_start_ec_eph_query_ult(pool)
+      ds_iv_ns_start(pool->sp_iv_ns)
+    (void)tgt_destroy(tca.tca_ptrec->dptr_uuid
+
+----------------------
+ds_pool_create_handler
+    pool_svc_lookup
+    rdb_tx_begin
+    rdb_tx_lookup
+    daos_prop_dup
+    pool_prop_default_copy
+    rdb_tx_create_root
+    init_pool_metadata
+      d_iov_set
+      rdb_tx_update
+      rdb_tx_update
+      write_map_buf
+      write_map_buf
+      rdb_tx_create_kvs
+    ds_cont_init_metadata
+    rdb_tx_commit
+
+
+
+daos_pool_connect
+
+
+tgt_vos_create_one
+  path_gen /mnt/daos/93c634a2-d122-4914-b4b3-5ba76c696f68/vos-0 创建vos目录
+  vos_pool_create 创建vos池
+    *xs_ctxt = vos_xsctxt_get() 上下文是怎样初始化的?
+    uma.uma_id = UMEM_CLASS_PMEM 设置内存类型
+    if (flags & VOS_POF_SMALL) 小池, 置上独立标记位(VOS_POF_EXCL)
+    pool_lookup(&ukey, &pool) 根据key查询池
+      hlink = d_uhash_link_lookup(vos_pool_hhash_get(), ukey, NULL)
+        vos_tls_get()->vtl_pool_hhash
+      *pool = pool_hlink2ptr(hlink)
+    vos_pmemobj_create 0600 -rw- (600) 只有拥有者有读写权限 在创建/连接/关闭池时的blob对应的操作, /mnt/daos/daos_sys/sys_db
+      pop = pmemobj_create(path, layout, poolsize, mode) 创建持久内存对象,取scm大小
+    pmemobj_ctl_set(ph, "stats.enabled", &enabled) 启用使用率统计, scm和nvme
+    pool_df = vos_pool_pop2df(ph) pm转持久格式
+      TOID(struct vos_pool_df) pool_df
+      pool_df = POBJ_ROOT(pop, struct vos_pool_df) 获取根
+        pmemobj_root(PMEMobjpool *pop, size_t size)
+    umem_class_init(&uma, &umem) 通过uma中的属性实例化一个内存类umm
+      set_offsets(umm) 为池计算出必要的偏移量和基地址, 如果是vmem则置零
+    umem_tx_begin(&umem, NULL) 开始事务
+      umm->umm_ops->mo_tx_begin(umm, txd)  .mo_tx_begin		= pmem_tx_begin, 开始pm事务
+        pmemobj_tx_begin(umm->umm_pool  可变参数
+        pmdk事务 libpmemobj就提供了存储的事务特性
+        https://www.cnblogs.com/Kimbing-Ng/p/12738735.html 
+        https://pmem.io/pmdk/manpages/linux/v1.4/libpmemobj/libpmemobj.7/  
+        https://manpages.debian.org/experimental/libpmemobj-dev/pmemobj_tx_begin.3.en.html
+        https://my.oschina.net/fileoptions/blog/1629405
+    umem_tx_add_ptr(&umem, pool_df, sizeof(*pool_df))
+      mo_tx_add_ptr -> pmem_tx_add_ptr
+        pmemobj_tx_add_range_direct 添加内存范围
+    dbtree_create_inplace(VOS_BTR_CONT_TABLE 创建b树, 头文件: btree.h
+      dbtree_create_inplace_ex
+        btr_context_create
+          btr_class_init
+            umem_class_init(uma, &tins->ti_umm)
+            tins->ti_ops = tc->tc_ops 从注册的b树中初始化,设置标记位,函数操作表
+          btr_context_set_depth
+        btr_tx_tree_init
+          btr_tx_begin(tcx)
+          btr_tree_init(tcx, root)
+            btr_root_init(tcx, root, true)
+              btr_root_tx_add(tcx)
+          btr_tx_end(tcx, rc)
+        btr_tcx2hdl
+          hdl.cookie = (uint64_t)tcx
+    dbtree_close(hdl) 减引用
+    gc_init_pool(&umem, pool_df)
+      GC_MAX = 4
+      struct vos_gc_bin_df *bin = &pd->pd_gc_bins[i]
+      bin->bin_bag_size  = gc_bag_size 包大小=250
+      bag_id = umem_zalloc(umm, size)
+        mo_tx_alloc -> pmem_tx_alloc(pmemobj_tx_xalloc分配一个新对象) | vmem_alloc(calloc|malloc)
+    umem_tx_commit(&umem) | umem_tx_abort(&umem, rc)
+      mo_tx_commit 提交事务 -> pmem_tx_commit
+        pmemobj_tx_commit
+        pmemobj_tx_end
+    bio_nvme_configured // 以下只针对配置了Nvme大小的池, 纯SCM(vos池)不走下面的逻辑
+    bio_blob_create(uuid, xs_ctxt, nvme_sz)
+    // Format SPDK blob header 格式化spdk
+      spdk_bs_get_cluster_size(bbs->bb_bs)
+      spdk_blob_opts_init
+      smd_pool_get_blob
+      blob_cp_arg_init(ba)
+      bio_bs_hold(bbs)
+      spdk_thread_send_msg(owner_thread(bbs), blob_msg_create, &bma)
+      blob_wait_completion(xs_ctxt, ba)
+      smd_pool_add_tgt
+      spdk_bs_create_blob_ext
+    blob_wait_completion
+      xs_poll_completion
+        spdk_thread_poll(ctxt->bxc_thread, 0, 0)
+        在线程上执行一次迭代处理。 这包括过期的和连续的轮询器以及消息。 如果线程已经退出，则立即返回。
+    vea_format(&umem, vos_txd_get(), &pool_df->pd_vea_df, VOS_BLK_SZ  vos_blob_format_cb
+      rc = cb(cb_data, umem) 先执行回调 vos_blob_format_cb
+      umem_tx_begin
+      umem_tx_add_ptr
+      dbtree_open_inplace free_btr  vec_btr
+      dbtree_update
+      dbtree_create_inplace(DBTREE_CLASS_IV
+      umem_tx_abort(umem, rc) : umem_tx_commit 提交或终止
+    pool_open(ph, pool_df, uuid, flags, poh) // 打开池
+      pool_alloc(uuid, &pool)
+        d_uhash_ulink_init(&pool->vp_hlink, &pool_uuid_hops) uuid hash tab
+        D_INIT_LIST_HEAD(&pool->vp_gc_link)
+        D_INIT_LIST_HEAD(&pool->vp_gc_cont)
+      vos_register_slabs(uma) 注册7个slab
+        set_slab_prop(i, slab) slab->unit_size: 单个分配单元中的字节数。 单个分配最多可跨越 64 个单元（或在没有标头的情况下为 1 个）。 如果创建一个具有特定单元大小的分配类并强制它处理更大的大小，那么将使用多个单元。 例如，具有紧凑标头和 128 字节单元大小的分配类，对于 200 字节的请求，将创建一个包含 256 字节且跨越两个单元的内存块。 该分配的可用大小为 240 字节：2 * 128 - 16（标头）
+          vos_tree_get_overhead(0, tclass, 0, &ovhd) 返回常量，可用于估计持久内存磁盘格式的元数据开销
+            evt_overhead_get
+            dbtree_overhead_get
+              hkey_size = btr_hkey_size_const(ops, ofeat) 从树类中找: enum vos_tree_class 
+                size = ops->to_hkey_size() oi_hkey_size
+              ovhd->to_record_msize = ops->to_rec_msize(alloc_overhead) oi_rec_msize
+          pmemobj_ctl_set heap.alloc_class.new.desc 以编程方式执行写入 ctl 查询
+      umem_class_init
+      dbtree_open_inplace_ex
+        btr_context_create
+        btr_tcx2hdl
+      vos_xsctxt_get
+      bio_ioctxt_open 打开每个vos的io上下文
+        D_INIT_LIST_HEAD(&ctxt->bic_link)
+        bio_bs_hold 有nvme才执行
+        bio_blob_open
+      vea_load 从 SCM 加载空间跟踪信息以初始化内存中的复合索引
+      vos_dedup_init
+        d_hash_table_create vp_dedup_hash
+      pool_link
+        d_uhash_link_insert vos_pool_hhash_get
+        vos_pool2hdl
+      vos_space_sys_init
+        POOL_SCM_SYS
+        get_frag_overhead
+        gc_reserve_space(&pool->vp_space_sys[0]) gc保留
+        agg_reserve_space(&pool->vp_space_sys[0]); 聚合保留
+        tiny pool 小池不预留
+      gc_add_pool 附加一个用于 GC 的池，此函数还将池固定在打开的哈希表中。如果 GC 没有留下任何内容，GC 将从开放哈希中删除该池，并且用户已经关闭它
+        d_list_add_tail(&pool->vp_gc_link, &tls->vtl_gc_pools) 加入链表, 取链表中的数据 pool = d_list_entry(tls->vtl_gc_pools.next
+        vos_gc_run 其他线程执行gc
+          pool = d_list_entry(pools->next, struct vos_pool, vp_gc_link)
+          gc_reclaim_pool 为池开启垃圾回收
+      lock_pool_memory
+        getrlimit(RLIMIT_MEMLOCK, &rlim) 获取软限制和硬限制, 这是可以锁定到 RAM 中的最大内存字节数, 值 RLIM_INFINITY 表示对资源没有限制（在 getrlimit() 返回的结构和传递给 setrlimit() 的结构中）,一般都有限制, 上面使用 PRIuMAX 宏的解决方案很好，但是从 C99 开始还有 j 类型修饰符，用于打印 intmax_t 和 uintmax_t 类型的值：
+        printf("Soft limit: %" PRIuMAX " bytes\n", (uintmax_t)cur_bytes);
+        printf("Soft limit: %ju bytes\n", (uintmax_t)cur_bytes);
+        mlock((void *)pool->vp_umm.umm_base, pool->vp_pool_df->pd_scm_sz) 锁内存, 保证范围 [ADDR,ADDR+LEN) 映射的所有整页都驻留在内存中(no swap)
+
+vos_blob_format_cb 写blob头
+  bio_ioctxt_open 创建一个上下文来获取blob
+  bio_ioctxt_close
+
+rsvc 复制服务
+架构, daos vos, daos元数据, 核心, daos基石
+[ pool_svc, cont_svc, ... ]
+[ ds_rsvc ]
+[                rdb                ]
+[ raft ]
+[                vos                ]
+
+
+
+
+vos_cont_destroy
+  gc_wait()
+
+
+查池
+umg pool list -v
+func (cmd *PoolListCmd) Execute
+func ListPools
+  PoolQuery(ctx, rpcClient, &PoolQueryReq{ID: p.UUID})
+  func (svc *mgmtSvc) PoolQuery
+  svc.makePoolServiceCall(ctx, drpc.MethodPoolQuery, req)
+  MethodPoolQuery MgmtMethod = C.DRPC_METHOD_MGMT_POOL_QUERY
+  DRPC_METHOD_MGMT_POOL_QUERY
+  ds_mgmt_drpc_pool_query
+    ds_mgmt_pool_query
+      ds_pool_svc_query
+        rsvc_client_init
+        rsvc_client_choose
+        pool_req_create POOL_QUERY 创建查池RPC请求
+        in = crt_req_get(rpc)
+        pool_query_bits
+        map_bulk_create 创建池map bulk
+          *buf = pool_buf_alloc(nr) 分配一个缓冲
+          d_iov_set(&iov, *buf, pool_buf_size((*buf)->pb_nr))
+          sgl.sg_iovs = &iov;
+          crt_bulk_create(ctx, &sgl, CRT_BULK_RW, bulk)
+        dss_rpc_send(rpc) -> ds_pool_query_handler
+        out = crt_reply_get(rpc)
+        pool_rsvc_client_complete_rpc
+        process_query_result 处理结果
+        rsvc_client_fini(&client)
+  pool_query_free_tier_stats
+
+
+POOL_QUERY opc=2040003, 关键词:"pool", UBIP_POOL_MODULE
+ds_pool_query_handler
+  pool_svc_lookup_leader
+  rdb_tx_begin
+  d_iov_set key, value
+  rdb_tx_lookup
+  pool_prop_read
+  read_map_buf 池服务负责人使用存储在 AEP 中的池映射缓冲区用于 RDMA，同时传播到其他服务器或传输回客户端。此补丁更改了这一点，并在 RDMA 之前将池映射缓冲区从 AEP 复制到 DRAM，因为某些提供商无法支持来自/到 AEP 的 RDMA, AEP简介 AEP是Intel推出的一种新型的非易失Optane Memory设备，又被称作Apache Pass，所以一般习惯称作AEP。在这之前也有类似的设备称作NVDIMM或PMEM，目前Linux创建的AEP设备节点也是叫做pmem（如/dev/pmem0），所以本文中NVDIMM或PMEM都指AEP, NVDIMM (Non-Volatile Dual In-line Memory Module) 是一种可以随机访问的, 非易失性内存
+    locate_map_buf 将持久内存中的池映射缓冲区地址和池映射版本分别检索到“map_buf”和“map_version”
+      d_iov_set
+      rdb_tx_lookup
+  ds_pool_transfer_map_buf 传输大块数据, 将池映射缓冲区传输到“remote_bulk”。 如果远程批量缓冲区太小，则返回 -DER_TRUNC 并将“required_buf_size”设置为本地池映射缓冲区大小。
+    pool_buf_size
+    crt_bulk_get_len
+    crt_bulk_create(rpc->cr_ctx, &map_sgl, CRT_BULK_RO, &bulk)
+    ABT_eventual_create(sizeof(*status), &eventual)
+    crt_bulk_transfer(&map_desc, bulk_cb, &eventual, &map_opid)
+    ABT_eventual_wait(eventual, (void **)&status)
+  crt_reply_send
+
+傲腾产品分两类：，分别是傲腾非易失性内存和傲腾SSD。这里要讲的是傲腾内存。习惯上大家叫 aep，实际上这个称呼并不十分正确，正确的叫法应该是：DCPM或傲腾DCPM，全称是：optane DC（data center）persistent memory，而aep(Apache pass)是指基于3D xpoint的持久化内存，并不完全等同于DCPM
+
+server_init
+  dss_module_setup_all
+    ds_mgmt_tgt_setup
+      NEWBORNS 新生儿
+      ZOMBIES 僵尸
+
+
+dss_module_setup_all      
+  rc = m->sm_setup() 服务端动态模块初始化 -> ds_pool_start_all 创建ULT, 在SYS执行流上启动
+  ds_mgmt_tgt_pool_iterate(start_one, NULL /* arg */)
+    common_pool_iterate(dss_storage_path, cb, arg)
+      start_one uuid, arg
+        ds_pool_start(uuid)
+        path = pool_svc_rdb_path(uuid)
+        ds_rsvc_start(DS_RSVC_CLASS_POOL
+
+
+
+
+
+recv_installsnapshot
+rdb_raft_cb_recv_installsnapshot
+  rdb_raft_destroy_lc
+    vos_cont_destroy 销毁容器
+      VOS 独立模式的功能，它回收所有已删除的项目。
+      gc_wait
+        vos_gc_run
+
+
+umem事务示例:
+{
+  /* Start transaction */
+  err = umem_tx_begin(umem);
+  if (err) return err;
+
+  /* Proceeds with works inside of transaction */
+  err = foo();
+  if (err) goto out;
+  err = pmemobj_tx_xxx(umem);
+  if (err) { error cleanup for foo(); goto out; }
+
+  out:
+  /* Commit/Abort transaction on success/error */
+  if (err)
+  err = umem_tx_abort(umem, err);
+  else
+  err = umem_tx_commit(umem);
+}
+
+
+dss_collective_reduce_internal 服务端集合请求内部收敛
+  ABT_future_create(xs_nr + 1, collective_reduce, &future) 创建未来, 聚集集合, 其他线程 ABT_future_set dfa_future
+  carg.ca_future.dfa_future = future
+  carg.ca_future.dfa_func	= ops->co_func
+  co_reduce_arg_alloc
+  ABT_future_set(future, (void *)&aggregator)
+  sched_create_thread(dx, collective_func, stream, attr, NULL, flags)
+  ABT_future_wait(future) 等信号
+  co_reduce_arg_free
+
+collective_reduce
+  aggregator->at_reduce 
+  pool_query_xs_reduce
+    aggregate_pool_space 聚合池空间
+
+
+
+dss_acc_offload
+dss_ult_create(ult_execute_cb 创建一个ult, 调度执行
+  ult_execute_cb
+    arg->dfa_func(arg->dfa_arg) 先执行回调 -> collective_reduce
+    ABT_future_set(arg->dfa_future, (void *)(intptr_t)rc) 同步
+    arg->dfa_comp_cb(arg->dfa_comp_arg) 异步执行完成回调
+
+
+
+pool_fetch_hdls_ult
+  ABT_cond_wait(pool->sp_fetch_hdls_cond, pool->sp_mutex)
+  ds_pool_iv_conn_hdl_fetch(pool)
+    ds_iv_fetch(pool->sp_iv_ns, &key, &sgl, false /* retry */) 获取或新建iv
+      iv_op(ns, key, value, NULL, 0, retry, IV_FETCH)
+        _iv_op(ns, key, value, sync, shortcut, retry, opc)
+          iv_op_internal(ns, key, value, sync, shortcut, opc)
+            class = iv_class_lookup(key_iv->class_id)
+            iv_key_pack(&key_iov, key_iv)
+            ds_iv_ns_get(ns)
+            case IV_FETCH
+              crt_iv_fetch ds_iv_done
+            ABT_future_wait(future)
+            ds_iv_ns_put(ns)
+  ABT_cond_signal(pool->sp_fetch_hdls_done_cond) ABT_cond_wait(pool->sp_fetch_hdls_done_cond, pool->sp_mutex) <- pool_fetch_hdls_ult_abort
+
+
+
+pool架构
+pool
+  iv_ns(ds_iv_ns)
+
+iv_user
+  key
+
+register ds_iv_class/crt_iv_class
+
+--------------------------------------
+       POOL
+--------------------------------------
+LRU | DS_IV -|-> CRT_IV | HANDLE
+--------------------------------------
+
+
+iv 内部广播变量
+static struct daos_llink_ops pool_cache_ops
+pool_alloc_ref
+  ds_iv_ns_create
+    iv_ns_create_internal
+      ns->iv_master_rank = master_rank
+
+
+
+
+----------------------------------
+ULT
+----------------------------------
+
+
+
+
+
+tse_sched_init(&dx->dx_sched_dsc, NULL, dmi->dmi_ctx)
+    D_INIT_LIST_HEAD(&dsp->dsp_init_list); 双向链表初始化
+    ...
+    tse_sched_register_comp_cb
+        d_list_add(&dsc->dsc_list,&dsp->dsp_comp_cb_list) 插入链表头部
+
+
+
+初始化 tse_task。 该任务会被添加到调度器任务列表中，稍后被调度，如果提供了依赖任务，则该任务将被添加到依赖任务的dep列表中，一旦依赖任务完成，则添加该任务 到调度程序列表。
+attached to scheduler 
+
+
+dc_task_create
+    tse_task_create(func, sched, NULL, &task)
+        D_ALLOC_PTR(task) // coredump
+        D_INIT_LIST_HEAD(&dtp->dtp_list)   初始化列表，任务列表，完成列表，预完成列表
+        ...
+        *taskp = task
+
+
+
+tse_sched_progress
+
+
+D_ALLOC_PTR(task)
+    D_ALLOC(ptr, sizeof(*ptr))
+        D_ALLOC_CORE(ptr, size, 1)
+            (ptr) = (__typeof__(ptr))d_calloc((count), (size)) 分配
+            D_CHECK_ALLOC 检查分配
+
+
+内存分配检查宏展开
+#define D_CHECK_ALLOC(func,cond,ptr,name,size,count,cname,on_error) 
+do { 
+    if (D_SHOULD_FAIL(d_fault_attr_mem)) { 
+        d_free(ptr); 
+        (ptr) = NULL; 
+    } 
+    if ((cond) && (ptr) != NULL) { 
+        if ((count) <= 1) 
+            D_DEBUG(DB_MEM, "alloc(" #func ") '" name "':%i at %p.\n", (int)(size), (ptr)); 
+        else 
+            D_DEBUG(DB_MEM, "alloc(" #func ") '" name "':%i * '" cname "':%i at %p.\n", (int)(size), (int)(count), (ptr)); 
+        break; 
+    } 
+    (void)(on_error); 
+    if ((count) >= 1) 
+        D_ERROR("out of memory (tried to " #func " '" name "':%i)\n", (int)((size) * (count))); 
+    else 
+        D_ERROR("out of memory (tried to " #func " '" name "':%i)\n", (int)(size)); 
+} while (0)
+
+
+
+vos_blob_format_cb
+  bio_write_blob_hdr
+    bio_write
+      bio_rw
+        bio_rwv
+          bio_iod_post 提交io描述
+            dma_rw
+              nvme_rw
+                spdk_blob_io_write rw_completion
+                  blob_request_submit_op
+                    blob_request_submit_op_single
+                      bs_batch_write_dev
+                        blob_bdev->bs_dev.write
+                        bdev_blob_write
+                          spdk_bdev_write_blocks
+
+
+rw_completion
+  spdk_thread_send_msg
+
+
+客户端mount:
+ufuse -m /mnt/sxb --pool sxb --cont sxb
+ufuse_main.c -> main dfuse_main.c
+  ubip_debug_init daos_debug_init
+    d_log_init_adv 高级日志初始化, 客户端日志文件
+      log_file = getenv(D_LOG_FILE_ENV) export D_LOG_FILE=/tmp/daos_client.log
+      debug_prio_err_load_env
+      d_log_open
+        freopen(mst.log_file 重新关联标准输出或错误输出
+        setlinebuf(stderr) 设置错误输出为行缓冲
+    d_log_sync_mask
+  daos_init
+    daos_eq_lib_init 事件队列
+      crt_init_opt
+  dfuse_fs_init
+    d_hash_table_create_inplace dpi_pool_table 打开的池表， 创建hash表 大小=power2(n次方)， 操作方法
+    dpi_iet open inodes
+    daos_eq_create 一个事件队列关联一个网络上下文， 跟踪池的多个事件
+      daos_eq_alloc
+      crt_context_create(&eqx->eqx_ctx)
+        crt_contpext_provider_create
+          crt_context_init
+      daos_eq_insert(eqx)
+      daos_eq_handle(eqx, eqh)
+      tse_sched_init(&eqx->eqx_sched, NULL, eqx->eqx_ctx)
+    sem_init
+  duns_resolve_path
+  dfuse_pool_connect
+  dfuse_cont_open
+  dfuse_start dfuse_fs_start 启动文件系统
+    d_hash_rec_insert(&fs_handle->dpi_iet 将根插入hash表, 在 dfuse_reply_entry 中也会插入: d_hash_rec_find_insert(&fs_handle->dpi_iet
+    d_slab_init
+    d_slab_register
+    dfuse_progress_thread pthread_create(&fs_handle->dpi_thread, NULL, dfuse_progress_thread, fs_handle) 异步进度线程，该线程在启动时使用事件队列启动，并阻塞在信号量上，直到创建异步事件，此时线程唤醒并在 daos_eq_poll() 中忙于轮询直到完成
+      sem_wait
+      daos_eq_poll  从 EQ 中检索完成事件
+        daos_eq_lookup 查找私有事件队列
+          daos_hhash_link_lookup
+        crt_progress_cond(epa.eqx->eqx_ctx, timeout, eq_progress_cb, &epa)
+          eq_progress_cb
+        dfuse_launch_fuse(fs_handle, &args) 创建fuse文件系统
+          fuse_session_new(args, &dfuse_ops, sizeof(dfuse_ops), fs_handle)
+          fuse_session_mount
+          dfuse_send_to_fg
+          dfuse_loop
+  dfuse_fs_fini
+
+
+dfuse_progress_thread
+  rc = sem_wait(&fs_handle->dpi_sem) 等dpi_sem信号
+  daos_eq_poll
+  daos_event_fini 完成一个事件。 如果事件已被传递到任何 DAOS API，则它只能在从 EQ 中轮询出来时才能完成，即使通过调用 daos_event_abort() 中止也是如此。 如果事件是用父事件初始化的，那么该事件将从父事件的子列表中删除。 如果ev本身是一个父事件，那么这个函数会finalize所有的子事件和ev。
+  ev->de_complete_cb(ev) -> dfuse_cb_write_complete 写完成回调
+
+struct fuse_lowlevel_ops dfuse_ops dfuse低层操作对象
+  .create		= df_ll_create
+	.open		= dfuse_cb_open,
+	.release	= dfuse_cb_release,
+	.write_buf	= dfuse_cb_write,
+	.read		= dfuse_cb_read,
+	.readlink	= dfuse_cb_readlink,
+	.ioctl		= dfuse_cb_ioctl,
+
+struct fuse_file_info libfuse
+
+
+客户端写数据：write.c
+write -> dfuse_cb_write 回调写 src/client/dfuse/fuse3
+  fuse_req_userdata
+  fuse_req_ctx
+  fuse_buf_size(bufv)
+  ibuf = FUSE_BUFVEC_INIT(len) 分配本地缓冲区
+  DFUSE_TRA_DEBUG 调试
+  fuse_buf_copy(&ibuf, bufv, 0)
+  dfuse_cache_evict
+  d_slab_acquire 以高效的方式分配数据
+  fuse_buf_copy libfuse
+  daos_event_init 线程事件初始化
+    evx->evx_status	= DAOS_EVS_READY
+    D_INIT_LIST_HEAD(&evx->evx_child) 初始化链表
+    daos_eq_putref 从事件队列继承传输上下文
+  ev->de_complete_cb = dfuse_cb_write_complete 设置回调
+  d_iov_set(&ev->de_iov, ibuf.buf[0].mem, len)  # 设置io向量， 将第二参数的地址和长度赋值给第一个参数
+  ev->de_sgl.sg_iovs = &ev->de_iov   sgl分散聚集列表
+  readahead ie_truncated 预读和截断
+  dfs_write (文件系统， 对象，sgl列表，文件(对象)偏移，事件) 将数据写到文件对象
+    事件为空
+      daos_event_launch
+      daos_event_complete
+    daos_event_errno_rc(ev) 将错误码转正
+      daos_ev2evx(ev)
+    daos_array_write 写数组对象: daos_array_write(obj->oh, DAOS_TX_NONE, &iod, sgl, ev)
+      dc_task_create(dc_array_write, NULL, ev, &task) 创建任务
+      dc_task_schedule(task, true)  task与args做转换: dc_task_get_args 调度任务
+    return daos_der2errno(rc)
+  sem_post(&fs_handle->dpi_sem)   解锁信号量(+1,如果大于0,其他线程将被唤醒执行),唤醒线程（线程同步）: dfuse_progress_thread sem_wait(&fs_handle->dpi_sem)
+
+
+dc_array_write
+  daos_task_get_args task和args可互转
+  dc_array_io opc = DAOS_OPC_ARRAY_WRITE 操作码是写数组  读:DAOS_OPC_ARRAY_READ
+    array_hdl2ptr
+    io_extent_same
+    D_INIT_LIST_HEAD(&io_task_list)
+    daos_task_create(DAOS_OPC_ARRAY_GET_SIZE 短读任务 DAOS_OPC_ARRAY_READ
+    while (u < rg_iod->arr_nr) 遍历每个范围，但同时组合属于同一 dkey 的连续范围。 如果用户给出的范围不增加偏移量，则它们可能不会合并，除非分隔范围也属于同一个 dkey
+      compute_dkey 计算分布式key 在给定此范围的数组索引的情况下计算 dkey。 还计算从我们开始的索引开始，dkey 可以保存的记录数写作。 相对于 dkey 的记录索引
+      struct io_params *prev, *current 如果有多个dkey io, 则通过链表连接起来
+      num_ios++
+      d_iov_set(dkey, &params->dkey_val, sizeof(uint64_t));
+      d_iov_set(&iod->iod_name, &params->akey_val, 1);
+      compute_dkey 再次计算dkey
+      create_sgl 创建分散聚集列表
+      daos_task_create(DAOS_OPC_OBJ_FETCH 读: DAOS_OPC_ARRAY_READ 按索引号 -> dc_obj_fetch_task
+      daos_task_create(DAOS_OPC_OBJ_UPDATE 写 或 DAOS_OPC_ARRAY_PUNCH truncate dc_funcs[opc].task_func 客户端方法数组
+      daos_task_get_args
+      tse_task_register_deps 注册在计划任务之前需要完成的依赖任务。 依赖任务无法进行, 如果一个任务依赖于其他任务，只有依赖的任务完成了，才可以将任务添加到调度器列表中
+      tse_task_list_add(io_task, &io_task_list)  d_list_add_tail(&dtp->dtp_task_list, head); 添加任务到链表
+    tse_task_register_comp_cb(task, free_io_params_cb, &head, sizeof(head))  为任务注册完成回调
+    if (op_type == DAOS_OPC_ARRAY_READ && array->byte_array) 短读
+      tse_task_register_deps(task, 1, &stask) 注册依赖任务
+      tse_task_list_add(stask, &io_task_list) 加到io任务列表
+    tse_task_list_sched(&io_task_list, false); 调度执行
+    array_decref(array)
+    tse_task_register_cbs(stask, check_short_read_cb 读回调
+    tse_sched_progress(tse_task2sched(task)) 推进/处理
+
+
+check_short_read_cb
+
+通过以下对象连接
+.cpf_name =
+daos_opc_t
+dc_funcs[opc].task_func 客户端方法数组
+
+DAOS_OPC_OBJ_UPDATE 写
+  dc_obj_update_task DAOS_OBJ_RPC_UPDATE
+    obj_req_valid(task, args, DAOS_OBJ_RPC_UPDATE
+      obj_auxi = tse_task_stack_push(task, sizeof(*obj_auxi))
+      tse_task_stack_pop
+    dc_tx_attach(args->th, obj, DAOS_OBJ_RPC_UPDATE, task) 如果事务有效(hdl.cookie == 1), 则走dtx
+  dc_obj_update 否则
+      obj_task_init_common(task, DAOS_OBJ_RPC_UPDATE
+        tse_task_stack_push
+        shard_task_list_init(obj_auxi)
+      obj_rw_req_reassemb 重新组装
+      dkey_hash = obj_dkey2hash
+      obj_req_get_tgts 获取对象对应的目标
+        obj_dkey2grpmemb
+          obj_dkey2grpidx
+            pool_map_ver = pool_map_get_version(pool->dp_map)
+            grp_size = obj_get_grp_size(obj)
+            grp_idx = d_hash_jump(hash, obj->cob_shards_nr / grp_size) how hash generate? obj with pool
+        obj_shards_2_fwtgts
+          obj_shard_tgts_query 分片目标查询
+            obj_shard_open
+              dc_obj_shard_open
+                pool_map_find_target 二分查找
+                  comp_sorter_find_target(sorter, id)
+                    daos_array_find
+                      array_bin_search
+          obj_grp_leader_get
+            pl_select_leader obj_get_shard
+              array_bin_search 二分查找 daos_obj_classes
+      tse_task_register_comp_cb(task, obj_comp_cb, NULL, 0)
+      obj_csum_update(obj, args, obj_auxi)
+      obj_rw_bulk_prep
+      obj_req_fanout(obj, obj_auxi, dkey_hash, map_ver, epoch, shard_rw_prep, dc_obj_shard_rw, task)  扇出 shard_io_cb = io_cb = dc_obj_shard_rw
+
+
+ds_obj_rw_handler 接收端的回调
+  obj_ioc_begin 访问VOS前的各种检查
+  obj_rpc_is_fetch
+  process_epoch
+  obj_rpc_is_fetch
+  rc = dtx_begin 返回超时?
+    dtx_handle_init
+      dtx_shares_init(dth) 初始化以下链表, 提交,中断,活动,检查
+      dtx_epoch_bound
+      vos_dtx_rsrvd_init(dth)
+  obj_local_rw 本地读写
+
+
+创建任务, daos_task_create
+创建一个异步任务并将其与 daos 客户端操作相关联。 对于同步操作，请为该操作使用特定的 API。 通常，此 API 用于需要将一系列 daos 操作排队到 DAOS 异步引擎中的用例，这些任务之间的执行顺序具有特定的依赖性。 例如，用户可以创建任务来打开一个对象，然后使用插入到打开任务更新中的依赖项来更新该对象。 对于更简单的工作流程，用户可以使用基于事件的 API 而不是任务。
+
+
+dfuse_start
+  dfuse_progress_thread
+
+
+重要结构：
+
+tse_task_t	*io_task = NULL; io任务
+
+
+
+
+
+
+ubix:
+
+pool_map
+ufuse_cb_write position=0
+  ufuse_cb_write_complete 回调
+  ufs_write
+    dc_array_write
+    ubip_task_create UBIP_OPC_OBJ_UPDATE
+    dc_obj_update_task
+    dc_obj_update
+      obj_update_shards_get
+      obj_rw_bulk_prep
+      obj_req_fanout shard_rw_prep dc_obj_shard_rw = shard_io_cb 请求扇出
+        io_prep_cb shard_rw_prep 发送io前执行的回调
+        shard_io 分片IO
+          obj_shard_open
+            map_ver
+            dc_obj_shard_open 打开分片
+            dc_cont_tgt_idx2ptr 根据容器handler和taget索引，获取池的目标pool_target
+              pool
+              dc_hdl2pool
+                ubip_hhash_link_lookup(poh.cookie)
+              pool_map_find_target
+              dc_pool_put
+                ubip_hhash_link_putref
+              dc_cont_put
+          shard_auxi->shard_io_cb(obj_shard,...) -> dc_obj_shard_rw 对象分片读写回调
+          obj_shard_close
+
+
+
+import struct
+pool_target
+
+
+main
+ufuse_start
+  ufuse_lanuch_fuse
+    ll_loop_fn
+      ufuse_loop
+        start_one
+          ufuse_do_work
+            fuse_session_process_buf_int libfuse3.so.3
+              do_write_buf(req, in->nodeid, inarg, buf)
+                se->op.write_buf(req, nodeid, &bufv, arg->offset, &fi)
+                ufuse_cb_write step?
+
+
+
+
+dc_obj_shard_rw 客户端对象分片读写(读写对象分片)
+  obj_shard_ptr2pool(shard) 根据分片获取池
+  obj_req_create opc = UBIP_OBJ_RPC_UPDATE -> ds_obj_rw_handler
+  uuid_copy
+  ubip_dti_copy 拷贝dtx_id
+  跳过ec逻辑
+  tse_task_register_comp_cb
+  ubip_rpc_send
+    crt_req_send ubip_rpc_cb -> tse_task_complete 发送完成回调流程:hg -> crt_hg_req_send_cb -> crp_complete_cb -> -> ubip_rpc_cb -> dc_rw_cb
+
+超时检测和业务回调是在不同的线程中并发执行
+
+ds_obj_rw_handler
+  obj_rw_reply
+    obj_reply_set_status 与 obj_reply_get_status 成对使用
+      ((struct obj_rw_out *)reply)->orw_ret = status 设置回复状态
+
+
+怎么处理超时
+
+crt_swim_cli_cb
+ca_arrays
+
+
+tse 调度
+dc_task_create
+  sched = daos_ev2sched(ev) 事件转调度器
+  tse_task_create 初始化 tse_task。 该任务会被添加到调度器任务列表中，稍后被调度，如果提供了依赖任务，则该任务将被添加到依赖任务的dep列表中，一旦依赖任务完成，则添加该任务 到调度程序列表。
+  task_ptr2args 指针转参数
+    tse_task_buf_embedded 获取任务的嵌入式缓冲区，用户可以使用它来携带功能参数。 任务的嵌入式缓冲区有大小限制，如果 buf_size 大于限制，此函数将返回 NULL。 用户应通过 tse_task_set_priv() 使用私有数据来传递大参数。 MSC - 我将其更改为只是一个缓冲区，而不是像以前那样, 不断给一个额外的指针指向大的预涂层缓冲区。 以前的方式不适用于公共用途。我们现在应该使它更简单，更通用，如下面的评论
+      tse_task_buf_size
+        return (size + 7) & ~0x7
+  tse_task_register_comp_cb(task, task_comp_event, NULL, 0) dtc->dtc_cb = cb task_comp_event 注册完成回调
+    register_cb(task, true, comp_cb, arg, arg_size)
+      d_list_add(&dtc->dtc_list, &dtp->dtp_comp_cb_list) 插入到列表开始处
+
+
+
+
+执行任务的回调，如果所有的CB都执行完则返回true
+并且不重新启动任务。 如果任务被用户重新初始化，则意味着
+它又在飞行中，所以我们在重新初始化它的当前 CB 处中断，
+并返回 false，表示任务未完成。 所有剩余的 CB
+未执行的仍然附加，但已执行的
+此时已经从列表中删除
+tse_task_complete_callback
+  ret = dtc->dtc_cb(task, dtc->dtc_arg); task_comp_event
+
+
+
+
+crt_rpc_completed call 2？ 重复完成，duplicated completions
+
+daos_rpc_db
+daos_rpc_complete
+  tse_task_complete
+    tse_sched_process_complete(dsp)
+      post_procee
+        tse_task_complete_callback
+          dtc_cb 执行注册时的回调 register_cb -> dc_rw_cb
+          task_comp_event
+            event_complete
+              complete_locked
+                daos_event_complete_cb
+                  d_list_for_each_entry_safe
+                  d_list_del_init
+                  __gurt_list_del
+
+dc_rw_cb 
+  opc_get
+  UBIP_FAIL_CHECK
+dc_obj_shard_rw
+  tse_task_register_comp_cb(task, dc_rw_cb...)  dtc->dtc_cb = cb   <- tse_task_complete_callback
+    dc_rw_cb
+      rc = obj_reply_get_status  DER_SHUTDOWN(-2017) | DER_IO(-2001) 2008 NOTLEADER
+        ((struct obj_rw_out *)reply)->orw_ret
+
+dc_task_schedule
+  task_is_valid
+  daos_event_launch
+  tse_task_schedule
+    tse_task_schedule_with_delay 与 tse_task_schedule 相同，如果 instant 为 false，则期望任务不会在 delay 微秒内执行。
 
 daos_event_comp_list 事件完成列表
 
@@ -1430,48 +4504,10 @@ dc_obj_open_task_create
 obj_rw_req_reassemb 重新组装对象读写请求
 
 
-编译镜像: docker build  . -f utils/docker/Dockerfile.el.8 -t daos
-
-
-components:
-site_scons/components/__init__.py
-
-cache:
-RUN: git clone https://github.com/pmodels/argobots.git /home/daos/pre/build/external/release/argobots
-tar -zcvf cache.tgz cache
-
-rocky8:
-yum install -y vim net-tools gdb
-
-
-cp daos_server_docker_main.yml /opt/daos/etc/daos_server.yml
-mkdir -p /etc/daos/certs
-cp -r daosCA/certs/* /etc/daos/certs/
-
-
-write.c, new, 
-master: src/client/dfuse/dfuse_main.c:659 -> main
-...
-start_one(struct dfuse_tm *dtm)
-pthread_create(&dt->dt_id, NULL, dfuse_do_work, dt)
-dfuse_do_work
-  fuse_session_process_buf_int -> 处理通用缓冲区中提供的原始请求 fusion_buf 可能包含内存缓冲区或管道文件描述符
-  dfuse_cb_write
-    dfuse_mcache_evict
-    d_slab_acquire
-    fuse_buf_copy
-    dfs_write
-      daos_array_write(obj->oh, DAOS_TX_NONE, &iod, sgl, ev)
-        dc_task_create(dc_array_write, NULL, ev, &task) -> tse 创建任务
-
-    sem_post
-    d_slab_restock
-    return
-
-
-...
-daos_progress
-  tse_sched_progress(sched)
-
-
+终结/销毁流程
+daos_eq_lib_fini / daos_eq_destroy / 
+tse_sched_complete -> 等待调度程序中的所有任务完成并终结。 如果另一个线程正在完成调度程序，则立即返回
+  if (dsp->dsp_cancelling)
+    tse_sched_complete_inflight
+      d_list_for_each_entry_safe(dtp, tmp, &dsp->dsp_running_list -> 将任务从运行队列移除
 
