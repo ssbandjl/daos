@@ -561,7 +561,7 @@ engine -> server_init -> crt_init_opt -> crt_grp_init -> crt_primary_grp_init ->
 
 server_init -> dss_module_init_all -> dss_module_init_one -> sm_init() -> ds_mgmt_init -> ds_mgmt_system_module_init 
 
-ubip_server -> cmd.start = server.Start -> func Start 启动服务 -> registerEvents 注册事件 -> OnLeadershipGained 获得领导力 -> startJoinLoop -> func (svc *mgmtSvc) joinLoop -> func (svc *mgmtSvc) doGroupUpdate -> MethodGroupUpdate -> DRPC_METHOD_MGMT_GROUP_UPDATE -> ds_mgmt_drpc_group_update (in MS leader 主服务器) -> ds_mgmt_group_update_handler -> ds_rsvc_request_map_dist 广播集群map -> ABT_cond_broadcast -> sc_map_dist -> mgmt_svc_map_dist_cb -> map_update_bcast map更新广播 -> crt_corpc_req_create 创建rpc集合请求 MGMT_TGT_MAP_UPDATE 目标map更新 -> crt_grp_priv_get_primary_rank -> crt_corpc_info_init  -> d_rank_list_dup_sort_uniq -> dss_rpc_send -> crt_reply_get
+daos_server -> cmd.start = server.Start -> func Start 启动服务 -> registerEvents 注册事件 -> OnLeadershipGained 获得领导力 -> startJoinLoop -> func (svc *mgmtSvc) joinLoop -> func (svc *mgmtSvc) doGroupUpdate -> MethodGroupUpdate -> DRPC_METHOD_MGMT_GROUP_UPDATE -> ds_mgmt_drpc_group_update (in MS leader 主服务器) -> ds_mgmt_group_update_handler -> ds_rsvc_request_map_dist 广播集群map -> ABT_cond_broadcast -> sc_map_dist -> mgmt_svc_map_dist_cb -> map_update_bcast map更新广播 -> crt_corpc_req_create 创建rpc集合请求 MGMT_TGT_MAP_UPDATE 目标map更新 -> crt_grp_priv_get_primary_rank -> crt_corpc_info_init  -> d_rank_list_dup_sort_uniq -> dss_rpc_send -> crt_reply_get
 
 dss_rpc_send -> crt_req_send(rpc, rpc_cb, &eventual) -> 
 
@@ -911,9 +911,9 @@ rw_completion
 
 
 客户端mount:
-ufuse -m /mnt/sxb --pool sxb --cont sxb
-ufuse_main.c -> main dfuse_main.c
-  ubip_debug_init daos_debug_init
+dfuse -m /mnt/sxb --pool sxb --cont sxb
+dfuse_main.c -> main dfuse_main.c
+  daos_debug_init daos_debug_init
     d_log_init_adv 高级日志初始化, 客户端日志文件
       log_file = getenv(D_LOG_FILE_ENV) export D_LOG_FILE=/tmp/daos_client.log
       debug_prio_err_load_env
@@ -1017,7 +1017,7 @@ write -> dfuse_cb_write 回调写 src/client/dfuse/fuse3
 
 dc_array_write
   daos_task_get_args task和args可互转
-  dc_array_io opc = DAOS_OPC_ARRAY_WRITE 操作码是写数组  读:DAOS_OPC_ARRAY_READ
+  dc_array_io -> opc = DAOS_OPC_ARRAY_WRITE 操作码是写数组  读:DAOS_OPC_ARRAY_READ
     array_hdl2ptr
     io_extent_same
     D_INIT_LIST_HEAD(&io_task_list)
@@ -1121,11 +1121,11 @@ tse_task_t	*io_task = NULL; io任务
 ubix:
 
 pool_map
-ufuse_cb_write position=0
-  ufuse_cb_write_complete 回调
-  ufs_write
+dfuse_cb_write position=0
+  dfuse_cb_write_complete 回调
+  dfs_write
     dc_array_write
-    ubip_task_create UBIP_OPC_OBJ_UPDATE
+    daos_task_create DAOS_OPC_OBJ_UPDATE
     dc_obj_update_task
     dc_obj_update
       obj_update_shards_get
@@ -1139,10 +1139,10 @@ ufuse_cb_write position=0
             dc_cont_tgt_idx2ptr 根据容器handler和taget索引，获取池的目标pool_target
               pool
               dc_hdl2pool
-                ubip_hhash_link_lookup(poh.cookie)
+                daos_hhash_link_lookup(poh.cookie)
               pool_map_find_target
               dc_pool_put
-                ubip_hhash_link_putref
+                daos_hhash_link_putref
               dc_cont_put
           shard_auxi->shard_io_cb(obj_shard,...) -> dc_obj_shard_rw 对象分片读写回调
           obj_shard_close
@@ -1154,29 +1154,29 @@ pool_target
 
 
 main
-ufuse_start
-  ufuse_lanuch_fuse
+dfuse_start
+  dfuse_lanuch_fuse
     ll_loop_fn
-      ufuse_loop
+      dfuse_loop
         start_one
-          ufuse_do_work
+          dfuse_do_work
             fuse_session_process_buf_int libfuse3.so.3
               do_write_buf(req, in->nodeid, inarg, buf)
                 se->op.write_buf(req, nodeid, &bufv, arg->offset, &fi)
-                ufuse_cb_write step?
+                dfuse_cb_write step?
 
 
 
 
 dc_obj_shard_rw 客户端对象分片读写(读写对象分片)
   obj_shard_ptr2pool(shard) 根据分片获取池
-  obj_req_create opc = UBIP_OBJ_RPC_UPDATE -> ds_obj_rw_handler
+  obj_req_create opc = DAOS_OBJ_RPC_UPDATE -> ds_obj_rw_handler
   uuid_copy
-  ubip_dti_copy 拷贝dtx_id
+  daos_dti_copy 拷贝dtx_id
   跳过ec逻辑
   tse_task_register_comp_cb
-  ubip_rpc_send
-    crt_req_send ubip_rpc_cb -> tse_task_complete 发送完成回调流程:hg -> crt_hg_req_send_cb -> crp_complete_cb -> -> ubip_rpc_cb -> dc_rw_cb
+  daos_rpc_send
+    crt_req_send daos_rpc_cb -> tse_task_complete 发送完成回调流程:hg -> crt_hg_req_send_cb -> crp_complete_cb -> -> daos_rpc_cb -> dc_rw_cb
 
 超时检测和业务回调是在不同的线程中并发执行
 
@@ -1237,6 +1237,10 @@ tse_task_complete
   D_MUTEX_LOCK(&dsp->dsp_lock) -> 锁调度器
   tse_task_complete_locked(dtp, dsp)
     d_list_move_tail(&dtp->dtp_list, &dsp->dsp_complete_list) -> 完成后, 将任务移动到调度器的完成队列
+  tse_sched_process_complete(dsp) -> 更新调度列表
+    d_list_splice_init(&dsp->dsp_complete_list, &comp_list)
+    tse_task_post_process(task) -> 检查完成列表中的任务、依赖任务状态检查、调度状态更新等。此后任务将移至完成列表
+    ...
 
 
 crt_rpc_completed call 2？ 重复完成，duplicated completions
@@ -1251,8 +1255,10 @@ daos_rpc_cb
           task_comp_event -> daos_event_complete(task_ptr2args(task)->ta_ev, task->dt_result)
             eqx = daos_eq_lookup(evx->evx_eqh)
             daos_event_complete_locked(eqx, evx, rc) -> master
-            daos_event_complete_cb(evx, rc)
-            ...
+              evx->evx_status = DAOS_EVS_COMPLETED -> 事件置为已完成状态
+              daos_event_complete_cb(evx, rc)
+                d_list_for_each_entry_safe(ecl, tmp, &evx->evx_callback.evx_comp_list
+                ecl->op_comp_cb -> N
             event_complete
               complete_locked
                 daos_event_complete_cb
@@ -1262,7 +1268,7 @@ daos_rpc_cb
 
 dc_rw_cb 
   opc_get
-  UBIP_FAIL_CHECK
+  DAOS_FAIL_CHECK
 dc_obj_shard_rw
   tse_task_register_comp_cb(task, dc_rw_cb...)  dtc->dtc_cb = cb   <- tse_task_complete_callback
     dc_rw_cb
@@ -1359,7 +1365,7 @@ df_ll_lookup
     dfuse_cb_lookup
   d_hash_rec_decref(&fs_handle->dpi_iet, rlink)
 
-ufuse_cb_getattr 先获取属性
+dfuse_cb_getattr 先获取属性
 dfuse_dfs_ops
 .lookup		= dfuse_cb_lookup
 分配ie
@@ -1379,7 +1385,7 @@ dfs_lookupx 查询条目,获取属性, 生成?
             daos_event_priv_get(&ev) 获取基于线程的私有事件, static __thread daos_event_t	ev_thpriv; 线程私有数据
             sched = daos_ev2sched(ev)
             tse_task_create
-        dc_task_schedule(task, true) -> 调度,要求立即执行
+        dc_task_schedule(task, true) -> 调度,要求立即执行, 调度由dc_task_create_ev()创建的任务，如果任务的关联事件是私有事件，则该函数将等待任务完成，否则立即返回，通过测试事件或轮询EQ来发现其完成
           tse_task_schedule(task, instant)
         if (daos_event_is_priv(ev)) -> 有私有事件
           daos_event_priv_wait() -> 等事件
@@ -1413,7 +1419,7 @@ open_handle_cb
   open_with_attr = 1
   array_hdl_link(array) 
   *args->oh = array_ptr2hdl(array)
-    ubip_hhash_link_lookup(oh.cookie) 根据key查找hash表
+    daos_hhash_link_lookup(oh.cookie) 根据key查找hash表
 
 
 dc_array_set_size
@@ -1511,6 +1517,8 @@ obj_shard_task_sched(obj_auxi, epoch);
 
 
 
+#0  dc_rw_cb (task=0x7f9198004530, arg=<optimized out>) at src/object/cli_shard.c:952
+...
 #0  tse_task_complete_callback (task=task@entry=0x7f68ec004d20) at src/common/tse.c:515
 ...
 #0  tse_task_complete (task=0x7f68ec004d20, ret=0) at src/common/tse.c:858
@@ -1522,10 +1530,10 @@ obj_shard_task_sched(obj_auxi, epoch);
 #6  0x00007f693a2fbdbb in HG_Core_trigger (context=<optimized out>, timeout=timeout@entry=0, max_count=max_count@entry=256, actual_count_p=actual_count_p@entry=0x7f68f3ffda54)
     at /home/xb/project/stor/daos/main/daos/build/external/debug/mercury/src/mercury_core.c:6419
 #7  0x00007f693a2e748e in HG_Trigger (context=context@entry=0x5608ec266b70, timeout=timeout@entry=0, max_count=max_count@entry=256, actual_count_p=actual_count_p@entry=0x7f68f3ffda54)
-    at /home/xb/project/stor/daos/main/daos/build/external/debug/mercury/src/mercury.c:2197
+    at /home/xb/project/stor/daos/main/daos/build/external/debug/mercury/src/mercury.c:2197 -> ibv_poll_cq
 #8  0x00007f693b1490e9 in crt_hg_progress (hg_ctx=hg_ctx@entry=0x5608ec253b18, timeout=timeout@entry=0) at src/cart/crt_hg.c:1540
 #9  0x00007f693b0f9eea in crt_progress_cond (crt_ctx=0x5608ec253b00, timeout=timeout@entry=0, cond_cb=cond_cb@entry=0x7f693ce6732b <ev_progress_cb>, arg=arg@entry=0x7f68f3ffdb00) at src/cart/crt_context.c:1668
-#10 0x00007f693ce712f3 in daos_event_priv_wait () at src/client/api/event.c:1276
+#10 0x00007f693ce712f3 in daos_event_priv_wait () at src/client/api/event.c:1276 ->  废弃 -> dc_task_new + dc_task_schedule, DAOS-6958 事件：出现进度错误时正确的事件处理 (#4911)crt_progress 有时会返回非超时的错误。 这些在同步 IO 调用中没有得到正确处理，导致私有事件对于后续 IO 处于不可用状态。此 PR 检查购物车中的错误，并在返回错误时重新初始化私有事件，以便可以重新使用它，而不是返回给用户
 #11 0x00007f693ce7e93c in dc_task_schedule (task=<optimized out>, instant=instant@entry=true) at src/client/api/task.c:124  -> 执行任务主体函数: dc_obj_fetch_task -> 请求扇出 -> 走网络send接口, 发送完成后, 通过trigger调发送回调: daos_rpc_cb
 # dc_obj_fetch_task_create -> dc_task_create(dc_obj_fetch_task, tse, ev, task)
 #12 0x00007f693ce77e72 in daos_obj_fetch (oh=..., oh@entry=..., th=..., th@entry=..., flags=flags@entry=8, dkey=dkey@entry=0x7f68f3ffdc30, nr=nr@entry=1, iods=<optimized out>, sgls=0x7f68f3ffdc10, maps=0x0, ev=0x0) at src/client/api/object.c:170
@@ -1947,7 +1955,7 @@ process_all -> policy_ops[sched_policy].process_io(dx) -> .process_io = policy_f
 
 rpc公共回调
 dss_rpc_hdlr(...,crt_handle_rpc...)
-  opc_get_mod_id(rpc->cr_opc) 获取模块id 偏移+掩码 ubip_modeul_id
+  opc_get_mod_id(rpc->cr_opc) 获取模块id 偏移+掩码 daos_modeul_id
   SCHED_REQ_ANONYM 匿名 sra=调度请求属性
   struct dss_module	*module = dss_module_get(mod_id);
   module->sm_mod_ops->dms_get_req_attr 获取属性
@@ -1982,7 +1990,7 @@ internal  0xff000000
 management, 0x1000000
 pool, 0x2000000
 cont, 0x3000000
-ubip-object, 0x4000000
+daos-object, 0x4000000
 swim, 0xfe000000
 ...
 
@@ -2026,7 +2034,7 @@ vrb_poll_cq
     ibv_poll_cq
 
 
-ufuse_core_dump:
+dfuse_core_dump:
 
 HG_Forward
     crt_proc_coon_hdr
@@ -2250,7 +2258,7 @@ updateFabricEnvars
 setDaosHelperEnvs(cfg, os.Setenv)
 
 启动服务器
-server_start: /usr/bin/ubip_server start
+server_start: /usr/bin/daos_server start
 func main()
   parseOpts(os.Args[1:], &opts, log) 解析参数
     cfgCmd.loadConfig(opts.ConfigPath) 加载配置
@@ -2392,7 +2400,7 @@ op->cancel
 
 
 cgo
-ubip
+daos
 ValidateProviderConfig
   fi_getinfo
 
@@ -2496,8 +2504,8 @@ poolCmd
 fsCmd
 containerCmd
 
-ubip
-src/control/cmd/ubip/main.go
+daos
+src/control/cmd/daos/main.go
   main()
     parseOpts
       p.ParseArgs(args)
@@ -2577,7 +2585,7 @@ NA_LOG_DEBUG
 cli_shard.c
 dc_obj_shard_query_key
   tse_task_register_comp_cb(task, obj_shard_query_key_cb, &cb_args, sizeof(cb_args))
-  obj_shard_query_key_cb 2007 pool老旧需要更新stale 由 dtc_cb 触发执行 D_FOREACH_UBIP_ERR  D_FOREACH_DAOS_ERR DER_STALE 陈旧错误
+  obj_shard_query_key_cb 2007 pool老旧需要更新stale 由 dtc_cb 触发执行 D_FOREACH_DAOS_ERR  D_FOREACH_DAOS_ERR DER_STALE 陈旧错误
 
 
 
@@ -2638,16 +2646,22 @@ tse_task_reint_with_dely
 
 
 客户端coredump, 安全遍历链表出现段错误, d_list_for_each_entry_safe signal 11 Segmentation fault, 客户端读文件
-ufuse_do_work
-  ufuse_do_work
-    ufuse_cb_read dfuse_cb_read
-    ufs_read
-    ufs_read_int dfs_read_int
-    dc_task_schedule
-    tse_task_schedule
-    tse_task_schedule_with_delay
-    dc_array_read
-    dc_array_io   task1
+dfuse_do_work
+  dfuse_do_work
+    dfuse_cb_read dfuse_cb_read
+    dfs_read
+    dfs_read_int dfs_read_int
+      dc_task_create(dc_array_read, NULL, ev, &task)
+      tse_task_register_cbs(task, NULL, NULL, 0, read_cb, NULL, 0)
+      dc_task_schedule(task, true)
+        tse_task_schedule
+          tse_task_schedule_with_delay
+    dc_array_read DAOS_OPC_ARRAY_READ -> dc_array_io   task1
+      daos_task_create(DAOS_OPC_ARRAY_GET_SIZE, tse_task2sched(task)
+        dc_task_create(dc_funcs[opc].task_func, sched, NULL, &task)
+        dc_task_depend(task, num_deps, dep_tasks)
+      
+      ...
     tse_sched_progress  task2
     tse_sched_run
       processed += tse_sched_process_init(dsp) -> 处理调度程序的初始化列表和休眠列表。 这首先将所有现在应该醒来的任务从睡眠列表移动到初始化列表的尾部，然后执行调度程序初始化列表中没有依赖项的所有任务的所有主体函数, 调度器主函数, 在队列间移动任务
@@ -2685,10 +2699,6 @@ dsc_progress_start
   dsc_progress
     tse_sched_progress
 
-
-
-daos_progress
-  tse_sched_progress
 
 
 条件回调, 进度回调
@@ -2799,7 +2809,7 @@ create_map_refresh_rpc
 obj_ioc_init
 
 
-umount -t fuse.ubip /home/cont_ssd
+umount -t fuse.daos /home/cont_ssd
 dfuse_launch_fuse 阻塞,直到完成
   fuse_session_unmount
 停止文件系统
@@ -2818,7 +2828,7 @@ vos_obj_iter_prep
 iter_decref
 vos_iter_finish
 
-ufuse异常退出, agent触发, system stop
+dfuse异常退出, agent触发, system stop
 libabt.so
 make_fcontext
   ABTD_ythread_func_wrapper
@@ -2881,7 +2891,7 @@ opts.name = "daos_engine"
 engine/init.c
 main(int argc, char **argv)
 engine启动
-parse 解析命令行参数: /usr/bin/ubip_engine -t 24 -x 2 -g ubip_server -d /var/run/ubip_server -T 2 -n /mnt/ubip0/ubip_nveme.conf -p 0 -I 0 -r 24567 -H 2 -s /mnt/ubip0
+parse 解析命令行参数: /usr/bin/daos_engine -t 24 -x 2 -g daos_server -d /var/run/daos_server -T 2 -n /mnt/daos0/daos_nveme.conf -p 0 -I 0 -r 24567 -H 2 -s /mnt/daos0
 -p 绑定到哪个numa节点(pinned_numa_node)
 -t 24 targets数量
 -x xshelpernr 2个辅助线程
@@ -3069,7 +3079,7 @@ bio_nvme_poll
 
 
 nvme配置文件
-/mnt/ubip1/ubip_nvme.conf
+/mnt/daos1/daos_nvme.conf
 
 subsystem: bdev
 trtype: PCIe
@@ -3777,7 +3787,7 @@ func ListPools
   pool_query_free_tier_stats
 
 
-POOL_QUERY opc=2040003, 关键词:"pool", UBIP_POOL_MODULE
+POOL_QUERY opc=2040003, 关键词:"pool", DAOS_POOL_MODULE
 ds_pool_query_handler
   pool_svc_lookup_leader
   rdb_tx_begin
@@ -4003,9 +4013,9 @@ rw_completion
 
 
 客户端mount:
-ufuse -m /mnt/sxb --pool sxb --cont sxb
-ufuse_main.c -> main dfuse_main.c
-  ubip_debug_init daos_debug_init
+dfuse -m /mnt/sxb --pool sxb --cont sxb
+dfuse_main.c -> main dfuse_main.c
+  daos_debug_init daos_debug_init
     d_log_init_adv 高级日志初始化, 客户端日志文件
       log_file = getenv(D_LOG_FILE_ENV) export D_LOG_FILE=/tmp/daos_client.log
       debug_prio_err_load_env
@@ -4124,7 +4134,7 @@ dc_array_write
     if (op_type == DAOS_OPC_ARRAY_READ && array->byte_array) 短读
       tse_task_register_deps(task, 1, &stask) 注册依赖任务
       tse_task_list_add(stask, &io_task_list) 加到io任务列表
-    tse_task_list_sched(&io_task_list, false); 调度执行
+    tse_task_list_sched(&io_task_list, false); 批量任务调度执行
     array_decref(array)
     tse_task_register_cbs(stask, check_short_read_cb 读回调
     tse_sched_progress(tse_task2sched(task)) 推进/处理
@@ -4205,11 +4215,11 @@ tse_task_t	*io_task = NULL; io任务
 ubix:
 
 pool_map
-ufuse_cb_write position=0
-  ufuse_cb_write_complete 回调
-  ufs_write
+dfuse_cb_write position=0
+  dfuse_cb_write_complete 回调
+  dfs_write
     dc_array_write
-    ubip_task_create UBIP_OPC_OBJ_UPDATE
+    daos_task_create DAOS_OPC_OBJ_UPDATE
     dc_obj_update_task
     dc_obj_update
       obj_update_shards_get
@@ -4223,10 +4233,10 @@ ufuse_cb_write position=0
             dc_cont_tgt_idx2ptr 根据容器handler和taget索引，获取池的目标pool_target
               pool
               dc_hdl2pool
-                ubip_hhash_link_lookup(poh.cookie)
+                daos_hhash_link_lookup(poh.cookie)
               pool_map_find_target
               dc_pool_put
-                ubip_hhash_link_putref
+                daos_hhash_link_putref
               dc_cont_put
           shard_auxi->shard_io_cb(obj_shard,...) -> dc_obj_shard_rw 对象分片读写回调
           obj_shard_close
@@ -4238,29 +4248,29 @@ pool_target
 
 
 main
-ufuse_start
-  ufuse_lanuch_fuse
+dfuse_start
+  dfuse_lanuch_fuse
     ll_loop_fn
-      ufuse_loop
+      dfuse_loop
         start_one
-          ufuse_do_work
+          dfuse_do_work
             fuse_session_process_buf_int libfuse3.so.3
               do_write_buf(req, in->nodeid, inarg, buf)
                 se->op.write_buf(req, nodeid, &bufv, arg->offset, &fi)
-                ufuse_cb_write step?
+                dfuse_cb_write step?
 
 
 
 
 dc_obj_shard_rw 客户端对象分片读写(读写对象分片)
   obj_shard_ptr2pool(shard) 根据分片获取池
-  obj_req_create opc = UBIP_OBJ_RPC_UPDATE -> ds_obj_rw_handler
+  obj_req_create opc = DAOS_OBJ_RPC_UPDATE -> ds_obj_rw_handler
   uuid_copy
-  ubip_dti_copy 拷贝dtx_id
+  daos_dti_copy 拷贝dtx_id
   跳过ec逻辑
   tse_task_register_comp_cb
-  ubip_rpc_send
-    crt_req_send ubip_rpc_cb -> tse_task_complete 发送完成回调流程:hg -> crt_hg_req_send_cb -> crp_complete_cb -> -> ubip_rpc_cb -> dc_rw_cb
+  daos_rpc_send
+    crt_req_send daos_rpc_cb -> tse_task_complete 发送完成回调流程:hg -> crt_hg_req_send_cb -> crp_complete_cb -> -> daos_rpc_cb -> dc_rw_cb
 
 超时检测和业务回调是在不同的线程中并发执行
 
@@ -4284,19 +4294,14 @@ dc_task_create
     tse_task_buf_embedded 获取任务的嵌入式缓冲区，用户可以使用它来携带功能参数。 任务的嵌入式缓冲区有大小限制，如果 buf_size 大于限制，此函数将返回 NULL。 用户应通过 tse_task_set_priv() 使用私有数据来传递大参数。 MSC - 我将其更改为只是一个缓冲区，而不是像以前那样, 不断给一个额外的指针指向大的预涂层缓冲区。 以前的方式不适用于公共用途。我们现在应该使它更简单，更通用，如下面的评论
       tse_task_buf_size
         return (size + 7) & ~0x7
-  tse_task_register_comp_cb(task, task_comp_event, NULL, 0) dtc->dtc_cb = cb task_comp_event 注册完成回调
+  tse_task_register_comp_cb(task, task_comp_event, NULL, 0) dtc->dtc_cb = cb task_comp_event -> 注册任务完成回调
     register_cb(task, true, comp_cb, arg, arg_size)
       d_list_add(&dtc->dtc_list, &dtp->dtp_comp_cb_list) 插入到列表开始处
 
 
 
 
-执行任务的回调，如果所有的CB都执行完则返回true
-并且不重新启动任务。 如果任务被用户重新初始化，则意味着
-它又在飞行中，所以我们在重新初始化它的当前 CB 处中断，
-并返回 false，表示任务未完成。 所有剩余的 CB
-未执行的仍然附加，但已执行的
-此时已经从列表中删除
+执行任务的回调，如果所有的CB都执行完则返回true, 并且不重新启动任务。 如果任务被用户重新初始化，则意味着它又在飞行中，所以我们在重新初始化它的当前 CB 处中断，并返回 false，表示任务未完成。 所有剩余的 CB未执行的仍然附加，但已执行的此时已经从列表中删除
 tse_task_complete_callback
   ret = dtc->dtc_cb(task, dtc->dtc_arg); task_comp_event
 
@@ -4322,7 +4327,7 @@ daos_rpc_complete
 
 dc_rw_cb 
   opc_get
-  UBIP_FAIL_CHECK
+  DAOS_FAIL_CHECK
 dc_obj_shard_rw
   tse_task_register_comp_cb(task, dc_rw_cb...)  dtc->dtc_cb = cb   <- tse_task_complete_callback
     dc_rw_cb
@@ -4412,7 +4417,7 @@ df_ll_lookup
     dfuse_cb_lookup
   d_hash_rec_decref(&fs_handle->dpi_iet, rlink)
 
-ufuse_cb_getattr 先获取属性
+dfuse_cb_getattr 先获取属性
 dfuse_dfs_ops
 .lookup		= dfuse_cb_lookup
 分配ie
@@ -4460,7 +4465,7 @@ open_handle_cb
   open_with_attr = 1
   array_hdl_link(array) 
   *args->oh = array_ptr2hdl(array)
-    ubip_hhash_link_lookup(oh.cookie) 根据key查找hash表
+    daos_hhash_link_lookup(oh.cookie) 根据key查找hash表
 
 
 dc_array_set_size
@@ -4511,3 +4516,31 @@ tse_sched_complete -> 等待调度程序中的所有任务完成并终结。 如
     tse_sched_complete_inflight
       d_list_for_each_entry_safe(dtp, tmp, &dsp->dsp_running_list -> 将任务从运行队列移除
 
+
+
+
+#0  tse_sched_run (sched=sched@entry=0x7f91aedd6ba0 <daos_sched_g>) at src/common/tse.c:755
+#1  0x00007f91ae789065 in tse_sched_progress (sched=0x7f91aedd6ba0 <daos_sched_g>) at src/common/tse.c:791
+#2  0x00007f91aea1033f in ev_progress_cb (arg=arg@entry=0x7f919fffe180) at src/client/api/event.c:516
+#3  0x00007f91acca2eb2 in crt_progress_cond (crt_ctx=0x5602ff224b00, timeout=timeout@entry=0, cond_cb=cond_cb@entry=0x7f91aea1032b <ev_progress_cb>, arg=arg@entry=0x7f919fffe180) at src/cart/crt_context.c:1648
+#4  0x00007f91aea1a2f3 in daos_event_priv_wait () at src/client/api/event.c:1276
+#5  0x00007f91aea2793c in dc_task_schedule (task=<optimized out>, instant=instant@entry=true) at src/client/api/task.c:124
+#6  0x00007f91aea209c1 in daos_obj_open (coh=..., oid=..., mode=mode@entry=2, oh=oh@entry=0x7f919fffe200, ev=ev@entry=0x0) at src/client/api/object.c:49
+#7  0x00007f91ae2faeb5 in dfs_ostat (dfs=0x5602ff6f09e0, obj=0x5602ff6efb80, stbuf=stbuf@entry=0x7f919fffe250) at src/client/dfs/dfs.c:4928
+#8  0x00005602fd14ed99 in dfuse_cb_getattr (req=0x7f9198000c10, ie=0x5602ff6ef960) at src/client/dfuse/ops/fgetattr.c:22
+#9  0x00005602fd1429fc in df_ll_getattr (req=0x7f9198000c10, ino=<optimized out>, fi=<optimized out>) at src/client/dfuse/dfuse_fuseops.c:204
+#10 0x00007f91adc48009 in do_getattr () from /lib64/libfuse3.so.3
+#11 0x00007f91adc49dba in fuse_session_process_buf_int () from /lib64/libfuse3.so.3
+#12 0x00005602fd14599a in dfuse_do_work (arg=0x5602ff6f0090) at src/client/dfuse/dfuse_thread.c:60
+#13 0x00007f91aeddf1ca in start_thread () from /lib64/libpthread.so.0
+#14 0x00007f91ad646e73 in clone () from /lib64/libc.so.6
+
+
+
+dc_rw_cb
+  ...
+  dc_shard_update_size
+  daos_sgls_copy_data_out
+  rw_cb_csum_verify
+  crt_req_decref(rw_args->rpc)
+  return ret
