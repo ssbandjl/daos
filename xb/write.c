@@ -15,8 +15,8 @@
 
 #define BUF_SIZE 1024
 
-#define NIO 0    // NormalIO
-#define DIO 1    // DirectIO
+#define NIO 1    // NormalIO
+#define DIO 0    // DirectIO
 
 
 // gcc -O0 -g3 -o write write.c; chmod +x write;
@@ -27,7 +27,7 @@ int main(void)
 
     /*1. 普通io模式 */
     char * normal_write_buf = "normal io\n";
-    char * file_name = "/tmp/sxb/file";
+    char * file_name = "/tmp/sxb/file2";
     len = strlen(normal_write_buf);
     char normal_read_buf[100] = {0};
 

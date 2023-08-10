@@ -984,7 +984,7 @@ struct fuse_lowlevel_ops dfuse_ops dfuse低层操作对象
 struct fuse_file_info libfuse
 
 
-客户端写数据：write.c
+客户端写数据：xb/write.c -> write(fd, direct_write_buf, BUF_SIZE)
 write -> dfuse_cb_write 回调写 src/client/dfuse/fuse3
   fuse_req_userdata
   fuse_req_ctx
@@ -4138,7 +4138,8 @@ dc_array_write
     if (op_type == DAOS_OPC_ARRAY_READ && array->byte_array) 短读
       tse_task_register_deps(task, 1, &stask) 注册依赖任务
       tse_task_list_add(stask, &io_task_list) 加到io任务列表
-    tse_task_list_sched(&io_task_list, false); 批量任务调度执行
+    tse_task_list_sched(&io_task_list, false); 批量任务调度执行 -> dc_obj_update_task
+
     array_decref(array)
     tse_task_register_cbs(stask, check_short_read_cb 读回调
     tse_sched_progress(tse_task2sched(task)) 推进/处理
@@ -4733,4 +4734,7 @@ Thread 5 "dfuse_progress" hit Breakpoint 3, task_comp_event (task=0x7f11ac004cf0
 #16 0x00007f022619d1ca in start_thread () from /lib64/libpthread.so.0
 #17 0x00007f0224a04e73 in clone () from /lib64/libc.so.6
 
+
+依赖任务:
+tse_task_register_deps(task, 1, &io_task)
 
