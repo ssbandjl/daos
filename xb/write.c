@@ -15,6 +15,9 @@
 
 #define BUF_SIZE 1024
 
+#define NIO 0    // NormalIO
+#define DIO 1    // DirectIO
+
 
 // gcc -O0 -g3 -o write write.c; chmod +x write;
 int main(void)
@@ -29,7 +32,7 @@ int main(void)
 
     /* mark start */
     pid_t pid  = getpid();
-
+    #if NIO // 普通IO
     if ((fd = open("/mnt/sxb/write_test_file", O_CREAT | O_TRUNC | O_RDWR,0666 ))<0) {
         perror("open:");
         exit(1);
@@ -40,8 +43,16 @@ int main(void)
         perror("write:");
         exit(1);
     }  
+    printf("pid:%d, fd:%d, write_data:%s, len:%d, success\n", pid, fd, normal_write_buf, len);
+    if ( close(fd) < 0 )    {
+        perror("close:");
+        exit(1);
+    }  
+    #endif
+    
 
-    // /* 第二次wrirte，此时文件应该在page cache，因此路径会比上一次端 */
+
+    // /* 第二次wrirte，此时文件应该在page cache，因此路径会比上一次短 */
     // if ((size = write( fd, normal_write_buf, len)) < 0){
     //     perror("write:");
     //     exit(1);
@@ -70,59 +81,58 @@ int main(void)
     //     exit(1);
     // }  
 
-    // /*2. direct io模式*/
+    /*2. direct io模式*/
+    #if DIO
+    char *direct_write_buf,*direct_read_buf;
+    ret = posix_memalign((void **)&direct_write_buf, 512, BUF_SIZE);
+    if (ret) {
+        perror("posix_memalign:");
+        exit(1);
+    }
+
+    ret = posix_memalign((void **)&direct_read_buf, 512, BUF_SIZE);
+    if (ret) {
+        perror("posix_memalign:");
+        exit(1);
+    }
+
+    strcpy(direct_write_buf,"direct mode");
+    len = strlen("direct mode");
+
+    /* mark start */
+    pid  = getpid();
+
+    if ((fd = open("/mnt/sxb/dio", O_CREAT | O_TRUNC | O_RDWR | O_DIRECT,0666 ))<0) {
+        perror("open:");
+        exit(1);
+    }  
+
+    if ((size = write(fd, direct_write_buf, BUF_SIZE)) < 0){
+        perror("write:");
+        exit(1);
+    }  
+
+    printf("pid:%d, fd:%d, write_data:%s, len:%d, success\n", pid, fd, direct_write_buf, BUF_SIZE);
+
+    /* direct模式只是说不经过page cache,但是数据要想持久化还必须用fsync */
+    if(fsync(fd) < 0){
+        perror("fysnc:");
+        exit(1);
+    }
+
+    lseek(fd, 0, SEEK_SET );
     
-    // char *direct_write_buf,*direct_read_buf;
-    // ret = posix_memalign((void **)&direct_write_buf, 512, BUF_SIZE);
-    // if (ret) {
-    //     perror("posix_memalign:");
-    //     exit(1);
-    // }
+    if ((size = read( fd, direct_read_buf, BUF_SIZE))<0) {
+        perror("read:");
+        exit(1);
+    }  
 
-    // ret = posix_memalign((void **)&direct_read_buf, 512, BUF_SIZE);
-    // if (ret) {
-    //     perror("posix_memalign:");
-    //     exit(1);
-    // }
-
-    // strcpy(direct_write_buf,"direct mode");
-    // len = strlen("direct mode");
-
-    // /* mark start */
-    // pid  = getpid();
-
-    // if ((fd = open("hello.c", O_CREAT | O_TRUNC | O_RDWR | O_DIRECT,0666 ))<0) {
-    //     perror("open:");
-    //     exit(1);
-    // }  
-
-    // if ((size = write(fd, direct_write_buf, BUF_SIZE)) < 0){
-    //     perror("write:");
-    //     exit(1);
-    // }  
-
-    // /* direct模式只是说不经过page cache,但是数据要想持久化还必须用fsync */
-    // if(fsync(fd) < 0){
-    //     perror("fysnc:");
-    //     exit(1);
-    // }
-
-    // lseek(fd, 0, SEEK_SET );
-    
-    // if ((size = read( fd, direct_read_buf, BUF_SIZE))<0) {
-    //     perror("read:");
-    //     exit(1);
-    // }  
-
-    // if(strncmp(direct_read_buf,direct_write_buf,len) != 0){
-    //    perror("strncmp:");
-    //    exit(1); 
-    // }
-
-    // if ( close(fd) < 0 )    {
-    //     perror("close:");
-    //     exit(1);
-    // }  
+    printf("pid:%d, fd:%d, read_data:%s, len:%d, success\n", pid, fd, direct_read_buf, BUF_SIZE);
+    if(strncmp(direct_read_buf,direct_write_buf,len) != 0){
+       perror("strncmp:");
+       exit(1); 
+    }
+    #endif
 
     // /*3. 使用O_SYNC标志 */
 

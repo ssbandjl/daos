@@ -195,8 +195,7 @@ vim /home/daos/daos/utils/config/examples/daos_server_local.yml
 tour.md
 创建池/创建容器
 dmg system query -v
-dmg pool create sxb -z 4g  #dmg pool create --scm-size=8G --nvme-size=64G --label=samirrav_pool -u samirrav@, dmg pool create --scm-size=8G --nvme-size=64G samirrav_pool -u samirrav@ -g samirrav@
-dmg pool list -v
+dmg pool create sxb -z 4g; dmg pool list -v  #dmg pool create --scm-size=8G --nvme-size=64G --label=samirrav_pool -u samirrav@, dmg pool create --scm-size=8G --nvme-size=64G samirrav_pool -u samirrav@ -g samirrav@
 dmg pool query sxb
 daos cont create --oclass=RP_3GX --properties=rf:1 --type POSIX --pool sxb --label sxb
 daos container create --pool sxb --type POSIX --label sxb
@@ -206,7 +205,7 @@ daos container query sxb sxb --verbose
 
 
 
-新版本创建容器: daos container create sxb --type POSIX sxb
+新版本创建容器: daos cont create sxb --type POSIX sxb; daos cont list sxb --verbose
 
 查询容器: daos cont list sxb --verbose; daos cont query sxb sxb
 
@@ -304,8 +303,7 @@ daos cont query sxb sxb
 
 
 挂载/卸载
-mkdir -p /tmp/sxb
-dfuse --mountpoint=/tmp/sxb --pool=sxb --cont=sxb   # mount.fuse3 dfuse /scratch_fs/daos_dfuse_samir -o pool=samirrav_pool,container=samirrav_cont
+mkdir -p /tmp/sxb; dfuse --mountpoint=/tmp/sxb --pool=sxb --cont=sxb; df -h   # mount.fuse3 dfuse /scratch_fs/daos_dfuse_samir -o pool=samirrav_pool,container=samirrav_cont
 echo 'dfuse /scratch_fs/root_dfuse fuse3 pool=admin_pool,container=admin_cont,auto,x-systemd.requires=daos_agent.service    0 0' >> /etc/fstab
 cd /tmp/sxb
 
@@ -733,6 +731,10 @@ strace -fff test/write_file /tmp/sxb/test1
 gdb调试fuse:
 gdb attach `ps aux|grep dfuse|grep -v grep|awk '{print$2}'`
 
+
+gdb attach `ps aux|grep daos_engine|grep -v grep|awk '{print$2}'`
+
+
 kill dfuse
 kill -9 `ps aux|grep dfuse|grep -v grep|awk '{print$2}'`
 
@@ -927,7 +929,7 @@ dfuse_main.c -> main dfuse_main.c
   dfuse_fs_init
     d_hash_table_create_inplace dpi_pool_table 打开的池表， 创建hash表 大小=power2(n次方)， 操作方法
     dpi_iet open inodes
-    daos_eq_create 一个事件队列关联一个网络上下文， 跟踪池的多个事件
+    daos_eq_create -> 一个事件队列关联一个网络上下文， 跟踪池的多个事件 -> 创建事件队列。 事件队列用于保存和池化多个事件。 创建的每个事件队列都将创建一个与事件队列关联的网络（cart）上下文。 网络上下文创建是一项昂贵的操作，并且在某些系统上网络上下文的数量可能受到限制。 因此，建议不要在用户应用程序或中间件中创建大量事件队列
       daos_eq_alloc
       crt_context_create(&eqx->eqx_ctx)
         crt_contpext_provider_create
@@ -940,7 +942,7 @@ dfuse_main.c -> main dfuse_main.c
         D_INIT_LIST_HEAD(&dsp->dsp_complete_list) -> 完成队列
         D_INIT_LIST_HEAD(&dsp->dsp_sleeping_list) -> 睡眠队列
         D_INIT_LIST_HEAD(&dsp->dsp_comp_cb_list); -> 完成回调队列
-        tse_sched_register_comp_cb(sched, comp_cb, udata)
+        tse_sched_register_comp_cb(sched, comp_cb, udata) -> 初始回调为空
     sem_init
   duns_resolve_path
   dfuse_pool_connect
@@ -3958,7 +3960,6 @@ dc_task_create
 
 
 
-tse_sched_progress
 
 
 D_ALLOC_PTR(task)
@@ -4057,6 +4058,8 @@ dfuse_main.c -> main dfuse_main.c
           fuse_session_mount
           dfuse_send_to_fg
           dfuse_loop
+            rc = sem_init(&dtm->tm_finish
+            sem_wait(&dtm->tm_finish) -> 等信号量 sem_post
   dfuse_fs_fini
 
 
@@ -4544,3 +4547,31 @@ dc_rw_cb
   rw_cb_csum_verify
   crt_req_decref(rw_args->rpc)
   return ret
+
+
+
+dmg pool list -v
+DEBUG 02:45:41.071975 interceptors.go:239: gRPC request: *mgmt.ListPoolsReq (sys:"daos_server-2.5.100")
+DEBUG 02:45:41.072511 interceptors.go:262: gRPC response for *mgmt.ListPoolsReq: *mgmt.ListPoolsResp6 1 pools: sxb:Ready (elapsed: 33.46µs)
+DEBUG 02:45:41.094068 interceptors.go:239: gRPC request: *mgmt.PoolQueryReq (sys:"daos_server-2.5.100"  id:"e65bab05-f895-4f28-aad1-4967908509bd")
+
+#0  crt_reply_send (req=req@entry=0x7f4126118a90) at src/cart/crt_rpc.c:1472
+#1  0x00007f41356676b5 in ds_pool_tgt_query_handler (rpc=0x7f4126118a90) at src/pool/srv_target.c:1550 -> X(POOL_TGT_QUERY
+#2  0x00007f4141c0b437 in crt_handle_rpc (arg=0x7f4126118a90) at src/cart/crt_rpc.c:1686 -> rpc_priv->crp_opc_info->coi_rpc_cb(rpc_pub)
+#3  0x00007f4140d3e77a in ABTD_ythread_func_wrapper (p_arg=0x7f411d265260) at arch/abtd_ythread.c:21
+#4  0x00007f4140d3e911 in make_fcontext () at arch/fcontext/make_x86_64_sysv_elf_gas.S:64
+
+查池
+ds_pool_tgt_query_handler
+  crt_reply_send
+
+
+
+
+ds_pool_query_handler_v5 <- POOL_QUERY
+
+
+obj_req_fanout
+  tse_task_create(shard_io_task
+
+  
