@@ -924,8 +924,21 @@ dfuse_main.c -> main dfuse_main.c
         setlinebuf(stderr) 设置错误输出为行缓冲
     d_log_sync_mask
   daos_init
+    daos_debug_init
+    daos_hhash_init_feats
+    dc_agent_init
+    dc_job_init
+    dc_mgmt_net_cfg
     daos_eq_lib_init 事件队列
       crt_init_opt
+      crt_context_create(&daos_eq_ctx) -> 全局共享上下文, 所有事件队列(eq)共享使用这个上下文
+      tse_sched_init(&daos_sched_g, NULL, daos_eq_ctx) -> 无事件队列
+    dc_mgmt_net_cfg_check
+    pl_init
+    dc_mgmt_init
+    dc_pool_init
+    dc_cont_init
+    dc_obj_init
   dfuse_fs_init
     d_hash_table_create_inplace dpi_pool_table 打开的池表， 创建hash表 大小=power2(n次方)， 操作方法
     dpi_iet open inodes
@@ -4737,4 +4750,70 @@ Thread 5 "dfuse_progress" hit Breakpoint 3, task_comp_event (task=0x7f11ac004cf0
 
 依赖任务:
 tse_task_register_deps(task, 1, &io_task)
+
+
+
+spdk_daos_bdev:
+daos_bdev:
+_bdev_daos_submit_request
+  case SPDK_BDEV_IO_TYPE_WRITE
+    bdev_daos_writev
+      daos_event_init
+      d_iov_set
+      dfs_write(ch->dfs, ch->obj, &task->sgl, offset, &task->ev)
+
+
+
+
+dfs test:
+src/tests/simple_dfs.c -> main
+
+
+export POOL_SCM_SIZE=1
+export POOL_NVME_SIZE=4
+cd /opt/daos/bin; ./dfs_test -u     # unit_test -> gdb --args ./dfs_test -u
+src/tests/suite/dfs_test.c -> main
+par_init(int *argc, char ***argv) -> DAOS-7734 版本：将 MPI 代码包装在统一接口中 (#8127)，将 daos 测试代码与序列化存根库链接，以避免与 MPI 直接链接。 使用 dlopen，此存根库可以尝试加载启用 MPI 的版本，但否则可以在没有 MPI 的情况下执行相同的应用程序。 这简化了我们的包，并允许我们在包中提供更多实用程序，而无需任何 MPI 依赖。 事实上，只有一个库依赖 MPI 进行这一更改。 我们可以选择只提供这个支持 MPI 的库的源代码，并附带一个 Makefile，以便用户可以在我们的实用程序中使用 MPI 时插入自己的版本。
+  load_stubs()
+    pthread_once(&init_control, init_routine)
+      stubs_handle = dlopen("libdpar_mpi.so", RTLD_NOW)
+  stubs.ps_init(argc, argv) 
+    MPI_Init(argc, argv) -> MPI_Init() 是MPI程序的第一个调用，它完成MPI程序所有的初始化工作，所有MPI程序的第一条可执行语句都是这条语句。MPI系统通过argc和argv得到命令行参数，并且将MPI系统专用的参数删除，留下用户的解释参数
+  MPI_Comm_rank(comm, rank)
+  MPI_Comm_size
+  MPI_Barrier(comm) -> MPI_Barrier函数 用于一个通信子中所有进程的同步，调用函数时进程将处于等待状态，直到通信子中所有进程 都调用了该函数后才继续执行
+  daos_init()
+run_specified_tests(tests, rank, size, NULL, 0) -> pus
+  run_dfs_par_test
+  run_dfs_unit_test
+    MPI_Barrier
+    cmocka_run_group_tests_name("DAOS_FileSystem_DFS_Unit", dfs_unit_tests, dfs_setup, dfs_teardown) -> cmocka_run_group_tests_name (const char *group_name, const struct CMUnitTest group_tests[], CMFixtureFunction group_setup, CMFixtureFunction group_teardown)
+      dfs_setup
+        test_setup(state, SETUP_POOL_CONNECT
+          test_setup_next_step
+            daos_eq_create
+        test_setup_pool_create
+          dmg_pool_create
+            daos_dmg_json_pipe
+              cmd_str = cmd_string(cmd_base, args, argcount) ->    dmg -j -i -d --log-file=/tmp/suite_dmg.log pool create --user=root --group=root --scm-size=4294967296b --nvme-size=17179869184b test_OH1F19 --nsvc=1
+              run_cmd
+                pipe(stdoutfd)
+                system(command)
+      dfs_unit_tests -> static const struct CMUnitTest dfs_unit_tests[] 
+      dfs_teardown
+    setenv("DFS_USE_DTX", "1", 1) -> 使用dtx -> DAOS-8952 vos：写入时检查负条目时间戳 (#7821) 如果不重新组织 VOS 代码，因此我们将树加载与存在检查分开，我们会遇到一个问题，即有条件或其他方式的提取可能会提前退出，并且只更新负时间戳 。 因此，后续更新可能看不到这些读取时间戳并错误地执行写入。 而不是承诺立即进行重组
+    cmocka_run_group_tests_name("DAOS_FileSystem_DFS_Unit_DTX", dfs_unit_tests, dfs_setup, dfs_teardown)
+  run_dfs_sys_unit_test
+    dfs_sys_test_read_write
+
+
+
+
+
+docker rocky8
+cat /etc/*-release
+Rocky Linux release 8.8 (Green Obsidian)
+NAME="Rocky Linux"
+
+
 

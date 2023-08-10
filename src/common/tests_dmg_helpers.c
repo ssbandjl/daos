@@ -252,7 +252,8 @@ daos_dmg_json_pipe(const char *dmg_cmd, const char *dmg_config_file,
 	const char		*debug_flags = "-d --log-file=/tmp/suite_dmg.log";
 
 	if (dmg_config_file == NULL)
-		D_ASPRINTF(cmd_base, "dmg -j -i %s %s ", debug_flags, dmg_cmd);
+		// D_ASPRINTF(cmd_base, "dmg -j -i %s %s ", debug_flags, dmg_cmd);
+		D_ASPRINTF(cmd_base, "dmg -j %s %s ", debug_flags, dmg_cmd);
 	else
 		D_ASPRINTF(cmd_base, "dmg -j %s -o %s %s ", debug_flags,
 			   dmg_config_file, dmg_cmd);
