@@ -4613,7 +4613,6 @@ obj_req_fanout
 Continuing.
 
 Thread 6 "dfuse_worker" hit Breakpoint 3, task_comp_event (task=0x7f11b40081e0, data=0x7f11b4004190) at src/client/api/task.c:37
-37      {
 (gdb) bt
 #0  task_comp_event (task=0x7f11b40081e0, data=0x7f11b4004190) at src/client/api/task.c:37
 #1  0x00007f11c920210c in tse_task_complete_callback (task=task@entry=0x7f11b40081e0) at src/common/tse.c:520
@@ -4628,7 +4627,7 @@ Thread 6 "dfuse_worker" hit Breakpoint 3, task_comp_event (task=0x7f11b40081e0, 
 #10 0x00007f11c9487aec in daos_array_stat (oh=..., th=th@entry=..., stbuf=stbuf@entry=0x7f11bb1f9e50, ev=ev@entry=0x0) at src/client/api/array.c:261
 #11 0x00007f11c8d648d8 in entry_stat (dfs=dfs@entry=0x563d4cce39e0, th=th@entry=..., oh=..., name=name@entry=0x7f1190001f30 "file", len=len@entry=4, obj=obj@entry=0x7f1190001f00, get_size=<optimized out>, stbuf=<optimized out>, obj_hlc=<optimized out>)
     at src/client/dfs/dfs.c:1060
-#12 0x00007f11c8d7b40e in dfs_osetattr (dfs=0x563d4cce39e0, obj=0x7f1190001f00, stbuf=stbuf@entry=0x7f11bb1fa2f0, flags=flags@entry=4) at src/client/dfs/dfs.c:5344
+#12 0x00007f11c8d7b40e in dfs_osetattr (dfs=0x563d4cce39e0, obj=0x7f1190001f00, stbuf=stbuf@entry=0x7f11bb1fa2f0, flags=flags@entry=4) at src/client/dfs/dfs.c:5344 -> 设置文件的状态属性并获取新值。 如果对象是符号链接，则链接本身会被修改。 请参阅 dfs_stat() 填写的条目
 #13 0x0000563d4bc31967 in dfuse_cb_setattr (req=0x7f11b4007f50, ie=0x7f1190000bf0, attr=0x7f11bb1fa2f0, to_set=0) at src/client/dfuse/ops/setattr.c:108
 #14 0x0000563d4bbfeba7 in df_ll_setattr (req=0x7f11b4007f50, ino=<optimized out>, attr=0x7f11bb1fa2f0, to_set=1056, fi=<optimized out>) at src/client/dfuse/dfuse_fuseops.c:245
 #15 0x00007f11c86c5f6a in do_setattr () from /lib64/libfuse3.so.3
@@ -4640,7 +4639,6 @@ Thread 6 "dfuse_worker" hit Breakpoint 3, task_comp_event (task=0x7f11b40081e0, 
 Continuing.
 
 Thread 6 "dfuse_worker" hit Breakpoint 3, task_comp_event (task=0x7f11b40086e0, data=0x7f11b4004190) at src/client/api/task.c:37
-37      {
 (gdb) bt
 #0  task_comp_event (task=0x7f11b40086e0, data=0x7f11b4004190) at src/client/api/task.c:37
 #1  0x00007f11c920210c in tse_task_complete_callback (task=task@entry=0x7f11b40086e0) at src/common/tse.c:520
@@ -4689,3 +4687,50 @@ Thread 5 "dfuse_progress" hit Breakpoint 3, task_comp_event (task=0x7f11ac004cf0
 #13 0x0000563d4bbe6d6e in dfuse_progress_thread (arg=0x563d4ca2f130) at src/client/dfuse/dfuse_core.c:56
 #14 0x00007f11c985d1ca in start_thread () from /lib64/libpthread.so.0
 #15 0x00007f11c80c4e73 in clone () from /lib64/libc.so.6
+
+
+
+
+#0  crt_req_send (req=0x7f11ac006310, complete_cb=complete_cb@entry=0x7f11c94a3f35 <daos_rpc_cb>, arg=arg@entry=0x7f11ac004cf0) at src/cart/crt_rpc.c:1377
+#1  0x00007f11c94a4586 in daos_rpc_send (rpc=<optimized out>, task=task@entry=0x7f11ac004cf0) at src/client/api/rpc.c:44
+#2  0x00007f11c955cfc5 in dc_obj_shard_rw (shard=0x7f11ac003508, opc=DAOS_OBJ_RPC_FETCH, shard_args=<optimized out>, fw_shard_tgts=0x0, fw_cnt=<optimized out>, task=0x7f11ac004cf0) at src/object/cli_shard.c:1161
+#3  0x00007f11c952f779 in shard_io (task=task@entry=0x7f11ac004cf0, shard_auxi=shard_auxi@entry=0x7f11ac005060) at src/object/cli_obj.c:2890
+#4  0x00007f11c952fe03 in obj_req_fanout (obj=<optimized out>, obj_auxi=0x7f11ac004e30, map_ver=<optimized out>, epoch=epoch@entry=0x7f11ba9f90e0, io_prep_cb=io_prep_cb@entry=0x7f11c9521698 <shard_rw_prep>, io_cb=<optimized out>, obj_task=<optimized out>)
+    at src/object/cli_obj.c:3090
+#5  0x00007f11c954a0d7 in dc_obj_fetch_task (task=0x7f11ac004cf0) at src/object/cli_obj.c:5522
+#6  0x00007f11c92088ad in tse_task_schedule_with_delay (task=task@entry=0x7f11ac004cf0, instant=instant@entry=true, delay=delay@entry=0) at src/common/tse.c:1056
+#7  0x00007f11c9208cba in tse_task_schedule (task=task@entry=0x7f11ac004cf0, instant=instant@entry=true) at src/common/tse.c:1070
+#8  0x00007f11c94a5780 in dc_task_schedule (task=0x7f11ac004cf0, instant=instant@entry=true) at src/client/api/task.c:114
+#9  0x00007f11c949ee72 in daos_obj_fetch (oh=..., th=..., th@entry=..., flags=flags@entry=64, dkey=dkey@entry=0x7f11ba9f9250, nr=nr@entry=1, iods=iods@entry=0x7f11ba9f9270, sgls=0x0, maps=0x0, ev=0x0) at src/client/api/object.c:170
+#10 0x00007f11c8d7ee3e in dfs_getxattr (dfs=0x563d4cce39e0, obj=<optimized out>, name=name@entry=0x7f11b97f5040 "security.capability", value=value@entry=0x0, size=size@entry=0x7f11ba9f9308) at src/client/dfs/dfs.c:6228
+#11 0x0000563d4bc0d57d in dfuse_cb_getxattr (req=0x7f11ac0036b0, inode=0x563d4cce2960, name=<optimized out>, size=24) at src/client/dfuse/ops/getxattr.c:62
+#12 0x0000563d4bbfc8b9 in df_ll_getxattr (req=0x7f11ac0036b0, ino=<optimized out>, name=0x7f11b97f5040 "security.capability", size=24) at src/client/dfuse/dfuse_fuseops.c:522
+#13 0x00007f11c86c7dba in fuse_session_process_buf_int () from /lib64/libfuse3.so.3
+#14 0x0000563d4bc0299a in dfuse_do_work (arg=0x563d4cccad20) at src/client/dfuse/dfuse_thread.c:60
+#15 0x00007f11c985d1ca in start_thread () from /lib64/libpthread.so.0
+#16 0x00007f11c80c4e73 in clone () from /lib64/libc.so.6
+
+
+
+
+(gdb) bt
+#0  task_comp_event (task=0x7f0210006660, data=0x7f0210004510) at src/client/api/task.c:37
+#1  0x00007f0225b4210c in tse_task_complete_callback (task=task@entry=0x7f0210006660) at src/common/tse.c:520
+#2  0x00007f0225b47be9 in tse_task_complete (task=task@entry=0x7f0210006660, ret=ret@entry=0) at src/common/tse.c:870
+#3  0x00007f0225e857fe in dc_obj_open (task=0x7f0210006660) at src/object/cli_obj.c:1521
+#4  0x00007f0225b488ad in tse_task_schedule_with_delay (task=task@entry=0x7f0210006660, instant=instant@entry=true, delay=delay@entry=0) at src/common/tse.c:1056
+#5  0x00007f0225b48cba in tse_task_schedule (task=task@entry=0x7f0210006660, instant=instant@entry=true) at src/common/tse.c:1070
+#6  0x00007f0225de5780 in dc_task_schedule (task=0x7f0210006660, instant=instant@entry=true) at src/client/api/task.c:114
+#7  0x00007f0225dde9c1 in daos_obj_open (coh=..., coh@entry=..., oid=..., mode=mode@entry=4, oh=oh@entry=0x7f0210006b88, ev=ev@entry=0x0) at src/client/api/object.c:49
+#8  0x00007f0225f204fb in dc_array_g2l (coh=..., array_glob=array_glob@entry=0x7f02177fce80, mode=mode@entry=4, oh=oh@entry=0x7f0210006c80) at src/client/array/dc_array.c:400
+#9  0x00007f0225f2a479 in dc_array_global2local (coh=..., glob=..., mode=mode@entry=4, oh=oh@entry=0x7f0210006c80) at src/client/array/dc_array.c:463
+#10 0x00007f0225dc7758 in daos_array_global2local (coh=..., glob=..., mode=mode@entry=4, oh=oh@entry=0x7f0210006c80) at src/client/api/array.c:108
+#11 0x00007f02256b6037 in dfs_dup (dfs=0x557cdf4a79e0, obj=0x7f01f0001440, flags=49666, _new_obj=_new_obj@entry=0x7f0210005658) at src/client/dfs/dfs.c:4363
+#12 0x0000557cdec05748 in dfuse_cb_open (req=0x7f0210005c30, ino=<optimized out>, fi=0x7f02177fd360) at src/client/dfuse/ops/open.c:46
+#13 0x00007f0225007248 in do_open () from /lib64/libfuse3.so.3
+#14 0x00007f0225007dba in fuse_session_process_buf_int () from /lib64/libfuse3.so.3
+#15 0x0000557cdebe999a in dfuse_do_work (arg=0x557cdf4a7090) at src/client/dfuse/dfuse_thread.c:60
+#16 0x00007f022619d1ca in start_thread () from /lib64/libpthread.so.0
+#17 0x00007f0224a04e73 in clone () from /lib64/libc.so.6
+
+
