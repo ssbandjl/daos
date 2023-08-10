@@ -27,13 +27,14 @@ int main(void)
 
     /*1. 普通io模式 */
     char * normal_write_buf = "normal io\n";
+    char * file_name = "/tmp/sxb/file";
     len = strlen(normal_write_buf);
     char normal_read_buf[100] = {0};
 
     /* mark start */
     pid_t pid  = getpid();
     #if NIO // 普通IO
-    if ((fd = open("/mnt/sxb/write_test_file", O_CREAT | O_TRUNC | O_RDWR,0666 ))<0) {
+    if ((fd = open(file_name, O_CREAT | O_TRUNC | O_RDWR,0666 ))<0) {
         perror("open:");
         exit(1);
     }  
@@ -44,10 +45,6 @@ int main(void)
         exit(1);
     }  
     printf("pid:%d, fd:%d, write_data:%s, len:%d, success\n", pid, fd, normal_write_buf, len);
-    if ( close(fd) < 0 )    {
-        perror("close:");
-        exit(1);
-    }  
     #endif
     
 
@@ -102,7 +99,7 @@ int main(void)
     /* mark start */
     pid  = getpid();
 
-    if ((fd = open("/mnt/sxb/dio", O_CREAT | O_TRUNC | O_RDWR | O_DIRECT,0666 ))<0) {
+    if ((fd = open(file_name, O_CREAT | O_TRUNC | O_RDWR | O_DIRECT,0666 ))<0) {
         perror("open:");
         exit(1);
     }  
