@@ -4771,7 +4771,7 @@ src/tests/simple_dfs.c -> main
 
 export POOL_SCM_SIZE=1
 export POOL_NVME_SIZE=4
-cd /opt/daos/bin; ./dfs_test -u     # unit_test -> gdb --args ./dfs_test -u
+cd /opt/daos/bin; ./dfs_test -s     # unit_test -> gdb --args ./dfs_test -u
 src/tests/suite/dfs_test.c -> main
 par_init(int *argc, char ***argv) -> DAOS-7734 版本：将 MPI 代码包装在统一接口中 (#8127)，将 daos 测试代码与序列化存根库链接，以避免与 MPI 直接链接。 使用 dlopen，此存根库可以尝试加载启用 MPI 的版本，但否则可以在没有 MPI 的情况下执行相同的应用程序。 这简化了我们的包，并允许我们在包中提供更多实用程序，而无需任何 MPI 依赖。 事实上，只有一个库依赖 MPI 进行这一更改。 我们可以选择只提供这个支持 MPI 的库的源代码，并附带一个 Makefile，以便用户可以在我们的实用程序中使用 MPI 时插入自己的版本。
   load_stubs()
