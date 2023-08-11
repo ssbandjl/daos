@@ -147,6 +147,9 @@ main_133:
 docker run -it -d --privileged --cap-add=ALL --name daos_main1 -v /home/xb/project/stor/daos/main/daos:/home/xb/project/stor/daos/main/daos -v /dev:/dev -v /dev/hugepages:/dev/hugepages -v /sys/fs/cgroup:/sys/fs/cgroup:ro daos:latest
 docker exec -u root -it daos_main1 bash -c 'cd /home/xb/project/stor/daos/main/daos;exec "${SHELL:-sh}"'
 
+daos_restart(){
+  docker restart daos_main1; docker exec -u root -it daos_main1 bash -c 'cd /home/xb/project/stor/daos/main/daos; ./start.sh; exec "${SHELL:-sh};"'
+}
 
 
 
@@ -1251,8 +1254,9 @@ tse_task_complete
     ret = dtc->dtc_cb(task, dtc->dtc_arg) -> 执行任务注册时设置的回调, 参考 -> d_list_add(&dtc->dtc_list, &dtp->dtp_comp_cb_list)
   D_MUTEX_LOCK(&dsp->dsp_lock) -> 锁调度器
   tse_task_complete_locked(dtp, dsp)
-    d_list_move_tail(&dtp->dtp_list, &dsp->dsp_complete_list) -> 完成后, 将任务移动到调度器的完成队列
+    d_list_move_tail(&dtp->dtp_list, &dsp->dsp_complete_list) -> 完成后, 将任务移动到调度器的完成队列(run -> com?)
   tse_sched_process_complete(dsp) -> 更新调度列表
+    D_MUTEX_LOCK(&dsp->dsp_lock) -> 对调度器加锁
     d_list_splice_init(&dsp->dsp_complete_list, &comp_list)
     tse_task_post_process(task) -> 检查完成列表中的任务、依赖任务状态检查、调度状态更新等。此后任务将移至完成列表
     ...
