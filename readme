@@ -1,5 +1,5 @@
 daos开发文档: https://docs.daos.io/v2.5/dev/development/
-daos开发文档_容器增删改查: https://docs.daos.io/v2.5/user/container/
+daos开发文档_容器增删改查: https://docs.daos.io/v2.5/user/container/, 用户文档: https://docs.daos.io/v2.5/user/workflow/
 公共组件: https://github.com/daos-stack/daos/tree/master/src/common
 
 https://github.com/ssbandjl/daos.git
@@ -916,9 +916,9 @@ rw_completion
 
 
 客户端mount:
-dfuse -m /mnt/sxb --pool sxb --cont sxb
+dfuse -m /mnt/sxb --pool sxb --cont sxb | dfuse --mountpoint=/tmp/sxb --pool=sxb --cont=sxb
 dfuse_main.c -> main dfuse_main.c
-  daos_debug_init daos_debug_init
+  daos_debug_init(DAOS_LOG_DEFAULT)
     d_log_init_adv 高级日志初始化, 客户端日志文件
       log_file = getenv(D_LOG_FILE_ENV) export D_LOG_FILE=/tmp/daos_client.log
       debug_prio_err_load_env
@@ -926,40 +926,53 @@ dfuse_main.c -> main dfuse_main.c
         freopen(mst.log_file 重新关联标准输出或错误输出
         setlinebuf(stderr) 设置错误输出为行缓冲
     d_log_sync_mask
-  daos_init
+  dfuse_info->di_eq_count = 1
+  daos_init -> 初始化客户端库
     daos_debug_init
     daos_hhash_init_feats
     dc_agent_init
     dc_job_init
     dc_mgmt_net_cfg
-    daos_eq_lib_init 事件队列
+    daos_eq_lib_init -> 初始化事件队列库 -> static tse_sched_t daos_sched_g -> 指向不属于 EQ 一部分的事件的全局调度程序的指针。 作为 EQ 一部分初始化的事件将在该 EQ 调度程序中进行跟踪
       crt_init_opt
-      crt_context_create(&daos_eq_ctx) -> 全局共享上下文, 所有事件队列(eq)共享使用这个上下文
-      tse_sched_init(&daos_sched_g, NULL, daos_eq_ctx) -> 无事件队列
+      crt_context_create(&daos_eq_ctx) -> 全局共享网络上下文, 所有事件队列(eq)共享使用这个上下文
+      tse_sched_init(&daos_sched_g, NULL, daos_eq_ctx) -> 初始化调度器(无事件队列), 为无eq事件设置调度器
     dc_mgmt_net_cfg_check
     pl_init
     dc_mgmt_init
     dc_pool_init
     dc_cont_init
     dc_obj_init
-  dfuse_fs_init
+  dfuse_fs_init(dfuse_info) -> daos用户态文件信息=文件系统控制器
+    D_ALLOC_ARRAY(fs_handle->di_eqt, fs_handle->di_eq_count) -> eq数组
     d_hash_table_create_inplace dpi_pool_table 打开的池表， 创建hash表 大小=power2(n次方)， 操作方法
     dpi_iet open inodes
-    daos_eq_create -> 一个事件队列关联一个网络上下文， 跟踪池的多个事件 -> 创建事件队列。 事件队列用于保存和池化多个事件。 创建的每个事件队列都将创建一个与事件队列关联的网络（cart）上下文。 网络上下文创建是一项昂贵的操作，并且在某些系统上网络上下文的数量可能受到限制。 因此，建议不要在用户应用程序或中间件中创建大量事件队列
-      daos_eq_alloc
+    sem_init(&eqt->de_sem, 0, 0) -> 在 eq 之前创建信号量，因为无法检查 sem_init() 是否已被调用，如果没有调用 sem_destroy 也是无效的。 这样我们就可以避免添加额外的内存来跟踪信号量的状态
+    daos_eq_create(&eqt->de_eq) -> 一个事件队列关联一个网络上下文， 跟踪池的多个事件 -> 创建事件队列。 事件队列用于保存和池化多个事件。 创建的每个事件队列都将创建一个与事件队列关联的网络（cart）上下文。 网络上下文创建是一项昂贵的操作，并且在某些系统上网络上下文的数量可能受到限制。 因此，建议不要在用户应用程序或中间件中创建大量事件队列
+      eq = daos_eq_alloc() -> 分配eq
+        D_INIT_LIST_HEAD(&eq->eq_running)
+        D_INIT_LIST_HEAD(&eq->eq_comp)
+        daos_hhash_hlink_init(&eqx->eqx_hlink, &eq_h_ops)
+        return eq
       crt_context_create(&eqx->eqx_ctx)
         crt_contpext_provider_create
           crt_context_init
       daos_eq_insert(eqx)
+        daos_hhash_link_insert(&eqx->eqx_hlink, DAOS_HTYPE_EQ) -> 插入全局hash表(struct daos_hhash_table	daos_ht)
       daos_eq_handle(eqx, eqh)
+        daos_hhash_link_key(&eqx->eqx_hlink, &h->cookie) -> 关联key
       tse_sched_init(&eqx->eqx_sched, NULL, eqx->eqx_ctx) -> 初始化调度器 -> struct tse_sched_private -> 调度器及队列,属性等
+        struct tse_sched_private	*dsp = tse_sched2priv(sched) -> 设置调度器私有指针dsp
         D_INIT_LIST_HEAD(&dsp->dsp_init_list); -> 初始队列
         D_INIT_LIST_HEAD(&dsp->dsp_running_list); -> 运行队列
         D_INIT_LIST_HEAD(&dsp->dsp_complete_list) -> 完成队列
         D_INIT_LIST_HEAD(&dsp->dsp_sleeping_list) -> 睡眠队列
         D_INIT_LIST_HEAD(&dsp->dsp_comp_cb_list); -> 完成回调队列
         tse_sched_register_comp_cb(sched, comp_cb, udata) -> 初始回调为空
-    sem_init
+          dsc->dsc_comp_cb = comp_cb -> 设置调度器的完成回调和回调参数(udata)
+          d_list_add(&dsc->dsc_list, &dsp->dsp_comp_cb_list) -> 将调度器的完成回调 -> 调度器的完成回调队列
+        sched->ds_udata = udata -> 将网络上下文 daos_eq_ctx 设置到调度器的用户数据指针上(也可以是回调数据等)
+      daos_eq_putref(eqx) -> 减一次引用计数(ch_rec_decref)
   duns_resolve_path
   dfuse_pool_connect
   dfuse_cont_open
@@ -1210,7 +1223,7 @@ crt_swim_cli_cb
 ca_arrays
 
 
-tse: 调度, 1300+400
+tse: 调度, 1300+400, 涉及文件: event.h, daos_event.h, tse.h, tse.c, tse_internal.h
 dc_task_create
   sched = daos_ev2sched(ev) 事件转调度器
   tse_task_create(func, sched, NULL, &task) -> 初始化 tse_task。 该任务(task)会被添加到调度器(sched)任务列表中，稍后被调度，如果提供了依赖任务，则该任务将被添加到依赖任务的dep列表中，一旦依赖任务完成，则添加该任务到调度程序列表(先完成依赖任务, 然后添加主任务)
@@ -1273,6 +1286,8 @@ daos_rpc_cb
           dtc_cb 执行注册时的回调 register_cb -> dc_rw_cb
           task_comp_event -> daos_event_complete(task_ptr2args(task)->ta_ev, task->dt_result)
             eqx = daos_eq_lookup(evx->evx_eqh)
+              hlink = daos_hhash_link_lookup(eqh.cookie)
+              return container_of(hlink, struct daos_eq_private, eqx_hlink)
             daos_event_complete_locked(eqx, evx, rc) -> master
               evx->evx_status = DAOS_EVS_COMPLETED -> 事件置为已完成状态
               daos_event_complete_cb(evx, rc)
@@ -4065,7 +4080,7 @@ dfuse_main.c -> main dfuse_main.c
     d_slab_init
     d_slab_register
     dfuse_progress_thread pthread_create(&fs_handle->dpi_thread, NULL, dfuse_progress_thread, fs_handle) 异步进度线程，该线程在启动时使用事件队列启动，并阻塞在信号量上，直到创建异步事件，此时线程唤醒并在 daos_eq_poll() 中忙于轮询直到完成
-      sem_wait
+      sem_wait -> 等信号量
       daos_eq_poll  从 EQ 中检索完成事件
         daos_eq_lookup 查找私有事件队列
           daos_hhash_link_lookup
@@ -4333,7 +4348,7 @@ tse_task_complete_callback
 crt_rpc_completed call 2？ 重复完成，duplicated completions
 
 daos_rpc_db
-daos_rpc_complete
+daos_rpc_complete | daos_rpc_cb
   tse_task_complete
     tse_sched_process_complete(dsp)
       post_procee

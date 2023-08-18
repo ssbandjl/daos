@@ -1,0 +1,64 @@
+[root@8b90fa1190f1 daos]# dmg pool create sxb -z 4g; dmg pool list --verbose
+Creating DAOS pool with automatic storage allocation: 4.0 GB total, 6.00%,94.00% tier ratio
+Pool created with 6.00%,94.00% storage tier ratio
+-------------------------------------------------
+  UUID                 : 9b4157a8-7bab-493c-aa4d-5145144d92b3
+  Service Leader       : 0                                   
+  Service Ranks        : 0                                   
+  Storage Ranks        : 0                                   
+  Total Size           : 4.0 GB                              
+  Storage tier 0 (SCM) : 240 MB (240 MB / rank)              
+  Storage tier 1 (NVMe): 3.8 GB (3.8 GB / rank)              
+
+Label UUID                                 State SvcReps SCM Size SCM Used SCM Imbalance NVME Size NVME Used NVME Imbalance Disabled UpgradeNeeded? 
+----- ----                                 ----- ------- -------- -------- ------------- --------- --------- -------------- -------- -------------- 
+sxb   9b4157a8-7bab-493c-aa4d-5145144d92b3 Ready 0       240 MB   67 kB    0%            3.8 GB    42 MB     0%             0/1      None           
+
+[root@8b90fa1190f1 daos]# daos container create sxb --type POSIX sxb; daos container query sxb sxb --verbose; daos cont get-prop sxb sxb
+Successfully created container ccc2f4f7-1e46-4709-8f28-09282a9f82ed
+  Container UUID : ccc2f4f7-1e46-4709-8f28-09282a9f82ed
+  Container Label: sxb                                 
+  Container Type : POSIX                               
+
+  Container UUID              : ccc2f4f7-1e46-4709-8f28-09282a9f82ed                        
+  Container Label             : sxb                                                         
+  Container Type              : POSIX                                                       
+  Pool UUID                   : 9b4157a8-7bab-493c-aa4d-5145144d92b3                        
+  Container redundancy factor : 0                                                           
+  Number of open handles      : 1                                                           
+  Latest open time            : 0x12675870bc7c0000 (2023-08-18 07:01:06.031607808 +0000 UTC)
+  Latest close/modify time    : 0x12675870dca80000 (2023-08-18 07:01:06.065342464 +0000 UTC)
+  Number of snapshots         : 0                                                           
+  Object Class                : UNKNOWN                                                     
+  Dir Object Class            : UNKNOWN                                                     
+  File Object Class           : UNKNOWN                                                     
+  Chunk Size                  : 1.0 MiB                                                     
+
+Properties for container sxb
+Name                                             Value                               
+----                                             -----                               
+Highest Allocated OID (alloc_oid)                0                                   
+Checksum (cksum)                                 off                                 
+Checksum Chunk Size (cksum_size)                 32 KiB                              
+Compression (compression)                        off                                 
+Deduplication (dedup)                            off                                 
+Dedupe Threshold (dedup_threshold)               4.0 KiB                             
+EC Cell Size (ec_cell_sz)                        64 KiB                              
+Performance domain affinity level of EC (ec_pda) 1                                   
+Encryption (encryption)                          off                                 
+Global Version (global_version)                  3                                   
+Group (group)                                    root@                               
+Label (label)                                    sxb                                 
+Layout Type (layout_type)                        POSIX (1)                           
+Layout Version (layout_version)                  1                                   
+Max Snapshot (max_snapshot)                      0                                   
+Object Version (obj_version)                     1                                   
+Owner (owner)                                    root@                               
+Performance domain level (perf_domain)           root (255)                          
+Redundancy Factor (rd_fac)                       rd_fac0                             
+Redundancy Level (rd_lvl)                        node (2)                            
+Performance domain affinity level of RP (rp_pda) 4294967295                          
+Server Checksumming (srv_cksum)                  off                                 
+Health (status)                                  HEALTHY                             
+Access Control List (acl)                        A::OWNER@:rwdtTaAo, A:G:GROUP@:rwtT 
+

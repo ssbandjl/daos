@@ -1,4 +1,4 @@
 dmg pool create sxb -z 4g; dmg pool list --verbose
-daos container create sxb --type POSIX sxb; daos container query sxb sxb --verbose
+daos container create sxb --type POSIX sxb; daos container query sxb sxb --verbose; daos cont get-prop sxb sxb
 mkdir -p /tmp/sxb; dfuse --mountpoint=/tmp/sxb --pool=sxb --cont=sxb; df -h
 #cd /tmp/sxb
