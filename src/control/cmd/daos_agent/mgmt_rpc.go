@@ -147,7 +147,7 @@ func (mod *mgmtModule) handleGetAttachInfo(ctx context.Context, reqb []byte, pid
 	}
 
 	if resp.ClientNetHint != nil {
-		mod.log.Infof("%s: numa:%d iface:%s dom:%s prov:%s srx:%d", client, numaNode,
+		mod.log.Infof("%s: numa:%d iface:%s dom:%s prov:%s srx:%d mgmt_rpc.go:150", client, numaNode,
 			resp.ClientNetHint.Interface, resp.ClientNetHint.Domain,
 			resp.ClientNetHint.Provider, resp.ClientNetHint.SrvSrxSet)
 	}

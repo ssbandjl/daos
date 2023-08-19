@@ -19,7 +19,7 @@
 #define DIO 0    // DirectIO
 
 
-// gcc -O0 -g3 -o write write.c; chmod +x write;
+// gcc -O0 -g3 -o write write.c; chmod +x write; ./write
 int main(void)
 {
     int fd,size,len;
@@ -44,7 +44,7 @@ int main(void)
         perror("write:");
         exit(1);
     }  
-    printf("pid:%d, fd:%d, write_data:%s, len:%d, success\n", pid, fd, normal_write_buf, len);
+    printf("write pid:%d, fd:%d, len:%d, data:%s", pid, fd, len, normal_write_buf);
     #endif
     
 

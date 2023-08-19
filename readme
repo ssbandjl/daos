@@ -882,15 +882,25 @@ dfs_write
 
 
 为挂载点、池、容器添加对位置参数的支持, 如果要通过 fstab 挂载 dfuse，则只给出一个选项，即挂载点，因此将其放在第一位，但如果给定，也接受池和容器。 检修 dfuse_pool_connect 函数, 这允许通过标准的 mount 命令和 fstab 通过如下一行来安装dfuse：dfuse /mnt/dfuse fuse3 默认值，用户 0 0
-dfuse -> src/client/dfuse/dfuse_main.c -> main
 
 
 
 
 
-
-src/client/dfuse/ops/write.c -> dfuse_cb_write
-
+DAOS用户态文件系统, 写流程
+master -> src/client/dfuse/ops/write.c -> dfuse_cb_write(fuse_req_t req, fuse_ino_t ino, struct fuse_bufvec *bufv, off_t position, struct fuse_file_info *fi)
+struct dfuse_projection_info *fs_handle = fuse_req_userdata(req)
+eqt_idx = atomic_fetch_add_relaxed(&fs_handle->di_eqt_idx, 1) -> 原子递增,每次返回+1前的值, 比如: eqt_idx=7
+eqt = &fs_handle->di_eqt[eqt_idx % fs_handle->di_eq_count] -> 取余打散到eq
+ev = d_slab_acquire(eqt->de_write_slab) -> 分配EV, 需要提前注册: d_slab_register(&fs_handle->di_slab, &write_slab, eqt, &eqt->de_write_slab)
+ev->de_complete_cb = dfuse_cb_write_complete
+dfs_write(oh->doh_dfs, oh->doh_obj, &ev->de_sgl, position, &ev->de_ev) -> dfs_write(dfs_t *dfs, dfs_obj_t *obj, d_sg_list_t *sgl, daos_off_t off, daos_event_t *ev)
+  daos_array_write(obj->oh, DAOS_TX_NONE, &iod, sgl, ev) -> daos_array_write(daos_handle_t oh, daos_handle_t th, daos_array_iod_t *iod, d_sg_list_t *sgl, daos_event_t *ev)
+    dc_task_create(dc_array_write, NULL, ev, &task) -> 关联EV和task
+      sched = daos_ev2sched(ev) -> 拿到调度器指针, 初始化调度器
+    return dc_task_schedule(task, true)
+sem_post(&eqt->de_sem) -> 唤醒EQ
+d_slab_restock(eqt->de_write_slab) -> 重用slab
 
 
 
@@ -915,9 +925,9 @@ rw_completion
   spdk_thread_send_msg
 
 
-客户端mount:
+客户端mount, master, gdb --args /opt/daos/bin/dfuse --mountpoint=/tmp/sxb --pool=sxb --cont=sxb -f -> 默认后台启动
 dfuse -m /mnt/sxb --pool sxb --cont sxb | dfuse --mountpoint=/tmp/sxb --pool=sxb --cont=sxb
-dfuse_main.c -> main dfuse_main.c
+dfuse_main.c -> main
   daos_debug_init(DAOS_LOG_DEFAULT)
     d_log_init_adv 高级日志初始化, 客户端日志文件
       log_file = getenv(D_LOG_FILE_ENV) export D_LOG_FILE=/tmp/daos_client.log
@@ -947,6 +957,9 @@ dfuse_main.c -> main dfuse_main.c
     D_ALLOC_ARRAY(fs_handle->di_eqt, fs_handle->di_eq_count) -> eq数组
     d_hash_table_create_inplace dpi_pool_table 打开的池表， 创建hash表 大小=power2(n次方)， 操作方法
     dpi_iet open inodes
+    for (i = 0; i < fs_handle->di_eq_count; i++)
+      struct dfuse_eq *eqt = &fs_handle->di_eqt[i] -> 根据传入的EQ数量, 将eq与文件系统句柄中的eq表绑定
+      eqt->de_handle = fs_handle -> 互存指针,双向绑定
     sem_init(&eqt->de_sem, 0, 0) -> 在 eq 之前创建信号量，因为无法检查 sem_init() 是否已被调用，如果没有调用 sem_destroy 也是无效的。 这样我们就可以避免添加额外的内存来跟踪信号量的状态
     daos_eq_create(&eqt->de_eq) -> 一个事件队列关联一个网络上下文， 跟踪池的多个事件 -> 创建事件队列。 事件队列用于保存和池化多个事件。 创建的每个事件队列都将创建一个与事件队列关联的网络（cart）上下文。 网络上下文创建是一项昂贵的操作，并且在某些系统上网络上下文的数量可能受到限制。 因此，建议不要在用户应用程序或中间件中创建大量事件队列
       eq = daos_eq_alloc() -> 分配eq
@@ -976,10 +989,28 @@ dfuse_main.c -> main dfuse_main.c
   duns_resolve_path
   dfuse_pool_connect
   dfuse_cont_open
-  dfuse_start dfuse_fs_start 启动文件系统
+  dfuse_fs_start 启动文件系统
     d_hash_rec_insert(&fs_handle->dpi_iet 将根插入hash表, 在 dfuse_reply_entry 中也会插入: d_hash_rec_find_insert(&fs_handle->dpi_iet
-    d_slab_init
-    d_slab_register
+    d_slab_init(&fs_handle->di_slab, fs_handle)
+    for (i = 0; i < fs_handle->di_eq_count; i++)
+      d_slab_register(&fs_handle->di_slab, &read_slab, eqt, &eqt->de_read_slab)
+        create_many(type)
+          ptr   = create(type) -> create(struct d_slab_type *type)
+            type->st_reg.sr_init(ptr, type->st_arg) -> dfuse_event_init -> ev->de_eqt = handle -> 为ev绑定daos_event_t
+            if (!type->st_reg.sr_reset(ptr)) -> dfuse_read_event_reset(void *arg) -> 重置读事件ev
+              D_ALLOC(ev->de_iov.iov_buf, DFUSE_MAX_READ) -> 读最大1MB
+              ev->de_sgl.sg_nr       = 1
+              daos_event_init(&ev->de_ev, ev->de_eqt->de_eq, NULL) -> 父事件为空, 也支持父事件, 如: daos_event_init(child_events[i], DAOS_HDL_INVAL, &event)
+                evx->evx_status	= DAOS_EVS_READY
+                if (daos_handle_is_valid(eqh)) -> 句柄有效
+                  eqx = daos_eq_lookup(eqh)
+                  evx->evx_ctx = eqx->eqx_ctx
+                  evx->evx_sched = &eqx->eqx_sched -> 继承EQ的网络和调度器
+          entry = ptr + type->st_reg.sr_offset
+          d_list_add_tail(entry, &type->st_free_list) -> 将对象加入空闲列表,计数器+1
+          type->st_free_count++
+        d_list_add_tail(&type->st_type_list, &slab->slab_list) -> 将slab放入列表备用
+    for (i = 0; i < fs_handle->di_eq_count; i++) 
     dfuse_progress_thread pthread_create(&fs_handle->dpi_thread, NULL, dfuse_progress_thread, fs_handle) 异步进度线程，该线程在启动时使用事件队列启动，并阻塞在信号量上，直到创建异步事件，此时线程唤醒并在 daos_eq_poll() 中忙于轮询直到完成
       sem_wait
       daos_eq_poll  从 EQ 中检索完成事件
@@ -1225,7 +1256,7 @@ ca_arrays
 
 tse: 调度, 1300+400, 涉及文件: event.h, daos_event.h, tse.h, tse.c, tse_internal.h
 dc_task_create
-  sched = daos_ev2sched(ev) 事件转调度器
+  sched = daos_ev2sched(ev) -> EV事件转调度器
   tse_task_create(func, sched, NULL, &task) -> 初始化 tse_task。 该任务(task)会被添加到调度器(sched)任务列表中，稍后被调度，如果提供了依赖任务，则该任务将被添加到依赖任务的dep列表中，一旦依赖任务完成，则添加该任务到调度程序列表(先完成依赖任务, 然后添加主任务)
   task_ptr2args 指针转参数
     D_INIT_LIST_HEAD(&dtp->dtp_list) -> 初始化任务链表, 调度时插入到调度器的初始化队列(dsp_init_list) -> d_list_add_tail(&dtp->dtp_list, &dsp->dsp_init_list)
@@ -1347,6 +1378,9 @@ func (cmd *storageFormatCmd) Execute
 dc_pool_query
 
 
+.sr_reset   = dfuse_write_event_reset
+  daos_event_init(&ev->de_ev, ev->de_eqt->de_eq, NULL)
+  
 daos_event_init
   D_CASSERT
   D_INIT_LIST_HEAD(&evx->evx_child);
@@ -1356,16 +1390,12 @@ daos_event_init
     hlink = daos_hhash_link_lookup(eqh.cookie)
       d_hhash_link_lookup(daos_ht.dht_hhash, key)
   daos_eq_putref(eqx)
+  evx->evx_sched = &daos_sched_g -> 绑定到全局调度器
 
 
 
 daos_hhash_init_feats
   d_hhash_create dht_hhash
-
-
-dfuse_fs_init
-  daos_eq_create
-    daos_eq_insert
 
 
 
@@ -1516,7 +1546,7 @@ mkdir -p /etc/daos/certs
 cp -r daosCA/certs/* /etc/daos/certs/
 
 
-write.c, new, 
+write.c, new, master, dfuse写流程
 master: src/client/dfuse/dfuse_main.c:659 -> main
 ...
 start_one(struct dfuse_tm *dtm)
@@ -1524,9 +1554,15 @@ pthread_create(&dt->dt_id, NULL, dfuse_do_work, dt)
 dfuse_do_work
   fuse_session_process_buf_int -> 处理通用缓冲区中提供的原始请求 fusion_buf 可能包含内存缓冲区或管道文件描述符
   dfuse_cb_write
-    dfuse_mcache_evict
-    d_slab_acquire
-    fuse_buf_copy
+    dfuse_mcache_evict -> 将缓存置为无效
+    ev = d_slab_acquire(eqt->de_write_slab) -> d_slab_acquire(struct d_slab_type *type) -> 获取一个新对象，这是在关键路径上考虑的，所以应该尽可能轻量级
+      type->st_no_restock++ -> 补货
+      if (type->st_free_count == 0)
+        int count = restock(type, 1) -> 剩余个数为0时需要补货
+      ptr = (void *)entry - type->st_reg.sr_offset -> 从空闲表中拿一个
+    ibuf.buf[0].mem = ev->de_iov.iov_buf -> 将ev与ibuf通过iov_buf关联
+    fuse_buf_copy(&ibuf, bufv, 0)
+    ev->de_complete_cb = dfuse_cb_write_complete -> 为ev设置回调
     dfs_write
       daos_array_write(obj->oh, DAOS_TX_NONE, &iod, sgl, ev)
         dc_task_create(dc_array_write, NULL, ev, &task) -> tse 创建任务
@@ -4048,8 +4084,8 @@ rw_completion
 
 客户端mount:
 dfuse -m /mnt/sxb --pool sxb --cont sxb
-dfuse_main.c -> main dfuse_main.c
-  daos_debug_init daos_debug_init
+dfuse_main.c -> main
+  daos_debug_init
     d_log_init_adv 高级日志初始化, 客户端日志文件
       log_file = getenv(D_LOG_FILE_ENV) export D_LOG_FILE=/tmp/daos_client.log
       debug_prio_err_load_env
@@ -4075,7 +4111,7 @@ dfuse_main.c -> main dfuse_main.c
   duns_resolve_path
   dfuse_pool_connect
   dfuse_cont_open
-  dfuse_start dfuse_fs_start 启动文件系统
+  dfuse_fs_start 启动文件系统
     d_hash_rec_insert(&fs_handle->dpi_iet 将根插入hash表, 在 dfuse_reply_entry 中也会插入: d_hash_rec_find_insert(&fs_handle->dpi_iet
     d_slab_init
     d_slab_register
@@ -4835,4 +4871,6 @@ Rocky Linux release 8.8 (Green Obsidian)
 NAME="Rocky Linux"
 
 
+
+[self.c:281] ABT_self_get_type: 4, argobots未开调式 -> ABTI_SETUP_LOCAL_XSTREAM(&p_local_xstream) -> #define ABT_ERR_INV_XSTREAM         4 -> 有函数调用: ABT_self_get_type
 
