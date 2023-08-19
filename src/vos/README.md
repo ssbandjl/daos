@@ -574,13 +574,13 @@ A read at epoch e follows these rules:
     if e is uncertain
         if there is any overlapping, unaborted write in (e, e_orig + epsilon]
             reject
-
+    
     find the highest overlapping, unaborted write in [0, e]
     if the write is not committed
         wait for the write to commit or abort
         if aborted
             retry the find skipping this write
-
+    
     // Read timestamp update
     for level i from container to the read's level lv
         update i.high
@@ -592,14 +592,14 @@ A write at epoch e follows these rules:
     if e is uncertain
         if there is any overlapping, unaborted write in (e, e_orig + epsilon]
             reject
-
+    
     // Read timestamp check
     for level i from container to one level above the write
         if (i.low > e) || ((i.low == e) && (other reader @ i.low))
             reject
     if (i.high > e) || ((i.high == e) && (other reader @ i.high))
         reject
-
+    
     find if there is any overlapping write at e
     if found and from a different transaction
         reject
@@ -701,6 +701,11 @@ checksums on an object fetch. Checksums will be stored with other VOS metadata
 in storage class memory. For Single Value types, a single checksum is stored.
 For Array Value types, multiple checksums can be stored based on the chunk size.
 
+VOS 负责在对象更新和检索期间存储校验和
+对象提取的校验和。 校验和将与其他 VOS 元数据一起存储
+在存储类内存中。 对于单值类型，存储单个校验和。
+对于 Array Value 类型，可以根据块大小存储多个校验和
+
 The **Chunk Size** is defined as the maximum number of bytes of data that a
 checksum is derived from. While extents are defined in terms of records, the
 chunk size is defined in terms of bytes. When calculating the number of
@@ -709,15 +714,33 @@ needed. Checksums should typically be derived from Chunk Size bytes, however, if
 the extent is smaller than Chunk Size or an extent is not "Chunk Aligned," then
 a checksum might be derived from bytes smaller than Chunk Size.
 
+**块大小**定义为一个数据的最大字节数
+校验和来源于。 虽然范围是根据记录定义的，但
+块大小以字节为单位定义。 在计算数量时
+范围所需的校验和、记录数和记录大小是
+需要。 校验和通常应从块大小字节派生，但是，如果
+extent 小于 Chunk Size 或者 extent 不是“Chunk Aligned”，然后
+校验和可能来自小于块大小的字节。
+
 The **Chunk Alignment** will have an absolute offset, not an I/O offset. So even
 if an extent is exactly, or less than, Chunk Size bytes long, it may have more
 than one Chunk if it crosses the alignment barrier.
 
+**块对齐**将具有绝对偏移量，而不是 I/O 偏移量。 所以即使
+如果一个范围恰好或小于 Chunk Size 字节长，它可能有更多
+如果它穿过对齐障碍，则多于一个块。
+
 ### Configuration
+
 Checksums will be configured for a container when a container is created.
 Checksum specific properties can be included in the daos_cont_create API. This
 configuration has not been fully implemented yet, but properties might include
 checksum type, chunk size, and server side verification.
+
+创建容器时，将为容器配置校验和。
+校验和特定属性可以包含在 daos_cont_create API 中。 这个
+配置尚未完全实现，但属性可能包括
+校验和类型、块大小和服务器端验证。
 
 ### Storage
 Checksums will be stored in a record(vos_irec_df) or extent(evt_desc) structure
@@ -727,9 +750,20 @@ checksum itself will be appended to the end of the structure. The size needed
 for checksums is included while allocating memory for the persistent structures
 on SCM (vos_reserve_single/vos_reserve_recx).
 
+校验和将存储在记录record（vos_irec_df）或范围extent（evt_desc）结构中
+尊敬的单值类型和数组值类型。 因为校验和
+可以是可变大小，具体取决于配置的校验和类型，
+校验和本身将附加到结构的末尾。 需要的尺寸
+在为持久结构分配内存时包括校验和
+在 SCM 上（vos_reserve_single/vos_reserve_recx）。
+
 The following diagram illustrates the overall VOS layout and where checksums
 will be stored. Note that the checksum type isn't actually stored in vos_cont_df
 yet.
+
+下图说明了整体 VOS 布局以及校验和所在的位置
+将被存储。 请注意，校验和类型实际上并未存储在 vos_cont_df 中
+然而
 
 ![../../docs/graph/Fig_021.png](../../docs/graph/Fig_021.png "How checksum fits into the VOS Layout")
 
@@ -744,9 +778,20 @@ allocated includes the size of the checksum(s). Finally, while storing the
 record (svt_rec_store) or extent (evt_insert), the checksum(s) are copied to the
 end of the persistent structure.
 
+更新时，校验和是 I/O 描述符的一部分。 然后，在
+akey_update_single/akey_update_recx，校验和缓冲区指针包含在
+用于树更新的内部结构（vos_rec_bundle 用于 SV 和
+EV 的 evt_entry_in）。 如前所述，持久结构的大小
+allocated 包括校验和的大小。 最后，在存储
+记录（svt_rec_store）或范围（evt_insert），校验和被复制到
+持久结构的结束
+
 On a fetch, the update flow is essentially reversed.
 
 For reference, key junction points in the flows are:
+
+作为参考，流程中的关键连接点是：
+
  - SV Update: 	vos_update_end 	-> akey_update_single 	-> svt_rec_store
  - Sv Fetch: 	vos_fetch_begin -> akey_fetch_single 	-> svt_rec_load
  - EV Update: 	vos_update_end 	-> akey_update_recx 	-> evt_insert
@@ -761,20 +806,35 @@ vos_iter_process() will take the iter handle that the corruptions was discovered
 on and will call into the btree/evtree to update the durable format structure
 that contains the bio_addr.
 
+当发现数据被损坏时，bio_addr 将被标记为
+损坏的标志，以防止对已知数据进行后续验证
+被损坏。 因为校验和洗涤器将迭代 vos
+对象，vos_iter API 用于将对象标记为已损坏。 这
+vos_iter_process() 将获取发现损坏的 iter 句柄
+on 并将调用 btree/evtree 以更新持久格式结构
+包含 bio_addr
+
 <a id="80"></a>
 
 ## Metadata Overhead
 
 There is a tool available to estimate the metadata overhead. It is described on the <a href="https://github.com/daos-stack/daos/blob/master/src/vos/storage_estimator/README.md">storage estimator</a> section.
 
+有一种工具可用于估算元数据开销。 它在<a href="https://github.com/daos-stack/daos/blob/master/src/client/storage_estimator/README.md">存储估算器</a>部分进行了描述
+
 <a id="81"></a>
 
-## Replica Consistency
+## Replica Consistency 副本一致性
 
 DAOS supports multiple replicas for data high availability.  Inconsistency
 between replicas is possible when a target fails during an update to a
 replicated object and when concurrent updates are applied on replicated targets
 in an inconsistent order.
+
+DAOS 支持多个副本以实现数据高可用性。 不一致
+当一个目标在更新一个副本的过程中失败时，副本之间是可能的
+复制的对象以及何时将并发更新应用于复制的目标
+顺序不一致。
 
 The most intuitive solution to the inconsistency problem is distributed lock
 (DLM), used by some distributed systems, such as Lustre.  For DAOS, a user-space
@@ -783,8 +843,16 @@ among multiple, independent application spaces will introduce unacceptable
 overhead and complexity.  DAOS instead uses an optimized two-phase commit
 transaction to guarantee consistency among replicas.
 
+不一致问题最直观的解决方案就是分布式锁
+(DLM)，被一些分布式系统使用，例如 Lustre。 对于 DAOS，一个用户空间
+系统具有强大的下一代硬件，维护分布式锁
+在多个独立的应用空间之间会引入不可接受的
+开销和复杂性。 DAOS 改为使用优化的两阶段提交
+事务以保证副本之间的一致性。
+
 <a id="811"></a>
-### Single redundancy group based DAOS Two-Phase Commit (DTX)
+
+### Single redundancy group based DAOS Two-Phase Commit (DTX) 单冗余组
 
 When an application wants to modify (update or punch) a multiple replicated
 object or EC object, the client sends the modification RPC to the leader shard
@@ -793,6 +861,14 @@ leader dispatches the RPC to the other related shards, and each shard makes
 its modification in parallel.  Bulk transfers are not forwarded by the leader
 but rather transferred directly from the client, improving load balance and
 decreasing latency by utilizing the full client-server bandwidth.
+
+当应用程序想要修改（更新或打孔）多个复制
+object or EC object，客户端发送修改RPC给leader shard
+（通过下面讨论的 <a href="#812">DTX Leader Election</a> 算法）。 这
+leader 将 RPC 调度到其他相关分片，每个分片
+它的修改是并行的。 Bulk transfers批量传输不被leader转发
+而是直接从客户端传输，改善负载平衡和
+通过利用完整的客户端-服务器带宽来减少延迟
 
 Before modifications are made, a local transaction, called 'DTX', is started
 on each related shard (both leader and non-leaders) with a client generated
@@ -807,12 +883,32 @@ reply to the leader with failure, and the leader will globally abort the DTX.
 Once the DTX is set by the leader to 'committable' or 'aborted', it replies to
 the client with the appropriate status.
 
+在进行修改之前，启动名为“DTX”的本地事务
+在每个相关的分片（领导者和非领导者）上生成一个客户端
+容器内修改的唯一 DTX 标识符。 全部
+DTX 中的修改记录在 DTX 事务表中并返回
+对表的引用保存在相关的修改记录中。 本地后
+修改完成后，每个非领导者将 DTX 状态标记为“已准备好”，并且
+回复领导。 领导者尽快将 DTX 状态设置为“可提交”
+因为它已完成修改并收到来自
+所有非领导者。 如果任何分片未能执行修改，它将
+回复 leader 失败，leader 将全局中止 DTX。
+一旦领导者将 DTX 设置为“可提交”或“已中止”，它就会回复
+具有适当状态的客户端。
+
 The client may consider a modification complete as soon as it receives a
 successful reply from the leader, regardless of whether the DTX is actually
 'committed' or not. It is the responsibility of the leader to commit the
 'committable' DTX asynchronously. This can happen if the 'committable' count
 or DTX age exceed some thresholds or the DTX is piggybacked via other
 dispatched RPCs due to potential conflict with subsequent modifications.
+
+客户可能会在收到通知后立即认为修改已完成
+leader 成功回复，不管 DTX 是否实际
+“承诺”与否。 领导者有责任承诺
+异步“可提交”DTX。 如果“可提交”计数，就会发生这种情况
+或 DTX 年龄超过某些阈值，或者 DTX 通过其他方式搭载
+由于与后续修改的潜在冲突而调度了 RPC。
 
 When an application wants to read something from an object with multiple
 replicas, the client can send the RPC to any replica.  On the server side,
@@ -825,6 +921,17 @@ is also 'prepared', then for transactional read, ask the client to wait and
 retry via returning -DER_INPROGRESS; for non-transactional read, related entry
 is ignored and the latest committed modification is returned to the client.
 
+当一个应用程序想要从具有多个对象的对象中读取某些内容时
+副本，客户端可以将 RPC 发送到任何副本。 在服务器端，
+如果相关 DTX 已提交或可提交，则记录可以
+回到。 如果 DTX 状态已准备好，并且副本不是领导者，
+它会回复客户端，告诉它改为将 RPC 发送给领导者。
+如果它是领导者并且处于“已提交”或“可提交”状态，则
+这样的条目对应用程序是可见的。 否则，如果领导者的 DTX
+也是“准备好的”，然后对于事务读取，要求客户等待并
+通过返回 -DER_INPROGRESS 重试； 对于非事务性读取，相关条目
+被忽略，最新提交的修改返回给客户端。
+
 If the read operation refers to an EC object and the data read from a data
 shard (non-leader) has a 'prepared' DTX, the data may be 'committable' on the
 leader due to the aforementioned asynchronous batched commit mechanism.
@@ -835,11 +942,27 @@ for transactional read, ask the client to wait and retry via returning
 -DER_INPROGRESS; for non-transactional read, related entry is ignored and the
 latest committed modification is returned to the client.
 
+如果读操作引用了一个EC对象，并且从一个数据中读取数据
+分片（非领导者）有一个“准备好的”DTX，数据可能是“可提交的”
+leader 由于前面提到的异步批处理提交机制。
+在这种情况下，非领导者将刷新与领导者相关的 DTX 状态。
+如果刷新后的 DTX 状态为 'committed'，则可以获取相关数据
+返回给客户； 否则，如果 DTX 状态仍为“准备”，则
+对于事务读取，要求客户端等待并通过返回重试
+-DER_INPROGRESS； 对于非事务性读取，相关条目将被忽略，并且
+最新提交的修改返回给客户端。
+
 The DTX model is built inside a DAOS container. Each container maintains its own
 DTX table that is organized as two B+trees in SCM: one for active DTXs and the
 other for committed DTXs.
 The following diagram represents the modification of a replicated object under
 the DTX model.
+
+DTX 模型构建在 DAOS 容器内。 每个容器维护自己的
+在 SCM 中组织为两个 B+树的 DTX 表：一个用于活动active DTX，另一个用于
+用于提交committed的 DTX。
+
+下图表示对复制对象的修改DTX模型
 
 <b>Modify multiple replicated object under DTX model</b>
 
@@ -852,15 +975,28 @@ the DTX model.
 In single redundancy group based DTX model, the leader selection is done for
 each object or dkey following these general guidelines:
 
+在基于单冗余组的 DTX 模型中，领导者选择是为
+每个对象或密钥都遵循这些一般准则：
+
 R1: When different replicated objects share the same redundancy group, the same
 leader should not be used for each object.
+
+R1：当不同的复制对象共享同一个冗余组时，相同的
+leader 不应该用于每个对象。
 
 R2: When a replicated object with multiple DKEYs span multiple redundancy
 groups, the leaders in different redundancy groups should be on different
 servers.
 
+R2：当具有多个DKEY的复制对象跨越多个冗余组，不同冗余组中的领导者应该在不同的
+服务器。
+
 R3: Servers that fail frequently should be avoided in leader selection to avoid
 frequent leader migration.
 
+leader selection 中应避免出现频繁故障的服务器，以避免频繁的领导迁移
+
 R4: For EC object, the leader will be one of the parity nodes within current
 redundancy group.
+
+对于 EC 对象，领导者将是当前的奇偶校验节点之一冗余组
