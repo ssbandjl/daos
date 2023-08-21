@@ -4874,3 +4874,21 @@ NAME="Rocky Linux"
 
 [self.c:281] ABT_self_get_type: 4, argobots未开调式 -> ABTI_SETUP_LOCAL_XSTREAM(&p_local_xstream) -> #define ABT_ERR_INV_XSTREAM         4 -> 有函数调用: ABT_self_get_type
 
+
+crt_reply_send
+...
+.respond = hg_core_respond_na
+  NA_Msg_send_expected
+
+
+
+单元测试, src/tests, 定义单元测试: cmocka_unit_test, 执行测试: run_all_tests, static const struct CMUnitTest pool_tests
+执行测试: cmocka_run_group_tests_name, run_pool_test
+
+struct CMUnitTest // cmock测试结构体, https://api.cmocka.org/structCMUnitTest.html
+const char * 	name
+CMUnitTestFunction 	test_func
+CMFixtureFunction 	setup_func
+CMFixtureFunction 	teardown_func
+void * 	initial_state
+
