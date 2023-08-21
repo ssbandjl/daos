@@ -1013,11 +1013,11 @@ dfuse_main.c -> main
     for (i = 0; i < fs_handle->di_eq_count; i++) 
     dfuse_progress_thread pthread_create(&fs_handle->dpi_thread, NULL, dfuse_progress_thread, fs_handle) 异步进度线程，该线程在启动时使用事件队列启动，并阻塞在信号量上，直到创建异步事件，此时线程唤醒并在 daos_eq_poll() 中忙于轮询直到完成
       sem_wait
-      daos_eq_poll  从 EQ 中检索完成事件
+      daos_eq_poll  从 EQ 中检索完成事件 -> return epa.count
         daos_eq_lookup 查找私有事件队列
           daos_hhash_link_lookup
         crt_progress_cond(epa.eqx->eqx_ctx, timeout, eq_progress_cb, &epa)
-          eq_progress_cb
+          eq_progress_cb -> 事件驱动调度器执行
         dfuse_launch_fuse(fs_handle, &args) 创建fuse文件系统
           fuse_session_new(args, &dfuse_ops, sizeof(dfuse_ops), fs_handle)
           fuse_session_mount
@@ -2753,7 +2753,7 @@ dfuse_do_work
     tse_task_post_process
     tse_task_complete_callback
     task_comp_event
-    daos_event_complete(struct daos_event *ev, int rc) 事件完成
+    daos_event_complete(struct daos_event *ev, int rc) 事件完成, 移动到完成队列
       daos_event_complete_locked
         daos_evx2ev(evx)  字段间的转换 container_of | (struct daos_event_private *)&ev->ev_private = daos_ev2evx
         daos_event_complete_cb 事件完成回调
@@ -4171,7 +4171,10 @@ write -> dfuse_cb_write 回调写 src/client/dfuse/fuse3
   readahead ie_truncated 预读和截断
   dfs_write (文件系统， 对象，sgl列表，文件(对象)偏移，事件) 将数据写到文件对象
     事件为空
-      daos_event_launch
+      daos_event_launch -> 将事件移动到事件队列的运行队列
+        daos_event_launch_locked(eqx, evx)
+          d_list_add_tail(&evx->evx_link, &eq->eq_running)
+          eq->eq_n_running++
       daos_event_complete
     daos_event_errno_rc(ev) 将错误码转正
       daos_ev2evx(ev)
@@ -4891,4 +4894,34 @@ CMUnitTestFunction 	test_func
 CMFixtureFunction 	setup_func
 CMFixtureFunction 	teardown_func
 void * 	initial_state
+
+dfs文件系统测试: dfs_unit_test.c
+
+调度器单元测试: static const struct CMUnitTest sched_uts
+事件队列EQ测试: static const struct CMUnitTest eq_uts[]
+
+
+scons默认环境: DefaultEnvironment
+设置参数: CCFLAGS
+
+自定义构建目标, all, server, client, test, scons [args] client install
+
+
+./eq_tests -> eq_tests.c -> main
+cmocka_run_group_tests_name -> cmocka_run_one_test_or_fixture
+eq_ut_setup
+  daos_debug_init
+  daos_hhash_init
+  daos_eq_lib_init
+  daos_eq_create
+eq_uts
+eq_test_1
+
+
+eq_ut_teardown
+
+
+daos_event_register_comp_cb 注册事件回调
+
+
 

@@ -62,12 +62,14 @@ def _base_setup(env):
         if compiler == 'gcc':
             env.AppendUnique(CCFLAGS=['-Og'])
         else:
-            env.AppendUnique(CCFLAGS=['-O0'])
+            # env.AppendUnique(CCFLAGS=['-O0'])
+            env.AppendUnique(CCFLAGS=['-Og'])
     else:
         if build_type == 'release':
             env.AppendUnique(CPPDEFINES='DAOS_BUILD_RELEASE')
 
-        env.AppendUnique(CCFLAGS=['-O2'])
+        # env.AppendUnique(CCFLAGS=['-O2'])
+        env.AppendUnique(CCFLAGS=['-Og'])
         _set_fortify_level(env)
 
     if build_type != 'release':
