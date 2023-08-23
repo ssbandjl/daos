@@ -4900,6 +4900,7 @@ dfs文件系统测试: dfs_unit_test.c
 调度器单元测试: static const struct CMUnitTest sched_uts
 事件队列EQ测试: static const struct CMUnitTest eq_uts[]
 
+wal: wal_ut.c -> bio_ut
 
 scons默认环境: DefaultEnvironment
 设置参数: CCFLAGS
@@ -4907,7 +4908,7 @@ scons默认环境: DefaultEnvironment
 自定义构建目标, all, server, client, test, scons [args] client install
 
 
-./eq_tests -> eq_tests.c -> main
+./eq_tests -> eq_tests.c -> main, 消费者模式, 
 cmocka_run_group_tests_name -> cmocka_run_one_test_or_fixture
 eq_ut_setup
   daos_debug_init
@@ -4924,4 +4925,78 @@ eq_ut_teardown
 daos_event_register_comp_cb 注册事件回调
 
 
+性能测试: daos_perf, https://daosio.atlassian.net/wiki/spaces/DC/pages/2145650559/daos+perf+in+VOS+mode+sm
+daos_perf -T vos -P 120G -d 1 -a 200 -r 500 -s 1M -C 0 -z (-t)
+D_LOG_MASK=ERR
+CRT_PHY_ADDR_STR=sm
+CRT_CTX_SHARE_ADDR=0
+CRT_CTX_NUM=36
+VOS_MEM_CLASS=PMEM
+
+
+
+fio --name=global --bs=1M --direct=1 --directory=/tmp/daos_dfuse//907E96B2-18B8-47F2-9D66-5519B049CA04 --group_reporting=1 --iodepth=16 --ioengine=libaio --rw=rw --size=10M --thread=1 --verify=crc64 --name=test --numjobs=1
+
+fio --name=global --bs=1M --direct=1 --directory=/tmp/sxb --group_reporting=1 --iodepth=16 --ioengine=libaio --rw=rw --size=10M --thread=1 --verify=crc64 --name=test --numjobs=1
+
+
+dbench
+
+Dbench 是一个文件系统基准测试，它生成类似于商业 Netbench 基准测试的负载模式，但不需要 Windows 负载生成器实验室来运行。 它现在被认为是在 Linux VFS 上生成负载的事实上的标准
+
+
+Avocado(牛油果) 是一组有助于自动化测试的工具和库。人们可以将其称为一种具有优势的测试框架。 本机测试是用 Python 编写的，它们遵循单元测试模式，但任何可执行文件都可以作为测试
+https://avocado-framework.readthedocs.io/en/102.0/
+
+
+Running DAOS Functional Tests: 功能测试
+pip3 install --user avocado-framework; avocado run /bin/true
+运行 DAOS 功能测试
+本文档介绍如何使用 Ansible 设置一个或多个节点来运行 DAOS 鳄梨功能测试。 ansible playbook 还生成两个 bash 脚本，允许轻松构建 DAOS 二进制文件，并能够运行一组 DAOS 鳄梨功能测试。
+先决条件
+子集群节点
+应保留使用受支持的 Linux 发行版的 Wolf[^1] 集群的一个或多个节点。 目前，唯一支持的 Linux 发行版是 Rocky 8.5，可以使用以下命令将其安装在节点 Wolf-666 上：
+nodemgr -n Wolf-666 -p daos_ci-rocky8.5 安装
+应根据要启动的测试的硬件要求（例如 pmem、vmd 等）选择要使用的节点。 根据所选的节点，最终应调整要启动的测试的 yaml 配置文件。
+：警告：强烈建议不要在最终用户用于其他任务（例如日常开发）的节点上部署（即应用 playbook 任务）DAOS 功能测试平台。 事实上，Ansible playbook 最终会更改节点的配置，因此可能会破坏最终用户之前定义的自定义设置：rpm 包版本、大页面设置等。
+[^1]：boro集群的节点应该也支持，但尚未测试。
+安装 Ansible
+通过从包含此 README.md 文件的目录运行以下命令可以轻松安装 Ansible：
+python3 -m pip install --user --requirement 需求.txt
+SSH授权
+ssh 授权密钥的配置方式应允许使用 Ansible playbook 的用户无需密码即可访问子集群所有节点的 root 帐户。 例如，可以使用以下命令向 Wolf-666 节点授予无密码的 root 访问权限。
+ssh-copy-id root@wolf-666
+功能测试平台的部署
+Ansible 库存
+ansible清单列出了子集群的不同节点，并根据它们在功能测试平台中的角色将它们聚集在不同的组中（可以自由重叠）。
+daos_dev：该组应仅包含一个节点。 最后一个将用于安装 DAOS 二进制文件并通过生成的 bash 脚本启动功能测试。 有关如何使用这些脚本的详细信息将在以下部分中详细介绍。
+daos_servers：该组包含将运行 DAOS 服务器的节点。
+daos_clients：该组包含将运行最终用户应用程序（例如使用 DAOS 文件系统的 ior 或 fio）的节点。
+清单还应包含一组强制性和可选变量。
+daos_runtime_dir：定义用于安装 DAOS 二进制文件的共享目录的强制变量。 应可从子集群的所有节点使用相同的路径访问此目录。
+daos_source_dir：强制变量，仅由 daos_dev 组的节点使用，定义包含 DAOS 源代码的目录路径。
+daos_ofi_interface：可选变量，仅由定义要使用的网络接口的 daos_dev 组的节点使用。 当未定义该变量时，网络接口由 DAOS 任意选择。
+daos_hugepages_nb：可选变量（默认值：4096）仅由 daos_servers 组的节点使用，定义 Linux 内核分配的大页数。
+daos_avocado_version：可选变量（默认值：“2.4.3”）仅由定义要安装的avocado版本的daos_dev组的节点使用。
+daos_avocado_framework_version：可选变量（默认值：“82.1”）仅由定义要安装的 avocado_framework 版本的 daos_dev 组的节点使用。
+支持不同的文件格式（例如 YAML、INI 等）和文件树结构来定义 ansible 清单。 以下简单的 ansible 清单在一个 YAML 文件中描述了一个简单的 DAOS 功能平台，该平台由两个承担多个角色的节点组成。
+
+
+
+
+DAOS-10146 构建：ftest 帮助程序脚本 (daos-stack#8754)，引入 Ansile 脚本，允许在 WOLF 的子集群上部署 DAOS 功能平台。 这些 ansible 脚本还生成 bash 脚本，允许安装 DAOS 二进制文件并运行功能测试。 这些用法 ansible 脚本的详细信息在 utils/ansible/ftest/README.md 文件中, https://github.com/ssbandjl/daos/commit/ee951496fb5153c2c5e251c2f4ef9ac7ee193efa
+daos自动测试, autotest: https://daosio.atlassian.net/wiki/spaces/DC/pages/2183561867/DAOS-6820+-1.2+Verbs+Automated+testing+status
+src/tests/ftest/daos_test/suite.yaml
+ansible-playbook -i my-inventory.yml ftest.yml
+daos_base_deps
+
+编译: daos-make.sh.j2, daos-make.sh, usage, install(install)), update
+daos-launch.sh.j2
+
+for cmd in $@
+hash $cmd > "/dev/null" 2>&1
+
+scons重新编译: --implicit-deps-changed, 强制 SCons 忽略缓存的隐式依赖项。 这会导致重新扫描和重新缓存隐式依赖项。 这意味着 --implicit-cache
+
+测试:
 
