@@ -4999,4 +4999,8 @@ hash $cmd > "/dev/null" 2>&1
 scons重新编译: --implicit-deps-changed, 强制 SCons 忽略缓存的隐式依赖项。 这会导致重新扫描和重新缓存隐式依赖项。 这意味着 --implicit-cache
 
 测试:
+test_nvme_io
+def write_objects
+
+
 
