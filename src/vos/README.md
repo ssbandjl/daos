@@ -11,6 +11,13 @@ This section provides the details for achieving the design goals discussed above
 
 This document contains the following sections:
 
+版本控制对象存储 (VOS) 负责提供和维护持久对象存储，支持 DAOS 池中单个分片的字节粒度访问和版本控制。 它将其元数据维护在持久内存中，并且可以将数据存储在持久内存或块存储中，具体取决于可用存储和性能要求。 它必须以最小的开销提供此功能，以便性能在延迟和带宽方面尽可能接近底层硬件的理论性能。 其内部数据结构（无论是持久内存还是非持久内存）都必须支持最高级别的并发性，以便吞吐量能够在现代处理器架构的核心上扩展。 最后，最重要的是，它必须验证所有持久对象数据的完整性，以消除在正常操作和所有可能的可恢复故障下发生无提示数据损坏的可能性。
+
+本节提供了在为 DAOS 构建版本控制对象存储时实现上述设计目标的详细信息。
+
+本文档包含以下部分：
+
+
 - <a href="#62">Persistent Memory based Storage</a>
     - <a href="#63">In-Memory Storage</a>
     - <a href="#64">Lightweight I/O Stack: PMDK Libraries</a>

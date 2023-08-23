@@ -2,6 +2,8 @@
 
 The Blob I/O (BIO) module was implemented for issuing I/O over NVMe SSDs. The BIO module covers NVMe SSD support, faulty device detection, device health monitoring, NVMe SSD hot plug functionality, and also SSD identification with the use of Intel VMD devices.
 
+Blob I/O (BIO) 模块的实现是为了通过 NVMe SSD 发出 I/O。 BIO 模块涵盖 NVMe SSD 支持、故障设备检测、设备运行状况监控、NVMe SSD 热插拔功能以及使用 Intel VMD 设备的 SSD 识别
+
 This document contains the following sections:
 
 - <a href="#1">NVMe SSD Support</a>
@@ -244,3 +246,24 @@ Devices
        UUID:57b3ce9f-1841-43e6-8b70-2a5e7fb2a1d0 [TrAddr:5d0505:01:00.0]
            Targets:[1] Rank:1 State:IDENTIFY
 ```
+
+
+Blob I/O (BIO) 模块的实现是为了通过 NVMe SSD 发出 I/O。 BIO 模块涵盖 NVMe SSD 支持、故障设备检测、设备运行状况监控、NVMe SSD 热插拔功能以及使用 Intel VMD 设备的 SSD 识别。
+
+本文档包含以下部分：
+
+NVMe SSD 支持
+存储性能开发套件 (SPDK)
+每服务器元数据管理 (SMD)
+DMA 缓冲区管理
+NVMe 线程模型
+设备健康监测
+故障设备检测（SSD 驱逐）
+NVMe SSD热插拔
+SSD识别
+英特尔卷管理设备 (VMD)
+设备状态
+用户界面
+
+NVMe SSD 支持
+DAOS 服务有两层存储：用于字节粒度应用程序数据和元数据的存储类内存 (SCM)，以及用于批量应用程序数据的 NVMe。 与目前使用 PMDK 促进 SCM 访问的方式类似，存储性能开发套件 (SPDK) 用于提供对 NVMe SSD 的无缝、高效访问。 DAOS 存储分配可以使用 PMDK pmemobj 池在 SCM 上进行，也可以使用 SPDK blob 在 NVMe 上进行。 所有本地服务器元数据将存储在 SCM 上的每服务器 pmemobj 池中，并将包括所有当前和相关的 NVMe 设备、池和 xstream 映射信息。 后台聚合通过将较小的数据记录合并为较大的记录，允许将数据从 SCM 迁移到 NVMe SSD。 DAOS 控制平面处理所有 SSD 配置，DAOS 数据平面通过 SPDK 处理所有分配，并使用内部版本化盘区分配器 (VEA) 进行更精细的块分配。

@@ -1745,9 +1745,9 @@ hg_core_recv_input_cb
   hg_core_process_input 处理输入
   hg_core_complete_na 完成 期望计数=实际计数
   crt_swim_srv_cb 执行上层回调 Incoming  rpc注册的控制器 .prf_hdlr = crt_swim_srv_cb
-  crt_reply_send
+  crt_reply_send -> 发送前需要用(crt_req_create)填充回复数据到(cr_output)
     crt_hg_reply_send
-      HG_Respond(rpc_priv->crp_hg_hdl, crt_hg_reply_send_cb
+      HG_Respond(rpc_priv->crp_hg_hdl, crt_hg_reply_send_cb, rpc_priv, &rpc_priv->crp_pub.cr_output) -> 回复数据设置到(cr_output)
         HG_Core_respond
 
 
@@ -1800,6 +1800,7 @@ crt_context_create
                 crt_hg_reg CRT_HG_RPCID | CRT_HG_ONEWAY_RPCID 单程
                     crt_proc_in_common
                     crt_proc_out_common
+                      rpc_priv = container_of(data, struct crt_rpc_priv, crp_pub.cr_output) -> reply 回复数据
                     crt_rpc_handler_common <- hg_proc_info->rpc_cb <- hg_core_rpc_cb <- hg_core_rpc_info->rpc_cb <- hg_core_process
                 HG_Registered_disable_response 单程禁用响应
         HG_Context_create
@@ -3514,9 +3515,7 @@ obj_tls_init
 
 
 
-  daos_pool
-创建池
-daos pool create xxx
+daos_pool, 创建池, 
 [root@c1f82c52f85d daos]# dmg pool create sxb -z 4g
 Creating DAOS pool with automatic storage allocation: 4.0 GB total, 6,94 tier ratio
 {
@@ -3569,8 +3568,6 @@ control.PoolCreate PoolCreateReq
                     new_prop = daos_prop_alloc(entries) 分配entries个属性
                   daos_prop_merge 合并属性
                   ds_mgmt_create_pool 管理面创建池
-
-
 ds_mgmt_create_pool 创建池
     crt_group_ranks_get(NULL, &pg_ranks)
     crt_group_size(NULL, &pg_size)
@@ -3581,13 +3578,20 @@ ds_mgmt_create_pool 创建池
       qsort(rank_list->rl_ranks, rank_list->rl_nr 先排序,再比较
       pg_str = d_rank_list_to_str(pg_ranks) rank列表转字符串
     ds_mgmt_tgt_pool_create_ranks
-        topo = crt_tree_topo(CRT_TREE_KNOMIAL, 4) 创建k项树拓扑
+        topo = crt_tree_topo(CRT_TREE_KNOMIAL, 4) 创建k项树拓扑, 创建集合RPC, 向所有目标发送创池RPC
         opc = MGMT_TGT_CREATE -> ds_mgmt_hdlr_tgt_create 操作码编码 DAOS_RPC_OPCODE, 操作码,模块id,版本
         crt_corpc_req_create
-        dss_rpc_send 发送rpc到所有目标rank上
+        pool_create_rpc_timeout(tc_req, scm_size) -> 针对创池使用较大的RPC超时
+          max(timeout, default_timeout) -> 计算超时后比较, 取更大的超时
+        crt_req_set_timeout(tc_req, timeout)
+        dss_rpc_send 发送rpc到所有目标rank上, 等待回复, 不消耗引用计数
+          ABT_eventual_create(sizeof(*status), &eventual)
           crt_req_send(rpc, rpc_cb, &eventual)
-          ABT_eventual_wait 等待返回
-        ds_mgmt_hdlr_tgt_create
+          ABT_eventual_wait(eventual, (void **)&status) 等待返回, 挂起或立即返回
+        tc_out = crt_reply_get(tc_req) -> return rpc->cr_output -> typedef struct crt_rpc -> 获取回复 reply
+        --------------------------------------------------------
+        ds_mgmt_hdlr_tgt_create(crt_rpc_t *tc_req) -> 服务端收到RPC,执行创池RPC控制器, 抽象成在目标上执行创建操作
+        ...
     d_rank_list_alloc(svc_nr)
       ds_mgmt_pool_svc_create 创建svc
         ds_pool_svc_create
@@ -3605,60 +3609,61 @@ ds_mgmt_create_pool 创建池
 
 其他rank收到rpc请求
 ds_mgmt_hdlr_tgt_create(crt_rpc_t *tc_req)
-    cleanup_leftover_pools 清理滞留池以释放空间, 删除spdk blobs和pmemobj
-      zombie_pool_iterate(cleanup_leftover_cb, &dead_list)
-        common_pool_iterate 遍历僵尸目录 调用 cleanup_leftover_cb /ZOMBIES 在ds_mgmt_tgt_setup中设置僵尸目录
-          storage = opendir(path) 打开目录
-          cb(uuid, arg) -> cleanup_leftover_cb
-            dss_thread_collective(tgt_kill_pool, &id, 0)  在所有服务器 xstreams 上共同执行 func(arg)。 只能由 ULT 调用。 只能执行 tasklet 兼容的函数
-              coll_ops.co_func = tgt_kill_pool = carg.ca_future.dfa_func	= ops->co_func
-              dss_collective_internal
-              vos_pool_kill(id->uuid) 执行回调
-                pool_lookup(&ukey, &pool)
-                gc_have_pool(pool)
-                  gc_del_pool(pool)
-                  vos_pool_decref(pool)
-                vos_delete_blob(uuid)
-                  spdk_thread_send_msg(owner_thread(bbs), blob_msg_delete, &bma)
-            d_list_add(&dp->dp_link, dead_list)
-    d_hash_rec_insert(&pooltgts->dpt_creates_ht 将pool uuid 插入hash表, 用于销毁目标: d_hash_rec_find(&pooltgts->dpt_creates_ht
-    pthread_create tgt_create_preallocate 创建预分配线程
-        (void)dss_xstream_set_affinity(tca->tca_dx) 设置cpu亲和性
-        ds_mgmt_tgt_file
-          path_gen(pool_uuid, dss_storage_path, fname, idx, fpath)
-        access(tca->tca_path, F_OK)
-        dir_fsync(tca->tca_path) 已存在
-          fd = open(path, O_RDONLY|O_DIRECTORY) 打开
-          rc = fsync(fd) 同步
-          (void)close(fd) 关闭
-        path_gen 不存在
-        mkdir(tca->tca_newborn, 0700)
-        tgt_vos_preallocate 针对target预分配vos, 每个执行流创建一个vos文件, 每个scm分区(pm对象)最小16MB
-          path_gen
-          open
-          scm_size = D_ALIGNUP(scm_size, 1ULL << 12) 向上对齐到4KB
-          fallocate(fd, 0, 0, scm_size) 为 vos 文件预分配块以提供一致的性能并避免通过页面错误(缺页异常)进入后端文件系统分配器, 使用 fallocate(2) 而不是 posix_fallocate(3) 因为后者与 tmpfs 是伪造的, fallocate() 允许调用者直接操作为 fd 引用的文件分配的磁盘空间，其字节范围从 offset 开始并持续 len 个字节
-          fallocate -l 50M /data/web/www/html/b.zip 文件预留
-          fsync(fd) 除了刷新文件数据，fsync() 还刷新与文件关联的元数据信息
-    for(;;) 死循环
-    pthread_cancel(thread) 销毁状态,则取消线程
-    pthread_tryjoin_np(thread, &res) 等线程
-    ABT_thread_yield()
-    dss_thread_collective(tgt_vos_create_one, &vpa, 0) 在所有服务流上集体执行 coll_ops.co_func	= tgt_vos_create_one
-      dss_collective_internal
-        dss_thread_collective_reduce(&coll_ops, &coll_args, flags) coll_ops.co_func	= func 集合聚合缩减函数
-          dss_collective_reduce_internal
-    rc = rename(tca.tca_newborn, tca.tca_path)
-    (void)dir_fsync(tca.tca_path) 确认目录已持久化
-    rc = ds_pool_start(tc_in->tc_pool_uuid);
-      daos_lru_ref_hold(pool_cache 查找缓存,获取其引用, 最近最少使用, 查找或插入
-      pool = pool_obj(llink)
-      daos_lru_ref_release(pool_cache, &pool->sp_entry) 已经存在,释放引用
-      daos_lru_ref_hold(pool_cache &arg 带参数创建
-      dss_ult_create(pool_fetch_hdls_ult, pool, DSS_XS_SYS
-      ds_pool_start_ec_eph_query_ult(pool)
-      ds_iv_ns_start(pool->sp_iv_ns)
-    (void)tgt_destroy(tca.tca_ptrec->dptr_uuid
+  tc_out = crt_reply_get(tc_req) -> 先拿到回复字段, 在创建完成后填充该字段, 如: tc_out->tc_ranks.ca_arrays = rank;
+  cleanup_leftover_pools 清理滞留池以释放空间, 删除spdk blobs和pmemobj
+    zombie_pool_iterate(cleanup_leftover_cb, &dead_list)
+      common_pool_iterate 遍历僵尸目录 调用 cleanup_leftover_cb /ZOMBIES 在ds_mgmt_tgt_setup中设置僵尸目录
+        storage = opendir(path) 打开目录
+        cb(uuid, arg) -> cleanup_leftover_cb
+          dss_thread_collective(tgt_kill_pool, &id, 0)  在所有服务器 xstreams 上共同执行 func(arg)。 只能由 ULT 调用。 只能执行 tasklet 兼容的函数
+            coll_ops.co_func = tgt_kill_pool = carg.ca_future.dfa_func	= ops->co_func
+            dss_collective_internal
+            vos_pool_kill(id->uuid) 执行回调
+              pool_lookup(&ukey, &pool)
+              gc_have_pool(pool)
+                gc_del_pool(pool)
+                vos_pool_decref(pool)
+              vos_delete_blob(uuid)
+                spdk_thread_send_msg(owner_thread(bbs), blob_msg_delete, &bma)
+          d_list_add(&dp->dp_link, dead_list)
+  d_hash_rec_insert(&pooltgts->dpt_creates_ht 将pool uuid 插入hash表, 用于销毁目标: d_hash_rec_find(&pooltgts->dpt_creates_ht
+  pthread_create tgt_create_preallocate 创建预分配线程
+      (void)dss_xstream_set_affinity(tca->tca_dx) 设置cpu亲和性
+      ds_mgmt_tgt_file
+        path_gen(pool_uuid, dss_storage_path, fname, idx, fpath)
+      access(tca->tca_path, F_OK)
+      dir_fsync(tca->tca_path) 已存在
+        fd = open(path, O_RDONLY|O_DIRECTORY) 打开
+        rc = fsync(fd) 同步
+        (void)close(fd) 关闭
+      path_gen 不存在
+      mkdir(tca->tca_newborn, 0700)
+      tgt_vos_preallocate 针对target预分配vos, 每个执行流创建一个vos文件, 每个scm分区(pm对象)最小16MB
+        path_gen
+        open
+        scm_size = D_ALIGNUP(scm_size, 1ULL << 12) 向上对齐到4KB
+        fallocate(fd, 0, 0, scm_size) 为 vos 文件预分配块以提供一致的性能并避免通过页面错误(缺页异常)进入后端文件系统分配器, 使用 fallocate(2) 而不是 posix_fallocate(3) 因为后者与 tmpfs 是伪造的, fallocate() 允许调用者直接操作为 fd 引用的文件分配的磁盘空间，其字节范围从 offset 开始并持续 len 个字节
+        fallocate -l 50M /data/web/www/html/b.zip 文件预留
+        fsync(fd) 除了刷新文件数据，fsync() 还刷新与文件关联的元数据信息
+  for(;;) 死循环
+  pthread_cancel(thread) 销毁状态,则取消线程
+  pthread_tryjoin_np(thread, &res) 等线程
+  ABT_thread_yield()
+  dss_thread_collective(tgt_vos_create_one, &vpa, 0) 在所有服务流上集体执行 coll_ops.co_func	= tgt_vos_create_one
+    dss_collective_internal
+      dss_thread_collective_reduce(&coll_ops, &coll_args, flags) coll_ops.co_func	= func 集合聚合缩减函数
+        dss_collective_reduce_internal
+  rc = rename(tca.tca_newborn, tca.tca_path)
+  (void)dir_fsync(tca.tca_path) 确认目录已持久化
+  rc = ds_pool_start(tc_in->tc_pool_uuid);
+    daos_lru_ref_hold(pool_cache 查找缓存,获取其引用, 最近最少使用, 查找或插入
+    pool = pool_obj(llink)
+    daos_lru_ref_release(pool_cache, &pool->sp_entry) 已经存在,释放引用
+    daos_lru_ref_hold(pool_cache &arg 带参数创建
+    dss_ult_create(pool_fetch_hdls_ult, pool, DSS_XS_SYS
+    ds_pool_start_ec_eph_query_ult(pool)
+    ds_iv_ns_start(pool->sp_iv_ns)
+  (void)tgt_destroy(tca.tca_ptrec->dptr_uuid
 
 ----------------------
 ds_pool_create_handler
@@ -5003,4 +5008,7 @@ test_nvme_io
 def write_objects
 
 
+
+
+bio, bdh_write_cmds, 指标metric: d_tm_set_counter(bdh->bdh_du_written, page->data_units_written[0]), 
 

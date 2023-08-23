@@ -16,6 +16,22 @@ In addition, a module can optionally configure:
 - CART RPC handlers
 - dRPC handlers
 
+
+模块接口
+I/O 引擎支持模块接口，允许按需加载服务器端代码。 每个模块实际上都是 I/O 引擎通过 dlopen 动态加载的库。 模块和 I/O 引擎之间的接口在 dss_module 数据结构中定义。
+
+每个模块应指定：
+
+模块名称
+daos_module_id 中的模块标识符
+特征位掩码
+模块初始化和终结函数
+此外，模块可以选择配置：
+
+整个堆栈启动并运行后调用的设置和清理函数
+CART RPC 处理程序
+dRPC 处理程序
+
 ## Thread Model & Argobot Integration
 
 The I/O Engine is a multi-threaded process using Argobots for non-blocking processing.
