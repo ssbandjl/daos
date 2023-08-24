@@ -2858,7 +2858,7 @@ dtx_abort
         ABT_future_create(len, dtx_req_list_cb, &future) 创建未来, 在 dtx_handler 中执行 dtx_req_list_cb 回调
         dra->dra_future = future
         dtx_req_send
-        ABT_thread_yield
+        ABT_thread_yield -> 如果计算尚未完成，则交给调度程序, 临时让出cpu
   vos_dtx_abort
   dtx_rpc_post
 
@@ -5012,3 +5012,37 @@ def write_objects
 
 bio, bdh_write_cmds, 指标metric: d_tm_set_counter(bdh->bdh_du_written, page->data_units_written[0]), 
 
+
+goroutine, 协程, 
+dss_dump_ABT_state -> DAOS-1452 iosrv：转储 ULT 堆栈功能 (#3371), 起初，Argobot API 只允许获取/打印 XStreams/Scheds/Pools/ULTs 信息，但现在这已根据我们的要求提供，让我们也使用它！ 有两种方式，有或没有 xstream 的内部同步/停放。 值得注意的是，目前 ULT 堆栈是原始打印的，直到 Argobots 中添加展开功能之前，都需要手动完成
+
+
+sched_run(ABT_sched sched)
+  ABT_sched_get_data(sched, (void **)&data)
+  ABT_sched_get_pools
+  sched_pop_net_poll
+  sched_pop_nvme_poll
+  ABT_xstream_run_unit(unit, pool)
+
+创建ULT: ABT_thread_create(pools[pool_id], hello_world, &thread_args[i], ABT_THREAD_ATTR_NULL, &threads[i])
+sched_create_thread -> daos_abt_thread_create -> ABT_thread_create
+daos_abt_thread_create_on_xstream -> ABT_thread_create_on_xstream -> 创建与执行流关联的新 ULT。 ABT_thread_create_on_xstream() 创建一个新的 ULT，由属性 attr 给定，将其与执行流 xstream 的主调度程序的第一个池关联，并通过 newthread 返回其句柄。 此例程将创建的 ULT 推送到池 pool。 创建的 ULT 在调度时使用 arg 调用 thread_func()。 attr 可以通过 ABT_thread_attr_create() 创建。 如果用户为 attr 传递 ABT_THREAD_ATTR_NULL，则使用默认的 ULT 属性
+
+
+hello_world_ws.c -> 此提交添加了新的模板示例，同时删除了一些斐波那契示例，因为它们是重叠的。 斐波那契代码也被细化
+
+ABT_sched_create_basic -> 创建调度器
+stencil 模板, 
+
+
+
+flush_ult
+gc_ult
+gc_rate_ctl
+yield_fn <- wait_cb (vp_wait_cb) 等待正在进行的事务提交，或者让步以取得进展 | sc_yield_fn <- sc_sleep
+dss_ult_yield
+sched_req_sleep -> sleep场景使用
+  sched_req_yield
+    ABT_thread_yield
+
+    
