@@ -1,6 +1,10 @@
+daos术语: docs/overview/terminology.md, https://docs.daos.io/v2.5/overview/terminology/
 daos开发文档: https://docs.daos.io/v2.5/dev/development/
 daos开发文档_容器增删改查: https://docs.daos.io/v2.5/user/container/, 用户文档: https://docs.daos.io/v2.5/user/workflow/
 公共组件: https://github.com/daos-stack/daos/tree/master/src/common
+c_raft实现: https://github.com/willemt/raft, 文档: raft.h, 
+
+
 
 https://github.com/ssbandjl/daos.git
 git remote add upstream https://github.com/daos-stack/daos.git
@@ -2986,7 +2990,7 @@ rdb_requestvote_handler(crt_rpc_t *rpc)
   rdb_raft_check_state
     committed = raft_get_commit_idx(db->d_raft)
     compaction_rc = rdb_raft_trigger_compaction -> 检查日志是否应该被压缩。 如果是这样，则通过拍摄快照来触发压缩（即，在我们的实现中简单地增加日志基索引）
-    
+
 
 
 
@@ -5213,14 +5217,30 @@ ds_cont_op_handler(crt_rpc_t *rpc, int cont_proto_ver)
         cont_create_prop_prepare
         daos_prop_entry_get
         cont_existence_check
-        rdb_tx_create_kvs
+        rdb_tx_create_kvs -> rdb_tx_append RDB_TX_CREATE
+          rdb_tx_leader_check
+          rdb_tx_op_encode
         rdb_path_clone
         rdb_path_push
-        rdb_tx_update
-        cont_prop_write    
-    rdb_tx_commit
+          rdb_encode_iov
+        rdb_tx_update -> rdb_tx_append
+        cont_prop_write
+    get_metadata_times
+    rdb_tx_commit(&tx) -> 提交事务, 如果成功，则 tx 中的所有更新都会向查询显示。 如果发生错误，则 tx 被中止, struct rdb_tx rdb事务（TX）（不透明），所有字段都是私有的。 这些向调用者公开，以便他们可以分配 rdb_tx 对象，可能在其堆栈上
+      rdb_raft_append_apply(tx->dt_db, tx->dt_entry, tx->dt_entry_len, &result) -> RAFT_LOGTYPE_NORMAL -> rdb_raft_append_apply_internal(db, &mentry, result) -> 追加并等待\a 条目被应用。 调用者必须持有 d_raft_mutex
+        rdb_raft_register_result -> d_hash_rec_insert
+        rdb_raft_save_state
+        raft_recv_entry
+        rdb_raft_check_state
+        rdb_raft_wait_applied(db, mresponse.idx, mresponse.term) -> 等待索引在期限内应用。 仅供领导者使用。 调用者最初持有 d_raft_mutex
+          ABT_cond_wait(db->d_applied_cv, db->d_raft_mutex)
+        raft_apply_all(db->d_raft) -> 应用所有条目直到提交索引
+          raft_snapshot_is_in_progress(me_)
+          raft_apply_entry(me_) -> 在lastApplied + 1处应用条目。条目变为“已提交”
+            me->cb.applylog(me_, me->udata, ety, me->last_applied_idx)
   ds_rsvc_set_hint
   cont_svc_put_leader
   ds_pool_hdl_put(pool_hdl)
 
 ---------------------------------------- DL ----------------------------------------
+
