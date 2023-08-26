@@ -1000,7 +1000,7 @@ dfuse_main.c -> main
             if (!type->st_reg.sr_reset(ptr)) -> dfuse_read_event_reset(void *arg) -> 重置读事件ev
               D_ALLOC(ev->de_iov.iov_buf, DFUSE_MAX_READ) -> 读最大1MB
               ev->de_sgl.sg_nr       = 1
-              daos_event_init(&ev->de_ev, ev->de_eqt->de_eq, NULL) -> 父事件为空, 也支持父事件, 如: daos_event_init(child_events[i], DAOS_HDL_INVAL, &event)
+              daos_event_init(&ev->de_ev, ev->de_eqt->de_eq, NULL) -> 父事件为空, 也支持父事件, 如: daos_event_init, Parent – “父”事件，如果没有父事件，则可以为 NULL。 如果它不为 NULL，则调用者将永远不会看到此事件的完成，相反，只有当父级的所有子级完成时才会看到父级的完成。 然而，与父事件相关联的操作可以在其子事件之前启动或完成。 父事件完成只是将多个事件完成状态合并为一个的简单方法。(child_events[i], DAOS_HDL_INVAL, &event)
                 evx->evx_status	= DAOS_EVS_READY
                 if (daos_handle_is_valid(eqh)) -> 句柄有效
                   eqx = daos_eq_lookup(eqh)
@@ -1029,7 +1029,7 @@ dfuse_main.c -> main
 dfuse_progress_thread
   rc = sem_wait(&fs_handle->dpi_sem) 等dpi_sem信号
   daos_eq_poll
-  daos_event_fini 完成一个事件。 如果事件已被传递到任何 DAOS API，则它只能在从 EQ 中轮询出来时才能完成，即使通过调用 daos_event_abort() 中止也是如此。 如果事件是用父事件初始化的，那么该事件将从父事件的子列表中删除。 如果ev本身是一个父事件，那么这个函数会finalize所有的子事件和ev。
+  daos_event_fini 完成一个事件。 如果事件已被传递到任何 DAOS API，则它只能在从 EQ 中轮询出来时才能完成，即使通过调用 daos_event_abort() 中止也是如此。 如果事件是用父事件初始化的，那么该事件将从父事件的子列表中删除。 如果ev本身是一个父事件，那么这个函数会finalize所有的子事件和ev, 此调用返回后，ev 中的条目不应被视为有效
   ev->de_complete_cb(ev) -> dfuse_cb_write_complete 写完成回调
 
 struct fuse_lowlevel_ops dfuse_ops dfuse低层操作对象
@@ -1253,7 +1253,7 @@ ds_obj_rw_handler
 crt_swim_cli_cb
 ca_arrays
 
-
+tse测试, test: src/common/tests/sched.c
 tse: 调度, 1300+400, 涉及文件: event.h, daos_event.h, tse.h, tse.c, tse_internal.h
 dc_task_create
   sched = daos_ev2sched(ev) -> EV事件转调度器
@@ -2949,6 +2949,45 @@ crt_ivsync_rpc_issue
 
 
 ds_rsvc_start
+  entry = d_hash_rec_find(&rsvc_hash, id->iov_buf, id->iov_len)
+    svc = rsvc_obj(entry)
+  start(class, id, db_uuid, caller_term, create, size, replicas, arg, &svc)
+    alloc_init(class, id, db_uuid, &svc)
+    rdb_create(svc->s_db_path, svc->s_db_uuid, term, size, replicas, &rsvc_rdb_cbs, svc, &storage)
+    rdb_start(storage, &svc->s_db) 
+    dss_sleep(1 /* ms */) -> 如果创建具有初始成员资格的副本，我们将引导数据库（通过 sc_bootstrap 或外部机制）。 如果我们是“提名”副本，则无需等待选举超时就开始竞选
+    rdb_campaign(svc->s_db) -> 举行新的选举（成为领导者的竞选活动）。 必须是投票副本 -> rdb_raft_campaign(db)
+      node = raft_get_my_node(db->d_raft)
+      rdb_raft_save_state(db, &state)
+      raft_election_start(db->d_raft) -> raft_become_candidate(me_)
+        raft_set_state(me_, RAFT_STATE_CANDIDATE)
+        raft_node_vote_for_me(raft_get_my_node(me_), 1)
+        raft_randomize_election_timeout
+        raft_send_requestvote -> me->cb.send_requestvote(me_, me->udata, node, &rv) -> static raft_cbs_t rdb_raft_cbs -> rdb_raft_cb_send_requestvote(raft_server_t *raft, void *arg, raft_node_t *node, msg_requestvote_t *msg)
+          rdb_create_raft_rpc(RDB_REQUESTVOTE, node, &rpc) -> 创建raft数据库投票请求 -> rdb_requestvote_handler
+            ep.ep_tag = daos_rpc_tag(DAOS_REQ_RDB, 0) -> rpc类型 -> DAOS RPC请求类型（确定目标处理标签/上下文）
+          rdb_send_raft_rpc(rpc, db)
+        raft_count_votes(me_)
+      rdb_raft_check_state(db, &state, rc)
+    bootstrap_self(svc, arg)
+      rsvc_class(svc->s_class)->sc_bootstrap(svc, arg)
+  d_hash_rec_insert(&rsvc_hash, svc->s_id.iov_buf, svc->s_id.iov_len, &svc->s_entry, true /* exclusive */)
+
+...  
+rdb_requestvote_handler(crt_rpc_t *rpc)
+  db = rdb_lookup(in->rvi_op.ri_uuid)
+  raft_recv_requestvote
+    raft_get_current_term
+    raft_set_current_term
+    raft_become_follower
+      raft_set_state(me_, RAFT_STATE_FOLLOWER)
+    __should_grant_vote
+    raft_vote_for_nodeid
+  rdb_raft_check_state
+    committed = raft_get_commit_idx(db->d_raft)
+    compaction_rc = rdb_raft_trigger_compaction -> 检查日志是否应该被压缩。 如果是这样，则通过拍摄快照来触发压缩（即，在我们的实现中简单地增加日志基索引）
+    
+
 
 
 na_ofi_mem_buf_register
@@ -3514,7 +3553,7 @@ obj_tls_init
 
 
 
-
+---------------------------------------- DL ----------------------------------------
 daos_pool, 创建池, 
 [root@c1f82c52f85d daos]# dmg pool create sxb -z 4g
 Creating DAOS pool with automatic storage allocation: 4.0 GB total, 6,94 tier ratio
@@ -3827,7 +3866,7 @@ rsvc 复制服务
 [                vos                ]
 
 
-
+---------------------------------------- DL ----------------------------------------
 
 vos_cont_destroy
   gc_wait()
@@ -3866,6 +3905,12 @@ func ListPools
 POOL_QUERY opc=2040003, 关键词:"pool", DAOS_POOL_MODULE
 ds_pool_query_handler
   pool_svc_lookup_leader
+    ds_pool_failed_lookup
+    ds_rsvc_lookup_leader(DS_RSVC_CLASS_POOL, &id, &rsvc, hint) -> 为了方便一般复制服务 RPC 处理程序，此函数通过 id 查找复制服务，检查其是否已启动，并引用领导者字段。 仅当返回零时才填充 svcp。 如果复制的服务未启动，则提示已填充
+      ds_rsvc_lookup(class, id, &svc) -> 查找副本服务
+        entry = d_hash_rec_find(&rsvc_hash, id->iov_buf, id->iov_len) <- ds_rsvc_start -> 启动复制服务。 如果 create 为 false，则忽略所有剩余的输入参数； 否则，先创建副本。 如果replicas为NULL，则忽略所有剩余的输入参数； 否则，引导复制的服务
+      get_leader(svc)
+    *svcp = pool_svc_obj(rsvc)  
   rdb_tx_begin
   d_iov_set key, value
   rdb_tx_lookup
@@ -4218,7 +4263,7 @@ dc_array_write
 
     array_decref(array)
     tse_task_register_cbs(stask, check_short_read_cb 读回调
-    tse_sched_progress(tse_task2sched(task)) 推进/处理
+    tse_sched_progress(tse_task2sched(task)) 推进/处理, 在调度程序上取得进展。 运行它们所依赖的任务完成后准备执行的任务。 请注意，使用 tse_task_complete() 完成任务必须由引擎用户完成，以推动引擎的进度。 在 DAOS 中，tse_task_complete 由发送到服务器的 RPC 请求的完成 CB 调用
 
 
 check_short_read_cb
@@ -5045,4 +5090,137 @@ sched_req_sleep -> sleep场景使用
   sched_req_yield
     ABT_thread_yield
 
-    
+
+
+daos_eq_destroy    
+  crt_context_flush
+
+daos_eq_query -> 查询EQ中有多少个未完成的事件，如果events不为NULL，则这些事件将被存储到其中。 查询返回的事件仍然属于 DAOS，不允许完成或释放该函数返回的事件，但允许调用 daos_event_abort() 来中止已启动的操作。 此外，返回的事件的状态仍然可以改变，例如，返回的“已启动”事件可以在访问之前变为“已完成”。 用户有责任保证轮询过程释放返回的事件
+
+
+daos_event_parent_barrier -> 将父事件标记为已启动的屏障，这意味着在所有其他子事件完成并且父事件从 EQ 中轮询或测试完成（如果它不在 EQ 中）之前，无法添加更多子事件。 在所有子级完成之前，不会从 EQ 中轮询父级，也不会使用 daos_event_test 返回完成。 请注意，如果父事件作为另一个 daos 操作的一部分启动，则不应再调用此函数，并且启动事件的函数将成为屏障操作。 在这种情况下，操作本身可以在子级完成之前完成，但在所有子级完成之前该事件不会被标记为就绪, 将此事件标记为障碍事件，由最后一个完成的子事件后触发完成
+
+
+daos_event_abort -> 尝试中止与此事件相关的操作。 在此调用之后，用户仍然需要等待或轮询该事件。 目前，这不会中止任何内部 DAOS 操作，并且实际上是无操作, commit: daos_event_abort() 将事件标记为已中止，但 DAOS 内部任务并未中止，目前无法中止该操作。 因此，稍后如果用户继续（通过测试或轮询）中止事件，事件 API 会释放该事件并将其标记为准备初始化，因为它之前已中止，但 DAOS 内部任务仍未完成。 当 DAOS 任务最终进行时，可能会导致损坏，因为用户可能重新使用了该事件，甚至重新使用了传递给该事件的缓冲区。 由于我们不支持取消内部 DAOS 任务和 RPC，因此暂时将中止实现更改为无操作，这将导致对事件的测试或轮询等待内部任务完成，以避免此类损坏问题
+
+
+---------------------------------------- DL ----------------------------------------
+创建容器流程, cont_create, daos container create sxb --type POSIX sxb -> src/control/cmd/daos/main.go -> type cliOptions struct -> func main()
+parseOpts -> func (cmd *containerCreateCmd) Execute(_ []string) (err error)
+  disconnectPool, err := cmd.connectPool(C.DAOS_PC_RW, ap)
+  contID, err = cmd.contCreate() -> func (cmd *containerCreateCmd) contCreate() -> 容器布局类型, container layout type, DAOS_PROP_CO_LAYOUT_POSIX
+    C.daos_cont_create(cmd.cPoolHandle, &contUUID, props, nil) -> #define daos_cont_create daos_cont_create2
+  cmd.openContainer(C.DAOS_COO_RO)
+  ci, err = cmd.queryContainer()
+...
+
+container不开辟空间，仅设置数据存储策略
+
+enum daos_obj_redun 对象冗余
+
+daos container create --pool sxb --type POSIX --label sxb
+daos cont create --label Cont1 --type POSIX --oclass RP_3G1 --properties rf:2 Pool1 
+daos cont create --oclass=RP_3GX --properties=rf:1 --type POSIX --pool sxb --label sxb
+
+创建容器
+func (cmd *containerCreateCmd) Execute
+  ap, deallocCmdArgs, err := allocCmdArgs(cmd.log)
+    ap = &C.struct_cmd_args_s{} struct cmd_args_s 解析 pool、cont、obj 命令的命令行参数的综合结果，其中大部分是常见的
+  defer deallocCmdArgs()
+  disconnectPool, err := cmd.connectPool(C.DAOS_PC_RW, ap)
+    cmd.poolBaseCmd.connectPool(flags)
+      C.daos_pool_connect2
+        dc_task_create(dc_pool_connect, NULL, ev, &task)
+  ap.c_op = C.CONT_CREATE  
+  cmd.contUUID, err = uuidFromC(ap.c_uuid)
+  C.cont_create_hdlr(ap) -> cont_create_hdlr(struct cmd_args_s *ap) src/utils/daos_hdlr.c
+    daos_cont_create
+      daos_cont_create2
+  cmd.openContainer
+  ci, err = cmd.queryContainer()
+
+
+dfs_cont_create2
+  dfs_cont_create_int
+    daos_cont_prop2redunfac
+    daos_obj_generate_oid_by_rf 超级块
+    daos_obj_generate_oid_by_rf root
+    daos_prop_entry_set_ptr
+    daos_cont_create(poh, cuuid, prop, NULL) 未设置uuid
+    daos_cont_open
+      ...
+      cont_open(struct rdb_tx *tx
+      ...
+    open_sb
+    insert_entry
+    daos_obj_close
+    dfs_mount
+
+
+dc_pool_connect
+  init_pool
+    dc_pool_alloc(DC_POOL_DEFAULT_COMPONENTS_NR) 128
+      daos_hhash_hlink_init(&pool->dp_hlink, &pool_h_ops) 初始化hash表
+      D_INIT_LIST_HEAD(&pool->dp_co_list) 初始化容器链表
+      pool->dp_map_sz = pool_buf_size(nr) offsetof
+    dc_mgmt_sys_attach(grp, &pool->dp_sys) //TODO
+    rsvc_client_init(&pool->dp_client, NULL)
+    client->sc_ranks = d_rank_list_alloc(0)
+    rsvc_client_reset_leader(client)
+  daos_task_set_priv(task, pool)
+  pool = dc_task_get_priv(task)
+  dc_pool_connect_internal
+    dc_pool_choose_svc_rank
+    pool_req_create(daos_task2ctx(task), &ep, POOL_CONNECT, &rpc)
+    dc_sec_request_creds(&pci->pci_cred)
+    map_bulk_create
+    tse_task_register_comp_cb(task, pool_connect_cp, &con_args
+    daos_rpc_send(rpc, task)
+
+
+pool_connect_cp
+  pool_rsvc_client_complete_rpc
+  process_query_reply
+  dc_mgmt_notify_pool_connect
+  dc_pool_hdl_link(pool)
+  dc_pool2hdl(pool, arg->hdlp)
+
+
+真正最新最好的容器创建实现, 使用者需要包含 daos_cont.h 头文件
+daos_cont_create2 -> daos_cont_create
+  dc_task_create(dc_cont_create, NULL, ev, &task) -> 创建容器任务
+    dc_cont_create(tse_task_t *task)
+      entry = daos_prop_entry_get(args->prop, DAOS_PROP_CO_STATUS)
+      pool = dc_hdl2pool(args->poh)
+      rc = dup_cont_create_props(args->poh, &rpc_prop, args->prop)
+      dc_pool_choose_svc_rank -> 按标签或 UUID 选择池服务副本排名(pool service replica rank)。 如果 rsvc 模块指示 DER_NOTREPLICA，（仅限客户端）尝试通过查询 MS 来刷新列表
+        rsvc_client_choose
+        dc_mgmt_pool_find
+      cont_req_create(daos_task2ctx(task), &ep, CONT_CREATE, &rpc) -> 创建容器操作 -> ds_cont_op_handler
+      tse_task_register_comp_cb(task, cont_create_complete 完成回调
+
+服务端创建容器
+ds_cont_op_handler(crt_rpc_t *rpc, int cont_proto_ver)
+  pool_hdl = ds_pool_hdl_lookup(in->ci_pool_hdl)
+  cont_svc_lookup_leader
+    ds_pool_cont_svc_lookup_leader
+  cont_op_with_svc(pool_hdl, svc, rpc)
+    rdb_tx_begin
+    case CONT_CREATE
+      cont_create -> cont_create(struct rdb_tx *tx, struct ds_pool_hdl *pool_hdl, struct cont_svc *svc, crt_rpc_t *rpc)
+        ds_sec_pool_can_create_cont
+        daos_prop_dup
+        cont_create_prop_prepare
+        daos_prop_entry_get
+        cont_existence_check
+        rdb_tx_create_kvs
+        rdb_path_clone
+        rdb_path_push
+        rdb_tx_update
+        cont_prop_write    
+    rdb_tx_commit
+  ds_rsvc_set_hint
+  cont_svc_put_leader
+  ds_pool_hdl_put(pool_hdl)
+
+---------------------------------------- DL ----------------------------------------
