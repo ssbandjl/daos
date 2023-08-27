@@ -6,6 +6,10 @@ c_raft实现: https://github.com/willemt/raft, 文档: raft.h,
 
 
 
+欢迎对DAOS, SPDK, RDMA等高性能技术感兴趣的朋友加入[DAOS技术交流(群)]
+
+rocky 是受支持的平台之一。 DAOS 还支持 RHEL 的其他变体以及 SLES/OpenSuSE
+
 https://github.com/ssbandjl/daos.git
 git remote add upstream https://github.com/daos-stack/daos.git
 git remote -v

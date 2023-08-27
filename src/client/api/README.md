@@ -50,6 +50,11 @@ network context is used instead for the independent ones that would be created f
 queue. Once an event is completed, it can re-used for another DAOS API call to minimize the need for
 event creation and allocations inside the DAOS library.
 
+事件和事件队列
+
+DAOS API 函数可以在阻塞或非阻塞模式下使用。 这是通过传递给每个 API 调用的指向 DAOS 事件的指针来确定的：如果 NULL 表示操作将被阻塞。 操作完成后会返回。 所有失败情况的错误码都将通过API函数本身的返回码返回。 如果使用有效的事件，则该操作将以非阻塞模式运行，并在内部调度程序中调度该操作以及将 RPC 提交到底层堆栈后立即返回。 如果调度成功，则操作的返回值为success，但并不表示实际操作成功。 返回时可以捕获的错误要么是无效参数，要么是调度问题。 当事件完成时，操作的实际返回代码将在事件错误代码 (event.ev_error) 中提供。 必须首先通过单独的 API 调用创建要使用的有效事件。 为了允许用户一次跟踪多个事件，可以将事件创建为事件队列的一部分，事件队列基本上是可以一起进行和轮询的事件的集合。 事件队列还在内部为所有 DAOS 任务创建一个单独的任务调度程序以及一个新的网络上下文。 在某些网络提供商上，网络上下文创建是一项昂贵的操作，因此用户应尝试限制在 DAOS 之上的应用程序或 IO 中间件库中创建的事件队列的数量。 或者，可以在没有事件队列的情况下创建事件，并单独跟踪。 在这种情况下，对于阻塞操作，将使用内部全局任务调度程序和网络上下文来代替为事件队列创建的独立任务调度程序和网络上下文。 事件完成后，它可以重新用于另一个 DAOS API 调用，以最大限度地减少 DAOS 库内事件创建和分配的需要
+
+
 ## Task Engine Integration
 
 The DAOS Task API provides an alternative way to use the DAOS API in a
