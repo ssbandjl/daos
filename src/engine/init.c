@@ -658,6 +658,12 @@ server_init(int argc, char *argv[])
 
 	gethostname(dss_hostname, DSS_HOSTNAME_MAX_LEN);
 
+	// sleep for gdb attach
+	for(int i=0; i<=20; i++){
+		printf("sleep %d for gdb, cmd:gdb attach %d\n", i, getpid());
+		sleep(1);
+	}
+
 	daos_debug_set_id_cb(server_id_cb);
 	rc = daos_debug_init_ex(DAOS_LOG_DEFAULT, DLOG_INFO);
 	if (rc != 0)

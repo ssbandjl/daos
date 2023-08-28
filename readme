@@ -2995,12 +2995,8 @@ rdb_requestvote_handler(crt_rpc_t *rpc)
 
 na_ofi_mem_buf_register
 
-
-
-
-daos_engine
-
-daos_server start
+---------------------------------------- DL ----------------------------------------
+daos_server start -> daos_engine -> 引擎启动 -> gdb attach `ps aux|grep '/opt/daos/bin/daos_engine' |grep -v grep|awk '{print$2}'` -> b dss_engine_metrics_init -> c
 opts.name = "daos_engine"
 engine/init.c
 main(int argc, char **argv)
@@ -3015,7 +3011,7 @@ docker
 
 禁用透明大页
 daos_register_sighand(SIGILL, print_backtrace); 注册自己的信号和打印堆栈
-server_init
+server_init(int argc, char *argv[])
   hlc_recovery_begin
   gethostname
   daos_debug_set_id_cb(server_id_cb)
@@ -3028,9 +3024,11 @@ server_init
   register_dbtree_classes 注册数据库树, b树
     dbtree_class_register
   dss_topo_init 初始服务器拓扑, numa, cpu core, bitmap位图等
-  abt_init argobots初始化, 机器人,
+  abt_init(argc, argv) -> 协程 argobots初始化, 机器人
+    int	nrequested = abt_max_num_xstreams() -> 0
+    nrequired = 1 /* primary xstream */ + DSS_XS_NR_TOTAL -> 1主 + sys + tgt + offload
     atoi(env) 环境变量转整型
-    set_abt_max_num_xstreams(max(nrequested, nrequired)) 两者中的较大值, 设置环境变量 ABT_MAX_NUM_XSTREAMS, 输入整型, 转为字符串char*
+    set_abt_max_num_xstreams(max(nrequested, nrequired)) -> 5 两者中的较大值, 设置环境变量 ABT_MAX_NUM_XSTREAMS, 输入整型, 转为字符串char*
       D_ASPRINTF(value, "%d", n);
     ABT_init(argc, argv)
   dss_module_init 服务端模块初始化
@@ -3061,7 +3059,15 @@ server_init
       dss_module_init_one(lmod, &fac)
         rc = smod->sm_init() // vos_mod_init, 
   dss_srv_init 初始化服务(服务初始化)
-    dss_tls_init(DAOS_SERVER_TAG, 0, -1)
+    ...
+    pthread_key_create(&dss_tls_key, NULL)
+    vos_standalone_tls_init(DAOS_SERVER_TAG - DAOS_TGT_TAG) -> DAOS-13515 vos：使用 vos 格式存储 SMD (#12251)，现在对于 SSD 上的 MD，我们使用 LMMDB 将 SMD 存储在外部路径上，这为灾难性恢复工作引入了一些额外的工作。 需要额外的工具来解析和验证 LMMDB。 统一使用 VOS 格式会很好，想法是我们仍然可以将 SMD 存储在外部路径上，但不使用 LMMDB，仍然保留 VOS 格式，这可能没问题，因为性能对 SMD 操作不敏感。删除主线程 TLS，主线程和所有 xstream 将访问由主线程分配的独立 vos tls 内存
+      self_mode.self_tls = vos_tls_init(tags, 0, -1)
+    dss_sys_db_init() -> SRS-394 通用：SSD 上的元数据第 1 阶段 (#12228)，将 SSD 上的元数据功能添加到 DAOS。 对于第一阶段，所有元数据都存储在 DRAM 中。 SSD 上的元数据 blob 在逻辑上将是 DRAM 的精确副本。 为了避免对 SSD 进行过于频繁的字节粒度更新，我们转而提交足够的信息来重放对预写日志 (WAL) 的更新。 后台检查点进程定期运行，以将 DRAM 池与 SSD 元数据 Blob 同步，并回收 WAL 中的空间。 元数据 blob (DAV) 内的初始空间分配器基于 PMDK 分配器。 该补丁还包含支持 PMDK 和 MD on SSD 操作模式所需的各种控制平面更改。 SMD 在此版本中用 lmdb 替换了 VOS，但除此之外，根本性更改位于 VOS 层或以下, lmdb参考: https://zhuanlan.zhihu.com/p/70359311, http://www.lmdb.tech/doc/
+      bio_nvme_configured -> 检查是否配置了指定类型的NVMe设备，当指定SMD_DEV_TYPE_MAX时，如果配置了任意类型的设备则返回true
+        nvme_glb.bd_nvme_conf -> /mnt/daos/daos_nvme.conf
+      vos_db_init(bio_nvme_configured(SMD_DEV_TYPE_META) ? sys_db_path : dss_storage_path) -> 在/mnt/daos下初始化元数据 -> vos_db_init_ex(db_path, NULL, false, false)
+    ...
     vos_db_init(dss_storage_path)  sys_db.c dss_storage_path=/mnt/daos
     bio_nvme_init 全局nvme初始化
       d_getenv_bool
@@ -3421,15 +3427,18 @@ free_call_ctx(ctx)
 
 
 static struct vos_sys_db	vos_db
-vos_db_init vos初始化 元数据初始化
-  vos_db_init_ex(db_path, NULL, false, false)
-  memset(&vos_db, 0, sizeof(vos_db)) 系统db置零 /mnt/daos/daos_sys/sys_db 系统数据库sys_db
+dss_srv_init
+vos_db_init vos初始化 元数据初始化 -> vos_db_init_ex(db_path, NULL, false, false)
+  memset(&vos_db, 0, sizeof(vos_db)) 系统db置零 /mnt/daos/daos_sys/sys_db 系统数据库sys_db -> struct vos_sys_db
+  ABT_mutex_create(&vos_db.db_lock)
   vos_db.db_poh = DAOS_HDL_INVAL
   vos_db.db_pub.sd_fetch	  = db_fetch ...
-  uuid_parse(SYS_DB_POOL, vos_db.db_pool) 保留系统池,容器的uuid
-  db_open_create(&vos_db.db_pub, !!create) 创建或打开 vos_pool_open
-    access 先检查文件是否存在 第二轮创建
-    vos_pool_create 创建vosp 系统scm池(128MB) jump
+  uuid_parse(SYS_DB_POOL, vos_db.db_pool) 保留系统池(00000000-DA05-C001-CAFE-000020200101), 容器的uuid(00000000-DA05-C001-CAFE-000020191231)
+  db_open_create(&vos_db.db_pub, !!create) 创建或打开 vos_pool_open -> 在持久文件中创建或打开系统数据库(系统数据库是一个简单的本地KV存储) -> db_open_create(struct sys_db *db, bool try_create)
+    access 先检查文件是否存在 第二轮创建(try_create为真)
+    mkdir(vdb->db_path, 0777)
+    vos_pool_create(vdb->db_file, vdb->db_pool, SYS_DB_SIZE, 0, VOS_POF_SYSDB, &vdb->db_poh) -> 创建vosp 系统scm池(128MB) jump, 0个blob, 
+    vos_pool_create_ex(const char *path, uuid_t uuid, daos_size_t scm_sz, daos_size_t nvme_sz, daos_size_t wal_sz, unsigned int flags, daos_handle_t *poh) -> wal_sz=0
     vos_cont_create(vdb->db_poh, vdb->db_cont) 在vos池中(vpool)创建一个容器
       cont_df_lookup(vpool, &ukey, &args)
         dbtree_lookup(vpool->vp_cont_th, &key, &value) b树搜索
