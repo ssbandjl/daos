@@ -182,7 +182,6 @@ chmod 0700 /etc/daos/certs/admin.key
 dmg sto scan
 dmg net scan
 dmg -i storage format
-dmg storage format
 
 dmg system erase
 
@@ -2345,7 +2344,8 @@ func (cmd *startCmd) Execute(args []string)
   func Start(log *logging.LeveledLogger, cfg *config.Server)
     processConfig
     newServer(ctx, log, cfg, faultDomain)
-    createServices
+    createServices -> srv.createServices(ctx) -> srv.sysdb, err = newManagementDatabase
+      CreateDatabaseConfig(cfg) -> raftDirName := "control_raft"
     initNetwork 初始化网络
       func netInit
         netdetect.Init(ctx)
@@ -4483,6 +4483,7 @@ crt_ctx_epi_abort
   crt_rpc_complete
 
 
+---------------------------------------- DL ----------------------------------------
 
 (dlv) bt
 0  0x0000000000e1638f in main.(*storageFormatCmd).Execute
@@ -4600,6 +4601,14 @@ func (c *ControlService) StorageFormat
         resultPCIAddresses(results)
         cleanLockfiles(log, realRemove, pciAddrs...) -> const lockfilePathPrefix = "/var/tmp/spdk_pci_lock_" -> 删除锁文件
   ei.NotifyStorageReady()
+
+格式化后, 在scm目录下增加以下文件集目录: 
+NEWBORNS  ZOMBIES  control_raft  daos_nvme.conf  daos_sys  superblock
+
+CreateDatabaseConfig -> control_raft
+vos_db_init_ex -> daos_sys
+superblockPath() -> superblock
+---------------------------------------- DL ----------------------------------------
 
 
 dc_pool_query
