@@ -823,6 +823,9 @@ gdb step
 3. step
 
 
+安装dlv: go install github.com/go-delve/delve/cmd/dlv@latest
+export PATH=/root/go/bin:$PATH
+参考: https://github.com/go-delve/delve/tree/master/Documentation/installation
 dlv调试go:
 dlv exec /opt/daos/bin/daos_server -- start
 
@@ -4480,13 +4483,123 @@ crt_ctx_epi_abort
   crt_rpc_complete
 
 
-StorageFormat 在请求的主机列表中提供的所有主机或所有已配置的主机（如果未明确指定）并发执行存储准备步骤。 该函数会阻塞，直到收到所有结果（成功或失败），并返回一个包含所有主机存储准备操作结果的响应结构。
-dmg storage format  # Format SCM and NVMe storage attached to remote servers.
+
+(dlv) bt
+0  0x0000000000e1638f in main.(*storageFormatCmd).Execute
+   at ./src/control/cmd/dmg/storage.go:117
+1  0x0000000000e09542 in main.parseOpts.func1
+   at ./src/control/cmd/dmg/main.go:285
+2  0x0000000000de9ea3 in github.com/jessevdk/go-flags.(*Parser).ParseArgs
+   at ./src/control/vendor/github.com/jessevdk/go-flags/parser.go:333
+3  0x0000000000e079c9 in main.parseOpts
+   at ./src/control/cmd/dmg/main.go:292
+4  0x0000000000e0998c in main.main
+   at ./src/control/cmd/dmg/main.go:307
+5  0x0000000000452b92 in runtime.main
+   at /usr/lib/golang/src/runtime/proc.go:250
+6  0x0000000000485d81 in runtime.goexit
+   at /usr/lib/golang/src/runtime/asm_amd64.s:1594
+dmg system stop; dmg sys erase; dmg storage format
+b main.main -> src/control/cmd/dmg/main.go -> if err := cmd.Execute(args) -> func (cmd *storageFormatCmd) Execute -> b main.(*storageFormatCmd).Execute
+StorageFormat 在请求的主机列表中提供的所有主机或所有已配置的主机（如果未明确指定）并发执行存储准备步骤。 该函数会阻塞，直到收到所有结果（成功或失败），并返回一个包含所有主机存储准备操作结果的响应结构
+dlv exec /opt/daos/bin/dmg -- storage format  # Format SCM and NVMe storage attached to remote servers.
 type storageFormatCmd struct
 func (cmd *storageFormatCmd) Execute
-  func StorageFormat(ctx context.Context, rpcClient UnaryInvoker, req *StorageFormatReq) (*StorageFormatResp, error) -> StorageFormat 在请求的主机列表中提供的所有主机上同时执行存储准备步骤，如果未明确指定，则在所有已配置的主机上执行存储准备步骤。 该函数将阻塞，直到收到所有结果（成功或失败），并返回包含所有主机存储准备操作结果的单个响应结构
-    checkFormatReq(ctx, rpcClient, req)
-    return ctlpb.NewCtlSvcClient(conn).StorageFormat(ctx, pbReq)
+  req := &control.StorageFormatReq{Reformat: cmd.Force}
+  req.SetHostList(cmd.getHostList())
+  func StorageFormat(ctx context.Context, rpcClient UnaryInvoker, req *StorageFormatReq) (*StorageFormatResp, error) -> StorageFormat 在请求的主机列表中提供的所有主机上同时执行存储准备步骤，如果未明确指定，则在所有已配置的主机上执行存储准备步骤。 该函数将阻塞，直到收到所有结果（成功或失败），并返回包含所有主机存储准备操作结果的单个响应结构 -> b StorageFormat
+    checkFormatReq(ctx, rpcClient, req) -> 执行一些验证以确定在允许请求中的主机的格式请求之前是否应擦除系统。 目标是防止重新格式化正在运行的系统，同时允许（重新）格式化不作为 MS 副本参与的主机
+      SystemQuery(ctx, rpcClient, sysReq) -> func SystemQuery(ctx context.Context, rpcClient UnaryInvoker, req *SystemQueryReq) -> c.config.SystemName daos_server -> func SystemQuery -> func (svc *mgmtSvc) SystemQuery -> 实现为管理服务定义的方法。 通过返回系统成员资格中存储的详细信息来检索系统中 DAOS 排名的状态。 请求列表中提供的排名的详细信息（如果请求排名列表为空，则请求所有成员）。 该控制服务方法由lib/control/system.go中同名的控制API方法触发，并返回所有选定等级的结果
+        svc.checkReplicaRequest -> checkReplicaRequest 对必须在 MS 副本上运行的请求执行健全性检查
+          checkSystemRequest
+          svc.sysdb.CheckReplica() -> raft数据库接口: src/control/system/raft/database.go -> 单元测试 -> src/control/system/raft/database_test.go
+        resolveRanks -> raft -> src/control/vendor/github.com/hashicorp/raft/membership.md -> https://github.com/hashicorp/raft/blob/main/membership.md
+        svc.membership.Members
+    return ctlpb.NewCtlSvcClient(conn).StorageFormat(ctx, pbReq) -> func (c *ControlService) StorageFormat
+    ur, err := rpcClient.InvokeUnaryRPC(ctx, req)
+
+
+(dlv) bt
+ 0  0x000000000110c952 in github.com/daos-stack/daos/src/control/server.(*ControlService).StorageFormat
+    at ./src/control/server/ctl_storage_rpc.go:743
+ 1  0x0000000000c81689 in github.com/daos-stack/daos/src/control/common/proto/ctl._CtlSvc_StorageFormat_Handler.func1 -> FullMethod: "/ctl.CtlSvc/StorageFormat"
+    at ./src/control/common/proto/ctl/ctl_grpc.pb.go:330
+ 2  0x0000000001125dff in github.com/daos-stack/daos/src/control/server.unaryAccessInterceptor
+    at ./src/control/server/interceptors.go:73
+ 3  0x0000000000c2ea46 in google.golang.org/grpc.chainUnaryInterceptors.func1.1
+    at ./src/control/vendor/google.golang.org/grpc/server.go:1129
+ 4  0x00000000011272d6 in github.com/daos-stack/daos/src/control/server.unaryVersionInterceptor
+    at ./src/control/server/interceptors.go:177
+ 5  0x0000000000c2eb4b in google.golang.org/grpc.chainUnaryInterceptors.func1.1
+    at ./src/control/vendor/google.golang.org/grpc/server.go:1132
+ 6  0x00000000011275ac in github.com/daos-stack/daos/src/control/server.unaryStatusInterceptor
+    at ./src/control/server/interceptors.go:206
+ 7  0x0000000000c2eb4b in google.golang.org/grpc.chainUnaryInterceptors.func1.1
+    at ./src/control/vendor/google.golang.org/grpc/server.go:1132
+ 8  0x00000000011273bc in github.com/daos-stack/daos/src/control/server.unaryErrorInterceptor
+    at ./src/control/server/interceptors.go:181
+ 9  0x0000000000c2eb4b in google.golang.org/grpc.chainUnaryInterceptors.func1.1
+    at ./src/control/vendor/google.golang.org/grpc/server.go:1132
+10  0x0000000001127b73 in github.com/daos-stack/daos/src/control/server.unaryLoggingInterceptor.func1
+    at ./src/control/server/interceptors.go:243
+11  0x0000000000c2eb4b in google.golang.org/grpc.chainUnaryInterceptors.func1.1
+    at ./src/control/vendor/google.golang.org/grpc/server.go:1132
+12  0x0000000000c2e899 in google.golang.org/grpc.chainUnaryInterceptors.func1
+    at ./src/control/vendor/google.golang.org/grpc/server.go:1134
+13  0x0000000000c814be in github.com/daos-stack/daos/src/control/common/proto/ctl._CtlSvc_StorageFormat_Handler
+    at ./src/control/common/proto/ctl/ctl_grpc.pb.go:332
+14  0x0000000000c2fdaa in google.golang.org/grpc.(*Server).processUnaryRPC
+    at ./src/control/vendor/google.golang.org/grpc/server.go:1295
+15  0x0000000000c376f9 in google.golang.org/grpc.(*Server).handleStream
+    at ./src/control/vendor/google.golang.org/grpc/server.go:1636
+16  0x0000000000c2c5cd in google.golang.org/grpc.(*Server).serveStreams.func1.2
+    at ./src/control/vendor/google.golang.org/grpc/server.go:932
+17  0x000000000048a501 in runtime.goexit
+    at /usr/lib/golang/src/runtime/asm_amd64.s:1594 -> daos_server启动流程-grpc流程
+
+dlv attach `ps aux|grep 'daos_server start'|grep -v grep|awk '{print$2}'`
+b github.com/daos-stack/daos/src/control/server.(*ControlService).StorageFormat
+func (c *ControlService) StorageFormat
+  c.formatMetadata(instances, req.Reformat) -> func (c *ControlService) formatMetadata
+    ControlMetadataNeedsFormat -> func (p *Provider) ControlMetadataNeedsFormat()
+      HasPath
+      NeedsFormat
+  instanceErrors, instanceSkips, err := formatScm(ctx, fsr, resp) -> func formatScm
+    ei.GetStorage().ScmNeedsFormat() -> func (p *Provider) ScmNeedsFormat()
+      createScmFormatRequest -> 区分类型, 比如: case ClassRam:, case ClassDcpm:
+      func (f *ScmAdminForwarder) CheckFormat -> f.SendReq("ScmCheckFormat" -> fRes, err = h.scmProvider.CheckFormat(fReq) -> CheckFormat 尝试确定请求中指定的 SCM 是否已格式化。 如果已安装，则假定已格式化。 对于 DCPM，直接检查设备是否存在文件系统
+        validateFormatRequest
+        p.IsMounted(req.Mountpoint) -> /proc/self/mountinfo
+        p.sys.Getfs(req.Dcpm.Device)
+    ei.GetStorage().GetScmConfig()
+    checkTmpfsMem
+    StorageFormatSCM
+  formatNvme(ctx, fnr, resp) -> func (sb *spdkBackend) Format -> switch req.Properties.Class -> 根据类型格式化
+    return sb.formatAioFile(&req) -> createAioFile
+    return sb.formatKdev(&req)
+    return sb.formatNvme(&req)
+      dl, err := substituteVMDAddresses(sb.log, needDevs, req.BdevCache)
+      sb.binding.init(sb.log, spdkOpts) -> func (w *spdkWrapper) init(log logging.Logger, spdkOpts *spdk.EnvOptions) 
+        w.suppressOutput -> 抑制输出是一种可怕的黑客攻击，因为 SPDK 对标准输出胡言乱语，导致控制台垃圾邮件并扰乱服务器和特权助手之间的安全通信通道
+         w.InitSPDKEnv
+          C.daos_spdk_init -> daos_spdk_init(int mem_sz, char *env_ctx, size_t nr_pcil, char **pcil)
+            spdk_env_init(&opts) -> 初始化spdk环境(dpdk)
+          C.spdk_vmd_init()
+      sb.binding.Format(sb.log) -> func (n *NvmeImpl) Format -> 通过SPDK可格式化设备，破坏性操作！ 尝试擦除每个控制器命名空间的 LBA-0。 然后删除每个格式化设备的锁定文件
+        collectFormatResults(C.nvme_wipe_namespaces() -> nvme_wipe_namespaces(void)
+          spdk_nvme_probe(NULL, NULL, probe_cb, attach_cb, NULL)
+          ret->wipe_results = wipe_ctrlrs() -> wipe_ctrlr(centry)
+            spdk_pci_addr_fmt(res->ctrlr_pci_addr, sizeof(res->ctrlr_pci_addr), &centry->pci_addr)
+            qpair = spdk_nvme_ctrlr_alloc_io_qpair(centry->ctrlr, NULL, 0)
+            buf =  spdk_dma_zmalloc(4096, 4096, NULL)
+            rc = spdk_nvme_ns_cmd_write(nentry->ns, qpair,
+					    buf, 0 /** LBA start */,
+					    4096 / sector_size /** #LBAS */,
+					    write_complete, &data, 0)  -> 将LBA0写0
+            spdk_nvme_ctrlr_free_io_qpair(qpair)
+        resultPCIAddresses(results)
+        cleanLockfiles(log, realRemove, pciAddrs...) -> const lockfilePathPrefix = "/var/tmp/spdk_pci_lock_" -> 删除锁文件
+  ei.NotifyStorageReady()
 
 
 dc_pool_query
@@ -5245,3 +5358,6 @@ ds_cont_op_handler(crt_rpc_t *rpc, int cont_proto_ver)
 ---------------------------------------- DL ----------------------------------------
 
 
+---------------------------------------- DL ----------------------------------------
+daos_agent:
+dlv attach `ps aux|grep 'daos_agent'|grep -v grep|awk '{print$2}'`
