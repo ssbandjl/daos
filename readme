@@ -1374,14 +1374,6 @@ crt_ctx_epi_abort
   crt_rpc_complete
 
 
-StorageFormat 在请求的主机列表中提供的所有主机或所有已配置的主机（如果未明确指定）并发执行存储准备步骤。 该函数会阻塞，直到收到所有结果（成功或失败），并返回一个包含所有主机存储准备操作结果的响应结构。
-dmg storage format  Format SCM and NVMe storage attached to remote servers.
-type storageFormatCmd struct
-func (cmd *storageFormatCmd) Execute
-  func StorageFormat
-    checkFormatReq
-
-
 
 dc_pool_query
 
@@ -4489,12 +4481,12 @@ crt_ctx_epi_abort
 
 
 StorageFormat 在请求的主机列表中提供的所有主机或所有已配置的主机（如果未明确指定）并发执行存储准备步骤。 该函数会阻塞，直到收到所有结果（成功或失败），并返回一个包含所有主机存储准备操作结果的响应结构。
-dmg storage format  Format SCM and NVMe storage attached to remote servers.
+dmg storage format  # Format SCM and NVMe storage attached to remote servers.
 type storageFormatCmd struct
 func (cmd *storageFormatCmd) Execute
-  func StorageFormat
-    checkFormatReq
-
+  func StorageFormat(ctx context.Context, rpcClient UnaryInvoker, req *StorageFormatReq) (*StorageFormatResp, error) -> StorageFormat 在请求的主机列表中提供的所有主机上同时执行存储准备步骤，如果未明确指定，则在所有已配置的主机上执行存储准备步骤。 该函数将阻塞，直到收到所有结果（成功或失败），并返回包含所有主机存储准备操作结果的单个响应结构
+    checkFormatReq(ctx, rpcClient, req)
+    return ctlpb.NewCtlSvcClient(conn).StorageFormat(ctx, pbReq)
 
 
 dc_pool_query
@@ -5206,6 +5198,10 @@ daos_cont_create2 -> daos_cont_create
         dc_mgmt_pool_find
       cont_req_create(daos_task2ctx(task), &ep, CONT_CREATE, &rpc) -> 创建容器操作 -> ds_cont_op_handler
       tse_task_register_comp_cb(task, cont_create_complete 完成回调
+        cont_rsvc_client_complete_rpc
+          tse_task_reinit(task) 重新初始化任务并将其移至调度程序的初始化列表中。 该任务必须具有要重新插入调度程序的主体函数。 如果任务在其完成 CB 之一中重新初始化，则该回调和已执行的回调将从 cb 列表中删除，并且需要在重新插入后由用户重新注册
+
+
 
 服务端创建容器
 ds_cont_op_handler(crt_rpc_t *rpc, int cont_proto_ver)
@@ -5247,4 +5243,5 @@ ds_cont_op_handler(crt_rpc_t *rpc, int cont_proto_ver)
   ds_pool_hdl_put(pool_hdl)
 
 ---------------------------------------- DL ----------------------------------------
+
 
