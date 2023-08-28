@@ -3439,6 +3439,7 @@ vos_db_init vos初始化 元数据初始化 -> vos_db_init_ex(db_path, NULL, fal
     mkdir(vdb->db_path, 0777)
     vos_pool_create(vdb->db_file, vdb->db_pool, SYS_DB_SIZE, 0, VOS_POF_SYSDB, &vdb->db_poh) -> 创建vosp 系统scm池(128MB) jump, 0个blob, 
     vos_pool_create_ex(const char *path, uuid_t uuid, daos_size_t scm_sz, daos_size_t nvme_sz, daos_size_t wal_sz, unsigned int flags, daos_handle_t *poh) -> wal_sz=0
+    
     vos_cont_create(vdb->db_poh, vdb->db_cont) 在vos池中(vpool)创建一个容器
       cont_df_lookup(vpool, &ukey, &args)
         dbtree_lookup(vpool->vp_cont_th, &key, &value) b树搜索
@@ -3750,14 +3751,29 @@ tgt_vos_create_one
         vos_tls_get()->vtl_pool_hhash
       *pool = pool_hlink2ptr(hlink)
     vos_pmemobj_create 0600 -rw- (600) 只有拥有者有读写权限 在创建/连接/关闭池时的blob对应的操作, /mnt/daos/daos_sys/sys_db
-      pop = pmemobj_create(path, layout, poolsize, mode) 创建持久内存对象,取scm大小
-    pmemobj_ctl_set(ph, "stats.enabled", &enabled) 启用使用率统计, scm和nvme
-    pool_df = vos_pool_pop2df(ph) pm转持久格式
+    vos_pmemobj_create(path, uuid, VOS_POOL_LAYOUT, scm_sz, nvme_sz, wal_sz, flags, &ph)
+      struct bio_xs_context	*xs_ctxt = vos_xsctxt_get() -> 每个xs一个nvme上下文
+      store.store_type = umempobj_get_backend_type() -> 默认pm作后端, daos_md_backend = DAOS_MD_PMEM
+      bio_mc_create(xs_ctxt, pool_id, meta_sz, wal_sz, nvme_sz, mc_flags)
+      bio_mc_open(xs_ctxt, pool_id, mc_flags, &mc)
+      bio_meta_get_attr(mc, &store.stor_size, &store.stor_blk_size, &store.stor_hdr_blks)
+      pop = umempobj_create(path, layout, UMEMPOBJ_ENABLE_STATS, scm_sz, 0600, &store)
+        pop = pmemobj_create(path, layout_name, poolsize, mode) -> 创建持久内存对象,取scm大小 -> pmdk笔记: https://blog.csdn.net/Sylvia_Wu51/article/details/117442789, 创建pm内存池: https://manpages.debian.org/experimental/libpmemobj-dev/pmemobj_create.3.en.html, 参考:持久内存编程开发人员综合指南
+      pmemobj_ctl_set(pop, "stats.enabled", &enabled) -> 启用使用率统计, scm和nvme
+      register_slabs(umm_pool) -> register_slabs(struct umem_pool *ph_p) -> slab_map[] -> 不同大小的slab
+        __builtin_ctz(used) -> 返回输入数二进制表示从最高位开始(左起)的连续的0的个数
+        set_slab_desc(ph_p, slab) -> 创建slab
+          pmemobj_ctl_set(pop, "heap.alloc_class.new.desc", &pmemslab) -> 创建pool_set, 参考: https://cloud.tencent.com/developer/article/1747314, 官方API: http://wlemkows.github.io/pmdk/manpages/linux/v1.6/libpmemobj/pmemobj_ctl_get.3
+    ...
+    pool_df = vos_pool_pop2df(ph) pm转持久格式 -> umempobj_get_rootptr
       TOID(struct vos_pool_df) pool_df
       pool_df = POBJ_ROOT(pop, struct vos_pool_df) 获取根
         pmemobj_root(PMEMobjpool *pop, size_t size)
-    umem_class_init(&uma, &umem) 通过uma中的属性实例化一个内存类umm
+    uma.uma_id = umempobj_backend_type2class_id(ph->up_store.store_type)
+    umem_class_init(&uma, &umem) 通过uma中的属性实例化一个内存类umm -> static umem_ops_t	vmem_ops
       set_offsets(umm) 为池计算出必要的偏移量和基地址, 如果是vmem则置零
+        pmemobj_root
+        pmemobj_direct
     umem_tx_begin(&umem, NULL) 开始事务
       umm->umm_ops->mo_tx_begin(umm, txd)  .mo_tx_begin		= pmem_tx_begin, 开始pm事务
         pmemobj_tx_begin(umm->umm_pool  可变参数
@@ -3876,7 +3892,8 @@ rsvc 复制服务
 [                rdb                ]
 [ raft ]
 [                vos                ]
-
+umm
+pmdk/mem/bio/vea
 
 ---------------------------------------- DL ----------------------------------------
 
@@ -5379,3 +5396,14 @@ ds_cont_op_handler(crt_rpc_t *rpc, int cont_proto_ver)
 ---------------------------------------- DL ----------------------------------------
 daos_agent:
 dlv attach `ps aux|grep 'daos_agent'|grep -v grep|awk '{print$2}'`
+
+
+
+- 持久内存和易失性内存的内存抽象
+- 通用 btree（更像是 b+tree 的变体）实现。
+。 树创建/销毁/打开/关闭
+。 记录插入（树分裂/增长）
+。 记录查找
+。 迭代器
+。 仍然不支持删除
+
