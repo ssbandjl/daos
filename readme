@@ -721,8 +721,25 @@ crt_req_send(req, shard_update_req_cb, remote_arg) 将用户回调设置为完�
 dmg server set-logmasks err
 
 
-vos_tests: gdb /opt/daos/bin/vos_tests
+vos_tests: gdb /opt/daos/bin/vos_tests ->  main
 set args -p 
+daos_debug_init
+strcpy(vos_path, "/mnt/daos")
+vos_self_init(vos_path, false, BIO_STANDALONE_TGT_ID)
+  ABT_init(0, NULL)
+  vos_standalone_tls_init(DAOS_TGT_TAG)
+  vos_self_nvme_init(db_path)
+    dbtree_class_register(DBTREE_CLASS_IV, BTR_FEAT_UINT_KEY | BTR_FEAT_DIRECT_KEY, &dbtree_iv_ops)
+    dbtree_class_register(DBTREE_CLASS_IFV, BTR_FEAT_UINT_KEY | BTR_FEAT_DIRECT_KEY,&dbtree_ifv_ops) -> AOS-11757 common：为固定大小值添加 DBTREE_CLASS_IFV (#10457)，为了避免当值是固定大小时在 btree 记录中进行额外的、不必要的分配，请内联用户定义的记录。 我们可以将其应用于内存树和持久格式树，因为 vea_format 将在池创建的上下文中运行，并且新创建的池不需要保持向后兼容性。 vea 没有从旧池升级的路径，但这是我们可以忍受的限制。 稍微修改兼容性代码以简化兼容性标志的设置。从最近意外添加的 run_test.sh 中删除 -x
+    fd = open(nvme_conf, O_RDONLY, 0600)
+    rc = bio_nvme_init(nvme_conf, VOS_NVME_NUMA_NODE, VOS_NVME_MEM_SIZE, VOS_NVME_HUGEPAGE_SIZE, VOS_NVME_NR_TARGET, true) -> bio_nvme_init (nvme_conf=nvme_conf@entry=0x55555687e0f0 "/mnt/daos/daos_nvme.conf", numa_node=numa_node@entry=-1, mem_size=mem_size@entry=1024, hugepage_size=hugepage_size@entry=2, tgt_nr=tgt_nr@entry=1,bypass_health_collect=bypass_health_collect@entry=true)
+    
+  vos_mod_init()
+  vos_db_init_ex(db_path, "self_db", true, true)
+  db = vos_db_get()
+  rc = smd_init(db)
+  bio_xsctxt_alloc(&self_mode.self_xs_ctxt, tgt_id, true)
+
 
 启动容器:
 daos_start_all
@@ -3162,7 +3179,7 @@ dss_srv_handler 服务控制器，设置cpu亲和性，初始化TLS，crt， nvm
   crt_context_register_rpc_task dss_rpc_hdlr dss_iv_resp_hdlr 注册两个公共回调
   crt_context_idx
   tse_sched_init 使用可选的完成回调和指向用户数据的指针初始化调度程序。 调用者负责完成或取消调度程序。
-  bio_xsctxt_alloc 初始化spdk环境和nvme上下文 
+  bio_xsctxt_alloc 初始化spdk环境和nvme上下文, 为主 XS 初始化 SPDK env 和 per-xstream NVMe 上下文
   dss_nvme_poll_ult
   for (;;) 死循环
     crt_progress
@@ -5082,9 +5099,10 @@ crt_reply_send
   NA_Msg_send_expected
 
 
-
-单元测试, src/tests, 定义单元测试: cmocka_unit_test, 执行测试: run_all_tests, static const struct CMUnitTest pool_tests
+---------------------------------------- DL ----------------------------------------
+单元测试, test, cmocka, src/tests, 定义单元测试: cmocka_unit_test, 执行测试: run_all_tests, static const struct CMUnitTest pool_tests
 执行测试: cmocka_run_group_tests_name, run_pool_test
+*_ut.c, *_tests.c, 
 
 struct CMUnitTest // cmock测试结构体, https://api.cmocka.org/structCMUnitTest.html
 const char * 	name
@@ -5099,6 +5117,46 @@ dfs文件系统测试: dfs_unit_test.c
 事件队列EQ测试: static const struct CMUnitTest eq_uts[]
 
 wal: wal_ut.c -> bio_ut
+
+
+
+每服务元数据单元测试: smd_ut -> main
+smd_ut_setup
+  daos_debug_init
+  db_init()
+  smd_init(&ut_db.ud_db)
+smd_uts
+  ut_device
+    smd_dev_add_tgt(dev_id1, 0, SMD_DEV_TYPE_DATA)
+    dev.sd_state	= SMD_DEV_NORMAL
+    smd_db_tx_begin() -> null
+    smd_db_upsert(TABLE_DEV, &id, sizeof(id), &dev, sizeof(dev)) -> db_upsert(struct sys_db *db, char *table, d_iov_t *key, d_iov_t *val)
+      chain = db_chain_alloc(key->iov_len, val->iov_len) -> db_chain_alloc(int key_size, int val_size) -> calloc
+      d_list_add_tail(&chain->uc_link, head)
+    smd_db_upsert(TABLE_TGTS[st], &tgt_id, sizeof(tgt_id), &id, sizeof(id))
+    smd_dev_set_state(dev_id2, SMD_DEV_FAULTY) -> dev.sd_state = state
+    smd_dev_get_by_id(id3, &dev_info) -> smd_dev_get_info
+    verify_dev(dev_info, dev_id1, 1)
+    smd_dev_get_by_tgt
+  -----------------------
+  ut_pool
+    smd_pool_add_tgt(id1, i, i << 10, st, 100)
+    smd_pool_get_info(id1, &pool_info)
+    verify_pool(pool_info, id1, 10)
+    smd_pool_get_blob(id1, i, st, &blob_id)
+    smd_pool_list(&pool_list, &pool_cnt)
+  -----------------------
+  ut_dev_replace
+    smd_dev_replace
+      smd_db_delete
+      smd_db_upsert
+      smd_pool_replace_blobs_locked
+smd_ut_teardown
+
+---------------------------------------- DL ----------------------------------------
+
+
+
 
 scons默认环境: DefaultEnvironment
 设置参数: CCFLAGS
@@ -5406,4 +5464,23 @@ dlv attach `ps aux|grep 'daos_agent'|grep -v grep|awk '{print$2}'`
 。 记录查找
 。 迭代器
 。 仍然不支持删除
+
+
+
+bio_ut.c -> main -> bio单元测试
+run_wal_tests
+wal_ut_setup
+wal_uts
+  wal_ut_single
+  wal_ut_many_acts
+  wal_ut_checkpoint
+  ...
+wal_ut_teardown
+
+
+
+vea_ut.c -> main
+vea_uts
+
+vea_tx_publish -> 使预订持久化。 它应该是调用者操纵的事务的一部分
 
