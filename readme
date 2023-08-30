@@ -721,7 +721,7 @@ crt_req_send(req, shard_update_req_cb, remote_arg) 将用户回调设置为完�
 dmg server set-logmasks err
 
 
-vos_tests: gdb /opt/daos/bin/vos_tests ->  main
+vos_tests: gdb /opt/daos/bin/vos_tests ->  main -> vos_tests.c -> test_ut_vos.test.sh
 set args -p 
 daos_debug_init
 strcpy(vos_path, "/mnt/daos")
@@ -747,7 +747,8 @@ vos_self_init(vos_path, false, BIO_STANDALONE_TGT_ID)
         spdk_log_set_print_level(SPDK_LOG_ERROR)
         spdk_env_opts_init(&opts)
       bio_nvme_configured -> 检查是否配置了指定类型的NVMe设备，当指定SMD_DEV_TYPE_MAX时，如果配置了任意类型的设备则返回true, TODO：将 opts.mem_size 设置为 nvme_glb.bd_mem_size 目前我们无法保证干净关闭（没有泄漏大页）。 设置mem_size可能会导致EAL：没有足够的内存可用错误，并且DPDK将无法初始化
-      set_faulty_criteria
+      set_faulty_criteria -> DAOS-4713 bio：引入可重试的 DER_NVME_IO (#10589)，引入可重试的错误 DER_NVME_IO，一旦从 SSD 读取时获取请求遇到 NVMe I/O 错误，此 -DER_NVME_IO 将返回给客户端，然后客户端将 使用与 -DER_CSUM 错误相同的机制来重试从副本（如果有）中获取，此补丁还包括自动 SSD 故障检测的代码更改，自动故障功能现在默认禁用，一旦启用，将返回 -DER_NVME_IO 同样进行 NVMe 写入，然后客户端不会使 I/O 失败，而是不断重试，直到 SSD 被标记为故障并且受影响的目标被标记为 DOWN -> 设置故障标准
+        d_getenv_bool("DAOS_NVME_AUTO_FAULTY_ENABLED", &glb_criteria.fc_enabled)
       ...
   vos_mod_init()
   vos_db_init_ex(db_path, "self_db", true, true)
@@ -3264,7 +3265,7 @@ vos_tls_init 初始化vos本地线程存储
 dss_nvme_poll_ult
   dss_get_module_info
   dss_current_xstream
-  bio_nvme_poll poll nvme完成事件
+  bio_nvme_poll -> poll nvme完成事件
     spdk_thread_poll
     is_bbs_owner
     bio_bs_monitor
@@ -3273,9 +3274,6 @@ dss_nvme_poll_ult
     bio_led_event_monitor
   ABT_thread_yield
 
-
-vos线程模型
-bio_nvme_poll
 
 
 nvme配置文件
@@ -3348,7 +3346,7 @@ dss_module_init_one
 关键字: .sm_name 模块名
 enum daos_module_id 模块ID
 vos_srv -> vos_srv_module
-vos_mod_init vos初始化
+vos_mod_init vos模块初始化
   vos_pool_settings_init vos池初始化设置
     pmemobj_ctl_set(NULL, "heap.arenas_assignment_type", &atype) 线程使用1个全局的arena POBJ_ARENAS_ASSIGNMENT_GLOBAL 全局模式
   vos_cont_tab_register 注册容器 VOS_BTR_CONT_TABLE class: 14
@@ -5560,3 +5558,9 @@ daos_task_reset -> 使用另一个操作码重置 DAOS 任务。 该任务必须
 
 指标: engine_io_latency_tgt_update_{min|mean|max} and engine_io_latency_update_{min|mean|max}
 更新副本对象。 客户端需要先将更新RPC发送给一个引擎（称为领导者），然后该引擎将更新RPC（tgt_update）转发给其他引擎，一旦所有引擎完成更新，领导者就会回复客户端。 所以更新 RPC 是从客户端到领导者的 RPC。 （engine_io_latency_update用于描述整个更新的延迟）。 tgt_update RPC是从leader到其他引擎的RPC，（engine_io_latency_tgt_update用于描述一个引擎的更新延迟，即其他引擎处理来自leader的tgt_update RPC
+
+
+
+bio_media_error | bio_bs_monitor <- bio_nvme_poll
+auto_faulty_detect(struct bio_blobstore *bbs)
+  is_bbs_faulty(bbs)
