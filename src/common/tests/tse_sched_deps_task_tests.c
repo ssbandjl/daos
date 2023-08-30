@@ -738,6 +738,7 @@ sched_test_6(void **state)
 		D_GOTO(out, rc = -DER_INVAL);
 	}
 
+	/////////////////////////////////////////////////
 	*counter = 0;
 	print_message("Test 1 -> N dependencies\n");
 	rc = tse_task_create(inc_func, &sched, counter, &task);
@@ -754,7 +755,7 @@ sched_test_6(void **state)
 			D_GOTO(out, rc);
 		}
 
-		rc = tse_task_register_deps(tasks[i], 1, &task);
+		rc = tse_task_register_deps(tasks[i], 1, &task); // 
 		if (rc != 0) {
 			print_error("Failed to register task Deps: %d\n", rc);
 			D_GOTO(out, rc);
@@ -1354,12 +1355,12 @@ sched_ut_teardown(void **state)
 }
 
 static const struct CMUnitTest sched_uts[] = {
+	{ "SCHED_Test_6", sched_test_6, NULL, NULL}, // 依赖任务测试
 	{ "SCHED_Test_1", sched_test_1, NULL, NULL},
 	{ "SCHED_Test_2", sched_test_2, NULL, NULL},
 	{ "SCHED_Test_3", sched_test_3, NULL, NULL},
 	{ "SCHED_Test_4", sched_test_4, NULL, NULL},
 	{ "SCHED_Test_5", sched_test_5, NULL, NULL},
-	{ "SCHED_Test_6", sched_test_6, NULL, NULL},
 	{ "SCHED_Test_7", sched_test_7, NULL, NULL},
 	{ "SCHED_Test_8", sched_test_8, NULL, NULL},
 	{ "SCHED_Test_9", sched_test_9, NULL, NULL},
