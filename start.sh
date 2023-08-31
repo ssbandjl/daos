@@ -35,3 +35,7 @@ daos_server start &
 sleep 5
 dmg storage format
 
+
+
+# centos7
+# cp -r /home/xb/project/stor/daos/main/daos/daosCA/certs /etc/daos/

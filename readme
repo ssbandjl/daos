@@ -4,6 +4,7 @@ daos开发文档_容器增删改查: https://docs.daos.io/v2.5/user/container/, 
 公共组件: https://github.com/daos-stack/daos/tree/master/src/common
 c_raft实现: https://github.com/willemt/raft, 文档: raft.h, 
 
+依赖缓存包: http://rz2fg6ogr.hn-bkt.clouddn.com/cache_tgz
 
 
 欢迎对DAOS, SPDK, RDMA等高性能技术感兴趣的朋友加入[DAOS技术交流(群)]
@@ -5564,3 +5565,25 @@ daos_task_reset -> 使用另一个操作码重置 DAOS 任务。 该任务必须
 bio_media_error | bio_bs_monitor <- bio_nvme_poll
 auto_faulty_detect(struct bio_blobstore *bbs)
   is_bbs_faulty(bbs)
+
+
+
+centos7:
+scl enable devtoolset-9 bash
+
+import pdb; pdb.set_trace()
+
+
+
+parse_device_info
+
+
+func (sb *spdkBackend) Scan
+  groomDiscoveredBdevs(needDevs, foundDevs, req.VMDEnabled)
+
+dlv exec ./daos_server nvme scan -> func (cmd *scanNVMeCmd) Execute -> func (cmd *scanNVMeCmd) scanNVMe
+  scanBackend -> func (scs *StorageControlService) NvmeScan -> 
+  f.SendReq("BdevScan" ->  pbinPath, err := common.FindBinary(f.pbinName) -> daos_server_helper -> child := exec.CommandContext(ctx, binPath) -> /opt/daos/bin/daos_server_helper
+src/control/cmd/daos_server_helper/main.go
+h.bdevProvider.Scan(sReq)
+

@@ -1,0 +1,51 @@
+ 355  git submodule update --init --recursive
+  356  scons --jobs 1 install PREFIX=/opt/daos BUILD_TYPE=debug TARGET_TYPE=debug --build-deps=yes
+  357  yum install -y boost-python36-devel bzip2 clang-analyzer cmake CUnit-devel e2fsprogs file flex fuse3 fuse3-devel gcc gcc-c++ git golang graphviz hwloc-devel ipmctl java-1.8.0-openjdk json-c-devel lcov libaio-devel libcmocka-devel libevent-devel libipmctl-devel libiscsi-devel libtool libtool-ltdl-devel libunwind-devel libuuid-devel libyaml-devel Lmod lz4-devel make maven ndctl numactl numactl-devel openmpi3-devel openssl-devel patch patchelf pciutils python3-devel python3-pip sg3_utils sudo valgrind-devel yasm
+  358  yum install -y scons
+  359  yum install -y scons3
+  360  yum install -y scons-3
+  361  scons --jobs 1 install PREFIX=/opt/daos BUILD_TYPE=debug TARGET_TYPE=debug --build-deps=yes
+  362  yum install -y python3-scons
+  363  scons3 --jobs 1 install PREFIX=/opt/daos BUILD_TYPE=debug TARGET_TYPE=debug --build-deps=yes
+  364  scons-3 --jobs 1 install PREFIX=/opt/daos BUILD_TYPE=debug TARGET_TYPE=debug --build-deps=yes
+  365  gcc -v
+  366  find / -name "stdatomic.h "
+  367  find / -name "stdatomic.h"
+  368  yum install -y libatomic
+  369  scons-3 --jobs 1 install PREFIX=/opt/daos BUILD_TYPE=debug TARGET_TYPE=debug --build-deps=yes
+  370  find / -name "stdatomic.h"
+  371  yum install -y libatomic-dev
+  372  rpm -qa|grep libatomic
+  373  rpm -qal libatomic-4.8.5-44.el7.x86_64
+  374  rpm -ql libatomic-4.8.5-44.el7.x86_64
+  375  libatomic
+  376  /usr/bin/ld
+  377  ldd -v
+  378  ldd --version
+  379  yum install centos-release-scl
+  380  nvme list
+  381  gcc -v
+  382  scons-3 --jobs 1 install PREFIX=/opt/daos BUILD_TYPE=debug TARGET_TYPE=debug --build-deps=yes
+  383  gcc -v
+  384  yum install -y libatomic-dev
+  385  yum install -y libatomic
+  386  rpm -e libatomic
+  387  yum install -y libatomic
+  388  rpm -ql libatomic-4.8.5-44.el7.x86_64
+  389  history
+
+CentOS 7.9
+sudo pip3 install setuptools-rust
+sudo pip3 install --upgrade pip
+
+
+pip3 install -r requirements.txt
+
+env=Environment(
+
+scons CC=/path/to/toolset/gcc CXX=/path/to/toolset/g++
+
+distro 提供有关其运行的操作系统发行版的信息，例如可靠的机器可读 ID 或版本信息
+
+mkdir -p /usr/share/spdk/scripts/
+cp /opt/daos/prereq/debug/spdk/share/spdk/scripts/setup.sh /usr/share/spdk/scripts/setup.sh

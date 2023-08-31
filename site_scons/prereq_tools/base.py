@@ -47,6 +47,15 @@ from SCons.Errors import InternalError
 # cache_dir = '/home/daos/pre/cache' # for docker image
 cache_dir = 'cache' # for docker container scons build
 
+def prRed(skk): print("\n\033[91m{}\033[00m" .format(skk))
+def prGreen(skk): print("\n\033[92m{}\033[00m" .format(skk))
+def prYellow(skk): print("\n\033[93m{}\033[00m" .format(skk))
+def prLightPurple(skk): print("\n\033[94m{}\033[00m" .format(skk))
+def prPurple(skk): print("\n\033[95m{}\033[00m" .format(skk))
+def prCyan(skk): print("\n\033[96m{}\033[00m" .format(skk))
+def prLightGray(skk): print("\n\033[97m{}\033[00m" .format(skk))
+def prBlack(skk): print("\n\033[98m{}\033[00m" .format(skk))
+
 
 class DownloadFailure(Exception):
     """Exception raised when source can't be downloaded
@@ -298,7 +307,7 @@ build with random upstream changes.
             raise DownloadFailure(self.url, subdir)
         com_name=subdir.split("/")[-1]
         dir_name_cache = "%s/%s" %(cache_dir, com_name)
-        print("com_name:{}, dir_name_cache:{}, subdir:{}".format(com_name, dir_name_cache, subdir))
+        prGreen("com_name:{}, dir_name_cache:{}, subdir:{} base.py:310".format(com_name, dir_name_cache, subdir))
         commands=None
         
         if os.path.exists(subdir):
@@ -310,6 +319,7 @@ build with random upstream changes.
           print("use cache, dir_name_cache:%s, url:%s, subdir:%s" %(dir_name_cache, self.url, subdir))
         else:
           commands = [['git', 'clone', self.url, subdir]]
+          prRed("no cache, use cmd:{}".format(commands))
         if not RUNNER.run_commands(commands):
             raise DownloadFailure(self.url, subdir)
         
@@ -1171,7 +1181,9 @@ class _Component():
             print('help set')
             return True
 
-        print(f"Checking targets for component '{self.name}'")
+        prGreen(f"Checking targets for component '{self.name}'")
+        # if self.name == 'argobots':
+        #     return False
 
         config = env.Configure()
         config_cb = self.key_words.get("config_cb", None)

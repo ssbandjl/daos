@@ -370,9 +370,12 @@ def scons():
     """Perform the build"""
 
     check_for_release_target()
-
-    deps_env = Environment()
-
+    
+    # 主要为了导入gcc环境(使用当前环境)
+    deps_env = Environment(ENV = {'PATH' : os.environ['PATH']})
+    
+    
+    # print("###########", deps_env)
     add_command_line_options()
 
     # Scons strips out the environment, however that is not always desirable so add back in
@@ -420,14 +423,17 @@ def scons():
     env_script = deps_env.get('ENV_SCRIPT')
     if os.path.exists(env_script):
         load_local(env_script, deps_env)
-
+    # import pdb; pdb.set_trace()
     # Perform this check early before loading PreReqs as if this header is missing then we want
     # to exit before building any dependencies.
+    # deps_env.AppendUnique(CPPPATH="/opt/rh/devtoolset-8/root/usr/include")
+    
+    # import pdb; pdb.set_trace()
     if not GetOption('help'):
 
         config = deps_env.Configure()
-        if not config.CheckHeader('stdatomic.h'):
-            Exit('stdatomic.h is required to compile DAOS, update your compiler or distro version')
+        # if not config.CheckHeader('stdatomic.h'):
+        #     Exit('stdatomic.h is required to compile DAOS, update your compiler or distro version')
         config.Finish()
 
     # Define and load the components.  This will add more values to opt.

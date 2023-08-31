@@ -936,8 +936,8 @@ parse_device_info(struct json_object *smd_dev, device_list *devices,
 	int			tgts_len;
 	int			i, j;
 	int			rc;
-	char			*tmp_var;
-	char			*saved_ptr;
+	char			*tmp_var = NULL;
+	char			*saved_ptr = NULL;
 
 	for (i = 0; i < dev_length; i++) {
 		dev = json_object_array_get_idx(smd_dev, i);
