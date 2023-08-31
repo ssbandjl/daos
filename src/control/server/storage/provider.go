@@ -388,7 +388,7 @@ func (p *Provider) FormatScm(force bool) error {
 	}
 
 	scmStr := fmt.Sprintf("SCM (%s:%s)", cfg.Class, cfg.Scm.MountPoint)
-	p.log.Infof("Instance %d: starting format of %s", p.engineIndex, scmStr)
+	p.log.Infof("Instance %d: starting format of %s src/control/server/storage/provider.go:391", p.engineIndex, scmStr)
 	res, err := p.scm.Format(*req)
 	if err == nil && !res.Formatted {
 		err = errors.Errorf("%s is still unformatted", cfg.Scm.MountPoint)

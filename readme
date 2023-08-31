@@ -5581,9 +5581,48 @@ parse_device_info
 func (sb *spdkBackend) Scan
   groomDiscoveredBdevs(needDevs, foundDevs, req.VMDEnabled)
 
+./build_qemu_centos7.sh;clear;daos_server nvme scan -b
 dlv exec ./daos_server nvme scan -> func (cmd *scanNVMeCmd) Execute -> func (cmd *scanNVMeCmd) scanNVMe
+  prepareNVMe(req, &cmd.nvmeCmd, prepResetBackend)
+    processNVMePrepReq
+      sanitizePCIAddrLists
+      updateNVMePrepReqFromConfig
+    prepareBackend(req)
   scanBackend -> func (scs *StorageControlService) NvmeScan -> 
   f.SendReq("BdevScan" ->  pbinPath, err := common.FindBinary(f.pbinName) -> daos_server_helper -> child := exec.CommandContext(ctx, binPath) -> /opt/daos/bin/daos_server_helper
 src/control/cmd/daos_server_helper/main.go
 h.bdevProvider.Scan(sReq)
+sb.binding.Discover(sb.log) -> func (n *NvmeImpl) Discover
+  collectCtrlrs(C.nvme_discover(), "NVMe Discover(): C.nvme_discover") -> nvme_discover(void) -> _discover(prober probe, bool detach, health_getter get_health) -> 发现 NVMe 控制器和命名空间，并返回设备运行状况信息
+    probe(NULL, NULL, probe_cb, attach_cb, NULL) -> spdk_nvme_probe(const struct spdk_nvme_transport_id *trid, void *cb_ctx -> printf("Attaching to %s\n", trid->traddr);
+      spdk_nvme_trid_populate_transport
+      spdk_nvme_probe_async
+    get_health(ctrlr_entry->ctrlr, health_entry) -> get_health_logs
+  pciAddrs := ctrlrPCIAddresses(ctrlrs)
+
+
+	spdk_nvme_trid_populate_transport(&g_trid, SPDK_NVME_TRANSPORT_PCIE);
+	snprintf(g_trid.subnqn, sizeof(g_trid.subnqn), "%s", SPDK_NVMF_DISCOVERY_NQN);
+
+fprintf(stderr, "probe rc:%d %s:%d\n", rc, __FILE__, __LINE__);
+fmt.Fprintf(os.Stderr, "########## %s,%s\n", want, discovered)
+
+daospath=/opt/daos
+ls -alh $daospath/share/daos/control/setup_spdk.sh
+ls -alh /usr/share/daos/control
+ln -sf $daospath/share/daos/control/setup_spdk.sh            /usr/share/daos/control
+ls -alh /usr/share/daos/control
+mkdir -p /usr/share/spdk/scripts
+ln -sf $daospath/prereq/debug/spdk/share/spdk/scripts/setup.sh /usr/share/spdk/scripts
+ln -sf $daospath/prereq/debug/spdk/share/spdk/scripts/common.sh /usr/share/spdk/scripts
+ls -alh /usr/share/spdk/include
+ln -s $daospath/include            /usr/share/spdk/include
+
+
+/opt/daos/prereq/debug/spdk/share/spdk/scripts/setup.sh
+
+
+func (p *Provider) mountRamdisk
+ramFsType = system.FsTypeTmpfs
+mount -> p.sys.Mount(src, target, fsType, flags, opts) -> mount -t tmpfs -o size=4g tmpfs /mnt/daos
 

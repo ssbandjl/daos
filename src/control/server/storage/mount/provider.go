@@ -90,7 +90,7 @@ func (p *Provider) mount(src, target, fsType string, flags uintptr, opts string)
 
 	p.log.Debugf("mount %s->%s (%s) (%s)", src, target, fsType, opts)
 	if err := p.sys.Mount(src, target, fsType, flags, opts); err != nil {
-		return nil, errors.Wrapf(err, "mount %s->%s failed", src, target)
+		return nil, errors.Wrapf(err, "mount %s->%s failed, fsType:%s, opts:%s, src/control/server/storage/mount/provider.go:93", src, target, fsType, opts)
 	}
 
 	// Adjust permissions on the mounted filesystem.
