@@ -756,6 +756,11 @@ vos_self_init(vos_path, false, BIO_STANDALONE_TGT_ID)
   db = vos_db_get()
   rc = smd_init(db)
   bio_xsctxt_alloc(&self_mode.self_xs_ctxt, tgt_id, true)
+  Using distance with closest side split for evtree
+run_all_tests(int keys) -> 所有的测试
+  dts_create_config(cfg_desc_io, "keys=%d", keys)
+  run_ts_tests -> lru
+  ...
 
 
 启动容器:
@@ -1006,7 +1011,7 @@ dfuse_main.c -> main
       eqt->de_handle = fs_handle -> 互存指针,双向绑定
     sem_init(&eqt->de_sem, 0, 0) -> 在 eq 之前创建信号量，因为无法检查 sem_init() 是否已被调用，如果没有调用 sem_destroy 也是无效的。 这样我们就可以避免添加额外的内存来跟踪信号量的状态
     daos_eq_create(&eqt->de_eq) -> 一个事件队列关联一个网络上下文， 跟踪池的多个事件 -> 创建事件队列。 事件队列用于保存和池化多个事件。 创建的每个事件队列都将创建一个与事件队列关联的网络（cart）上下文。 网络上下文创建是一项昂贵的操作，并且在某些系统上网络上下文的数量可能受到限制。 因此，建议不要在用户应用程序或中间件中创建大量事件队列
-      eq = daos_eq_alloc() -> 分配eq
+      eq = daos_eq_alloc() -> 分配eq, 初始化运行和完成队列
         D_INIT_LIST_HEAD(&eq->eq_running)
         D_INIT_LIST_HEAD(&eq->eq_comp)
         daos_hhash_hlink_init(&eqx->eqx_hlink, &eq_h_ops)
@@ -3144,7 +3149,8 @@ server_init(int argc, char *argv[])
       d_getenv_bool
       open(nvme_conf, O_RDONLY, 0600) 打开nvme配置文件
       smd_init(db) 服务元数据管理(每个服务) Per-Server Metadata Management (SMD),smd使用sysdb作为kv存储元数据
-      spdk_bs_opts_init 将 spdk_bs_opts 结构初始化为默认的 blobstore 选项值。
+      spdk_bs_opts_init 将 spdk_bs_opts 结构初始化为默认的 blobstore 选项值
+      bio_numa_node = SPDK_ENV_SOCKET_ID_ANY
       bio_spdk_env_init 环境初始化
         spdk_env_opts_init(&opts) 初始化选项 lib/env_dpdk/init.c -> spdk默认初始化
           opts->name = SPDK_ENV_DPDK_DEFAULT_NAME;
@@ -3163,7 +3169,13 @@ server_init(int argc, char *argv[])
           spdk_json_strequal(ctx->subsystem_name, "bdev")
           spdk_json_strequal(ctx->subsystem_name, BIO_DEV_TYPE_VMD) -> vmd
           check_vmd_status(ctx, vmd_ss, &vmd_enabled)
+          check_md_on_ssd_status(ctx, bdev_ss)
+            decode_subsystem_configs
+            check_name_from_bdev_subsys
           add_bdevs_to_opts
+        bio_set_hotplug_filter
+        bio_read_accel_props
+        bio_read_rpc_srv_settings
         spdk_env_init 初始化或重新初始化环境库。 对于初始化，必须在使用此库中的任何其他函数之前调用它。 对于重新初始化，参数 `opts` 必须设置为 NULL，并且必须在同一进程中通过 spdk_env_fini() 完成环境库后调用
           pci_env_reinit
           build_eal_cmdline
@@ -3171,7 +3183,7 @@ server_init(int argc, char *argv[])
           rte_eal_init(g_eal_cmdline_argcount, dpdk_args)  初始化环境抽象层 (EAL)。 此函数将仅在 MAIN lcore 上执行，并尽快在应用程序的 main() 函数中执行。 它将 WORKER lcores 置于 WAIT 状态。
           spdk_env_dpdk_post_init
         spdk_unaffinitize_thread 移除当前线程cpu亲和性
-        spdk_thread_lib_init 初始化线程库。 必须在分配任何线程之前调用一次。
+        spdk_thread_lib_init 初始化线程库。 必须在分配任何线程之前调用一次
     bio_register_bulk_ops(crt_bulk_create, crt_bulk_free)
     dss_xstreams_init
     bio_nvme_ctl  操纵全局 NVMe 配置/状态
@@ -5625,4 +5637,70 @@ ln -s $daospath/include            /usr/share/spdk/include
 func (p *Provider) mountRamdisk
 ramFsType = system.FsTypeTmpfs
 mount -> p.sys.Mount(src, target, fsType, flags, opts) -> mount -t tmpfs -o size=4g tmpfs /mnt/daos
+
+---------------------------------------- DL ----------------------------------------
+事件队列
+typedef struct daos_eq -> DAOS-245 事件：切换到每个 EQ 1 个调度程序，而不是每个事件 - 为没有 EQ 的事件创建一个全局调度程序（在这种情况下，另一种方法是为每个事件保留一个调度程序）。 - 为每个 EQ 创建调度程序并将 EQ 事件与其关联。 - 如果我们实现事件取消，则每个事件都需要 sched_cancel 的替代方案。 - 修复调度程序引用计数处理的错误 - 修复父事件的错误
+uint64_t	space[72] -> 72个uint64类型的数组(8B*72=最大576字节)
+
+----------------------------------------
+事件状态机:
+typedef enum {
+	DAOS_EVS_READY,
+	DAOS_EVS_RUNNING,
+	DAOS_EVS_COMPLETED,
+	DAOS_EVS_ABORTED,
+} daos_ev_status_t;
+
+--------------------------------------
+接口API:
+int daos_eq_create(daos_handle_t *eqh) -> 创建EQ
+ static struct daos_eq * daos_eq_alloc(void) -> 分配EQ, 初始运行和完成对列, 初始hash表,设置hash表操作(free)
+ crt_context_create(&eqx->eqx_ctx) -> 创建网络上下文
+ static void daos_eq_insert(struct daos_eq_private *eqx) -> 插入hash表
+ static void daos_eq_handle(struct daos_eq_private *eqx, daos_handle_t *h) -> 设置hash_key, 以cookie做为key
+ int tse_sched_init(tse_sched_t *sched, tse_sched_comp_cb_t comp_cb void *udata) -> 初始化调度器(初始/运行/完成/休眠/完成回调等队列), 设置调度器引用计数和飞行计数, 注册调度器回调, 为调度器绑定私有数据(如网络上下文)
+  tse_sched_register_comp_cb -> 注册完成回调 -> 完成回调等队列
+ daos_eq_putref -> EQ减引用(目前未实现)
+
+----------------------------------------
+daos_event_init -> 事件初始化, 设置EV状态为准备就绪, 初始子事件链表头, 初始化事件回调上的完成链表, 如果父事件不为空...
+  daos_eq_lookup -> 找到EQ
+  继承EQ的网络和调度器, EQ减引用(无)
+
+daos_event_launch -> 启动事件, 已就绪事件才能启动, 检查子事件个数, 如果运行中+已完成的子事件个数小于子事件总数, 则返回, 即所有子事件启动后才能启动父事件; 如果事件在终止中,则退出
+  daos_event_launch_locked(struct daos_eq_private *eqx, struct daos_event_private *evx) -> 加锁启动事件, 将事件状态修改为运行中, 如果有父事件,则为父事件的子事件的运行中计数+1, 将事件加入EQ运行队列, EQ运行计数+1
+  如果所有子事件在启动屏障父事件之前已经完成，则直接完成父事件, 
+
+
+void daos_event_complete(struct daos_event *ev, int rc) -> 完成1个事件, 判断状态机(运行中的事件才能标记为完成)
+  daos_event_complete_locked -> 加锁完成事件
+    daos_event_complete_cb ->遍历事件回调上的完成队列并执行回调
+    原子标记事件为已完成, 如有父事件, 更新父事件上子事件的运行和完成计数, 修改父事件状态, 完成被屏障拦住的父事件, 将自己设置为父事件等
+    将事件从EQ运行队列移动到EQ的完成队列, EQ完成计数+1,同时EQ运行计数-1
+
+
+int daos_event_abort(struct daos_event *ev) -> 终止事件(无具体实现), 只有运行中的事件才能被终止
+
+int daos_eq_destroy(daos_handle_t eqh, int flags) -> 销毁EQ(或强制,及不检查EQ运行和完成队列为空),运行和完成队列不为空且非强制模式, 则返回设备繁忙错误(DER_BUSY), 将EQ标记为终止中防止其他线程启动事件, 下刷EQ上网络上下文中的RPC, 终止所有启动的EV(运行队列上的EV)
+  tse_sched_complete(&eqx->eqx_sched, rc, true) -> 带取消参数完成调度器
+  crt_context_destroy(eqx->eqx_ctx, (flags & DAOS_EQ_DESTROY_FORCE)) -> 如果该EQ上的网络不是全局的网络上下文, 则将该网络上下文销毁,即保留全局的那个网络上下文
+  将EQ的网络上下文指针置空
+  daos_eq_delete(struct daos_eq_private *eqx) -> 删除hash表上的链接
+
+
+int daos_eq_poll(daos_handle_t eqh, int wait_running, int64_t timeout, unsigned int n_events, struct daos_event **events) -> 轮询EQ, 返回事件个数和事件列表
+  crt_progress_cond(epa.eqx->eqx_ctx, timeout, eq_progress_cb, &epa) -> 用网络上下文和参数, 事件处理回调去网络层polling, 减去因为查询EQ而增加的1个引用计数
+
+static int eq_progress_cb(void *arg) -> 网络层触发事件回调(网络首先调用一次事件回调, 避免错过恰好满足条件的场景), 从参数中拿到EQ
+  tse_sched_progress(&epa->eqx->eqx_sched) -> 根据EQ上的调度器, 对调度器加锁和引用计数, 执行一轮任务调度, EQ单元测试可能是空转
+  遍历EQ完成队列中的事件, 如果该EV还有子EV在运行, 则跳过次轮处理, 否则EQ完成计数-1, 从完成队列中删除该事件, 该事件只能是已完成或被终止, 重新设置EV状态为已就绪, 将该事件加入到返回的事件列表中, 如果事件列表个数达到指定的轮询个数,则终止遍历EQ的完成队列, 最后如果事件列表中有事件则对EQ解锁,并返回真值1
+
+int daos_event_fini(struct daos_event *ev) -> 终止事件, 从各种列表、parent_list、子列表和事件队列哈希列表中取消事件链接，并销毁所有子事件, EV不能是运行中, 销毁EV锁, 处理子EV, 处理父EV, 删除EV的链表, EV上的网络上下文置空, EQ引用-1
+
+
+
+
+---------------------------------------- DL ----------------------------------------
+
 
