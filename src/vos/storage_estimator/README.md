@@ -1,5 +1,5 @@
 
-# Storage Estimation Tool
+# Storage Estimation Tool 存储估算工具(vos元数据等)
 
 The daos_storage_estimator.py tool estimates the utilization of the Storage Class Memory (SCM) required for DAOS deployments. DAOS uses the <a href="https://github.com/daos-stack/daos/blob/master/src/vos/README.md">Versioning Object Store (VOS)</a> to keep track of the DAOS objects metadata.
 There are three options to feed the tool with the description of the items that will be stored in the <a href="https://github.com/daos-stack/daos/blob/master/src/client/dfs/README.md">DAOS File system</a>.

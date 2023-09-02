@@ -1,0 +1,15 @@
+DAOS客户端写流程
+启动DFUSE -> dfuse_do_work
+dfuse_cb_write
+  ibuf.buf[0].mem = ev->de_iov.iov_buf
+  rc = fuse_buf_copy(&ibuf, bufv, 0)
+  ev->de_iov.iov_len = len -> 用户数据 -> SGL
+  ---------
+  dfs_write
+    rg.rg_len = buf_size
+    iod.arr_rgs = &rg -> 通过IO描述, 将SGL -> DAOS连续记录的范围
+    ----------------
+    daos_array_write
+
+
+---------------------------------------- DL ----------------------------------------
