@@ -5623,7 +5623,7 @@ typedef enum {
 } daos_ev_status_t;
 
 --------------------------------------
-接口API:
+next_gen 接口API:
 int daos_eq_create(daos_handle_t *eqh) -> 创建EQ
  static struct daos_eq * daos_eq_alloc(void) -> 分配EQ, 初始运行和完成对列, 初始hash表,设置hash表操作(free)
  crt_context_create(&eqx->eqx_ctx) -> 创建网络上下文
@@ -5670,6 +5670,67 @@ int daos_event_fini(struct daos_event *ev) -> 终止事件, 从各种列表、pa
 
 
 
+------------------------------- tse -------------------------------
+创建任务, 依次传入: 任务函数, 调度器, 私有参数(一般是NULL), 任务二级指针(待返回的任务), 主要逻辑: 拿到调度器私有数据, 新建一个任务, 初始化该任务的链表, 任务队列, 依赖队列, 完成回调队列, 任务前置回调函数队列, 任务引用+1, 设置主体函数, 私有参数和调度器, 返回该任务
+tse_task_create(check_func_n, &sched, counter, &task)
+int tse_task_create(tse_task_func_t task_func, tse_sched_t *sched, void *priv, tse_task_t **taskp)
+
+
+-----------------------------------------
+int op_submit(tse_task_t *task)    // 任务主体函数
+{
+  struct op *op = tse_task_get_priv(task) // daos_task_get_args -> task_ptr2args
+}
+
+
+-----------------------------
+获取参数:
+static struct daos_task_args * task_ptr2args(tse_task_t *task)
+  return tse_task_buf_embedded(task, sizeof(struct daos_task_args))
+
+void * tse_task_buf_embedded(tse_task_t *task, int size) // 任务内嵌缓冲区, 获取任务的嵌入缓冲区，用户可以使用它来携带函数参数。 任务的嵌入缓冲区有大小限制，如果 buf_size 大于限制，该函数将返回 NULL。 用户应通过 tse_task_set_priv() 使用私有数据来传递大参数
+
+
+
+------------------
+调度任务, 参数: 任务, 立即调度, 主流程: 从task拿到调度器, 如果该任务没有依赖任务且任务前置工作也做完了, 则该任务已就绪, 则将调度器飞行计数+1, 设置调度器为运行中, 设置唤醒时间为0, 将任务加入调度器的运行队列, 可立即执行主体任务(忽略任务返回值)
+tse_task_schedule(task, true)
+int tse_task_schedule(tse_task_t *task, bool instant)
+int tse_task_schedule_with_delay(tse_task_t *task, bool instant, uint64_t delay)
+
+---------
+获取调度器进展(进度): 如果调度器是取消中, 则直接返回, 否则, 运行调度器 -> tse_sched_run(sched)
+tse_sched_progress(&sched)
+void tse_sched_progress(tse_sched_t *sched)
+
+在调度器上运行一轮任务: 完成调度器或没有任务处理时才返回 
+static void tse_sched_run(tse_sched_t *sched)
+
+
+初始化调度器进展: 将休眠中唤醒的任务加入初始队列, 遍历初始队列, 将没有依赖的主任务, 或者调度器处于取消状态时, 将该任务加入临时队列, 遍历临时队列, 如果调度器被取消, 则直接完成该任务(修改计数器, 标记任务完成, 加入调度器完成队列), 否则加入运行队列, 接着如果执行任务主体函数, 返回处理的个数
+static int tse_sched_process_init(struct tse_sched_private *dsp)
+
+------------------------------
+处理调度器完成: 将任务从调度器完成队列移除, 设置任务调度器结果, 检查任务依赖, 修改计数器
+tse_sched_process_complete(dsp)
+
+-----------------------------
+检查调度器是否完成(所有任务执行完成, 初始和休眠队列为空,且无飞行中的任务)
+bool tse_sched_check_complete(tse_sched_t *sched)
+
+
+------------------------------
+完成任务: 传入任务和返回值, 执行任务回调 -> tse_task_complete_callback(task), 完成任务, 更新调度器列表, 将该任务从调度器的完成列表移除
+tse_task_complete(task, rc)
+
+
+-----------------
+执行任务回调: 遍历任务上的完成回调列表，如果所有CB都执行完毕并且不重新初始化任务，则返回true。 如果任务被用户重新初始化，则意味着它再次处于运行状态，因此我们在重新初始化它的当前 CB 处中断，并返回 false，这意味着任务尚未完成。 所有剩余未执行的 CB 仍保持附加状态，但已执行的 CB 此时已从列表中删除,
+static bool tse_task_complete_callback(tse_task_t *task)
+
+
+
+
 
 ---------------------------------------- DL ----------------------------------------
 
@@ -5683,4 +5744,58 @@ obj_ioc_end(&ioc, rc)
   dss_rpc_cntr_exit
   obj_update_sensors
 obj_ioc_fini
+
+
+
+
+数据结构:
+tse相关
+#define TSE_TASK_ARG_LEN	(840 + sizeof(pthread_mutex_t)) -> DAOS-10148 tse：修复 TSE 任务缓冲区以适应 aarch64 架构 (#8747)，* arm 上的 pthread_mutex_t 比 x86 上长 8 个字节，因此调整 TSE 预分配缓冲区以修复静态编译时断言。 * 更新 tse 堆栈大小以使其相互依赖。 * 修复 dfuse_obj_da.h 中 aarch64 上的另一个大小问题
+tse_task 用于跟踪单个异步操作（公共成员使用 8 个字节）
+
+| --- 840B ---- | --- pthread_mutex_t --- | --- 136B --- | --- 8B(公共成员) --- |
+| SE_PRIV_SIZE                            |
+-------------------------------------------
+| TSE_PRIV_SIZE                                          |
+----------------------------------------------------------
+| TSE_TASK_SIZE                                                                 | 
+---------------------------------------------------------------------------------
+
+参数及联合体(ta_u) -> struct daos_task_args -> 字段: 魔术字, 操作码, 联合体ta_u, 事件
+
+struct tse_task_private -> 任务私有数据 -> 关键字段:
+  void				*dtp_priv;  -> 任务参数指针，可以在创建任务时赋值(一般都传递的NULL)，也可以显式调用API tse_task_priv_set, 如果参数结构足以适应，用户可以使用 dtp_buf 代替它
+  uint16_t			 dtp_stack_top; -> 为用户分配嵌入参数保留的缓冲区，它也可以用作任务堆栈空间，可以压入/弹出参数以方便 I/O 处理。 嵌入参数从底部开始使用缓冲区，堆栈空间从顶部向下增长。 dtp_stack_top 和 dtp_embed_top 之和不应超过 TSE_TASK_ARG_LEN
+  uint16_t			 dtp_embed_top;
+  char				 dtp_buf[TSE_TASK_ARG_LEN] -> 任务参数换缓冲区
+
+-----------
+linux 堆栈参考:
+堆栈
+虚拟地址空间分布: https://www.cnblogs.com/clover-toeic/p/3754433.html
+低地址                                                            
+0   0x8048000            heap        mmap        stack         0xc0000000(高地址)
+    .text  .data  .bss   ->          |  |        <-            kernel
+0x1000000 低地址 保留地址
+
+----------
+high
+stack
+
+heap
+low
+-----------
+
+high_addr 0xc0000000
+|-------------------
+|<--- dtp_buf
+|
+|<--- dtp_stack_top
+|
+|<--- dtp_embed_top
+|
+|-------------------
+low_addr 0x8048000
+
+
 

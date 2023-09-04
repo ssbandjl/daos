@@ -637,6 +637,8 @@ inc_func(tse_task_t *task)
 	return 0;
 }
 
+
+/* 主任务 */
 int
 check_func_n(tse_task_t *task)
 {
@@ -673,7 +675,7 @@ sched_test_6(void **state)
 	bool		flag;
 	int		i, rc;
 
-	TSE_TEST_ENTRY("6", "Task Dependencies");
+	TSE_TEST_ENTRY("6", "Task Dependencies"); // 依赖任务
 
 	print_message("Init Scheduler\n");
 	rc = tse_sched_init(&sched, NULL, 0);
