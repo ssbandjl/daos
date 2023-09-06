@@ -5608,7 +5608,7 @@ func (p *Provider) mountRamdisk
 ramFsType = system.FsTypeTmpfs
 mount -> p.sys.Mount(src, target, fsType, flags, opts) -> mount -t tmpfs -o size=4g tmpfs /mnt/daos
 
----------------------------------------- DL ----------------------------------------
+---------------------------------------- DL eq ----------------------------------------
 事件队列
 typedef struct daos_eq -> DAOS-245 事件：切换到每个 EQ 1 个调度程序，而不是每个事件 - 为没有 EQ 的事件创建一个全局调度程序（在这种情况下，另一种方法是为每个事件保留一个调度程序）。 - 为每个 EQ 创建调度程序并将 EQ 事件与其关联。 - 如果我们实现事件取消，则每个事件都需要 sched_cancel 的替代方案。 - 修复调度程序引用计数处理的错误 - 修复父事件的错误
 uint64_t	space[72] -> 72个uint64类型的数组(8B*72=最大576字节)
@@ -5671,9 +5671,24 @@ int daos_event_fini(struct daos_event *ev) -> 终止事件, 从各种列表、pa
 
 
 ------------------------------- tse -------------------------------
+初始化调度器: 在创建EQ的时候初始化1个调度器, 或使用全局EQ中的调度器
+tse_sched_init(&eqx->eqx_sched, NULL, eqx->eqx_ctx)
+
+
+
 创建任务, 依次传入: 任务函数, 调度器, 私有参数(一般是NULL), 任务二级指针(待返回的任务), 主要逻辑: 拿到调度器私有数据, 新建一个任务, 初始化该任务的链表, 任务队列, 依赖队列, 完成回调队列, 任务前置回调函数队列, 任务引用+1, 设置主体函数, 私有参数和调度器, 返回该任务
 tse_task_create(check_func_n, &sched, counter, &task)
 int tse_task_create(tse_task_func_t task_func, tse_sched_t *sched, void *priv, tse_task_t **taskp)
+
+--------------------------------
+设置参数: 客户端创建任务, 拿到任务的参数, 设置任务魔术字, DAOS_TASK_MAGIC, (防止踩内存, 校验任务有效, task_is_valid)
+daos_array_io_t	*args; -> 申明参数(如:数组IO读/写参数)
+dc_task_create(dc_array_write, NULL, ev, &task)
+args = dc_task_get_args(task); -> 返回联合体
+args->oh	= oh; -> 设置参数
+args->th	= th;
+args->iod	= iod;
+args->sgl	= sgl;
 
 
 -----------------------------------------
@@ -5684,11 +5699,12 @@ int op_submit(tse_task_t *task)    // 任务主体函数
 
 
 -----------------------------
-获取参数:
+获取参数: DAOS任务参数, 如: daos_array_io_t *args = daos_task_get_args(task)
 static struct daos_task_args * task_ptr2args(tse_task_t *task)
   return tse_task_buf_embedded(task, sizeof(struct daos_task_args))
 
 void * tse_task_buf_embedded(tse_task_t *task, int size) // 任务内嵌缓冲区, 获取任务的嵌入缓冲区，用户可以使用它来携带函数参数。 任务的嵌入缓冲区有大小限制，如果 buf_size 大于限制，该函数将返回 NULL。 用户应通过 tse_task_set_priv() 使用私有数据来传递大参数
+
 
 
 
@@ -5749,7 +5765,7 @@ obj_ioc_fini
 
 
 数据结构:
-tse相关
+------- tse -------
 #define TSE_TASK_ARG_LEN	(840 + sizeof(pthread_mutex_t)) -> DAOS-10148 tse：修复 TSE 任务缓冲区以适应 aarch64 架构 (#8747)，* arm 上的 pthread_mutex_t 比 x86 上长 8 个字节，因此调整 TSE 预分配缓冲区以修复静态编译时断言。 * 更新 tse 堆栈大小以使其相互依赖。 * 修复 dfuse_obj_da.h 中 aarch64 上的另一个大小问题
 tse_task 用于跟踪单个异步操作（公共成员使用 8 个字节）
 
@@ -5797,5 +5813,37 @@ high_addr 0xc0000000
 |-------------------
 low_addr 0x8048000
 
+
+
+------------------ vos --------------------------
+所有单元测试: run_all_tests(int keys), 化身日志, 
+
+agg -> 聚合测试 -> ./vos_tests -a -> main
+daos_debug_init
+vos_self_init
+run_aggregate_tests(true, "")
+  setup_io
+    srand(time(NULL)) -> 为函数 rand 使用的随机数生成器提供种子
+    test_args_init
+      vos_pool_create
+      vos_cont_create
+      vos_cont_open
+    vos_ts_table_get
+  aggregate_tests -> 聚合测试
+    ----------------------------
+    aggregate_1(void **state) -> 聚合单个akey, aggregate_basic(arg, &ds, 0, NULL) -> aggregate_basic_lb
+      dts_key_gen(dkey
+      dts_key_gen(akey
+      update_value(arg, oid, epoch
+        d_sgl_init(&sgl, 1)
+        dts_buf_render(buf, buf_len)
+        io_test_obj_update
+          vos_obj_update
+          vos_update_begin
+          ... vos_data_ioctxt
+  teardown_io
+
+test_args_init -> 测试前置函数
+  vts_ctx_init
 
 
