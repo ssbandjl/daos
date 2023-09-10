@@ -1,0 +1,39 @@
+'在线渲染: https://www.planttext.com/'
+'使用文档: https://plantuml.com/zh/sequence-diagram'
+
+
+@startwbs
+
+title DAOS_VOS单元测试
+
++ vos_tests.c
+ + main
+  + daos_debug_init
+  + vos_self_init
+   + ABT_init(0, NULL)  初始化Argobots执行环境
+   + vos_start_epoch = 0
+   + vos_standalone_tls_init(DAOS_TGT_TAG) 运行target XS
+    + self_mode.self_tls = vos_tls_init(tags, 0 /* xs_id */, -1 /* target_id */)
+     + 分配tls, 初始化gc池链表头
+     + vos_obj_cache_create(LRU_CACHE_BITS, &tls->vtl_ocache) pm内存对象缓存(大小16, nr=8192)
+      + daos_lru_cache_create(cache_size, D_HASH_FT_NOLOCK, &obj_lru_ops, occ) 
+       + d_hash_table_create_inplace
+     + d_uhash_create(D_HASH_FT_NOLOCK, VOS_POOL_HHASH_BITS, &tls->vtl_pool_hhash) 池hash
+     + d_uhash_create vtl_cont_hhash 容器hash
+     + umem_init_txd(&tls->vtl_txd) -> 为了避免为每个事务分配阶段数据，umem 用户应该准备每个 xstream 阶段数据并通过 umem_init_txd() 对其进行初始化，该每个 xstream 阶段数据将用于同一 xstream 中的所有事务
+   + vos_self_init
+   + vos_self_nvme_init(db_path)
+   + vos_mod_init()
+   + vos_db_init_ex(db_path, "self_db", true, true)
+   + db = vos_db_get()
+   + rc = smd_init(db)
+   + bio_xsctxt_alloc(&self_mode.self_xs_ctxt, tgt_id, true)
+   + Using distance with closest side split for evtree
+  + run_all_tests(int keys) -> 运行所有的测试
+   + dts_create_config(cfg_desc_io, "keys=%d", keys)
+   + run_ts_tests -> lru
+   + ...
+   + run_wal_tests(cfg_desc_io)
+   + ...
+
+@endwbs

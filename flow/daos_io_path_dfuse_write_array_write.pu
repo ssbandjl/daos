@@ -29,7 +29,11 @@ fuse_buf_copy(&ibuf, bufv, 0) 拷贝用户数据
 
 dfuse -> dfs: dfs_write(oh->doh_dfs, oh->doh_obj, &ev->de_sgl, position, &ev->de_ev) \n\
 daos_array_write(obj->oh, DAOS_TX_NONE, &iod, sgl, ev) \n\
-dc_task_create(dc_array_write, NULL, ev, &task) 创建任务 \n\
+dc_task_create(dc_array_write, NULL, ev, &task) 写数组任务 \n\
+  tse_task_create(func, sched, NULL, &task) \n\
+  tse_task_register_comp_cb(task, task_comp_event, NULL, 0) 注册写数组任务回调(任务发送完成回调) \n\
+args->iod	= iod  \n\
+args->sgl	= sgl 将SGL设置到任务参数上 \n\
 dc_task_schedule(task, true) 调度客户端写数组任务
 
 dfs -> array: dc_array_write 写数组(IO)

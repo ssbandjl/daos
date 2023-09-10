@@ -40,7 +40,7 @@ cart流程:
 1. 日志初始化/注册协议和操作码 crt_init_opt
 2. 创建上下文（fabric->domain->endpoint->cq...） crt_context_create
 3. 创建请求 crt_req_create / crt_corpc_req_create RPC请求集合 传入目的端点 -> ep_rank
-4. 发送请求（请求跟踪和取消跟踪） crt_req_send / dss_rpc_send
+4. 发送请求（请求跟踪和取消跟踪） crt_req_send / dss_rpc_send, 客户端发送: daos_rpc_send
 5. 查看请求进度和回调（progress和trigger） crt_progress
 6. 发送回复 crt_reply_send / crt_reply_get
 
@@ -722,12 +722,12 @@ crt_req_send(req, shard_update_req_cb, remote_arg) 将用户回调设置为完�
 dmg server set-logmasks err
 
 
-vos_tests: gdb /opt/daos/bin/vos_tests ->  main -> vos_tests.c -> test_ut_vos.test.sh
+vos_tests: gdb /opt/daos/bin/vos_tests ->  main -> vos_tests.c -> vos单元测试
 set args -p 
-daos_debug_init
+daos_debug_init -> 日志初始化, 同步日志掩码, 默认日志文件:/tmp/daos.log
 strcpy(vos_path, "/mnt/daos")
-vos_self_init(vos_path, false, BIO_STANDALONE_TGT_ID)
-  ABT_init(0, NULL)
+vos_self_init(vos_path, false, BIO_STANDALONE_TGT_ID) -> 初始化vos, 不用系统数据库, 初始化VOS实例的环境 必须在启动VOS实例之前调用一次 注意：仅当使用VOS作为独立库时需要
+  ABT_init(0, NULL) -> 初始化Argobots执行环境, ABT_init() 初始化 Argobots 执行环境。 如果 Argobots 尚未初始化，ABT_init() 的第一个调用者将成为在主执行流上运行的主 ULT。 如果 Argobots 已经初始化，ABT_init() 会原子地递增引用计数器。 即使 Argobots 已经初始化，此例程也会返回 ABT_SUCCESS
   vos_standalone_tls_init(DAOS_TGT_TAG)
   vos_self_nvme_init(db_path)
     dbtree_class_register(DBTREE_CLASS_IV, BTR_FEAT_UINT_KEY | BTR_FEAT_DIRECT_KEY, &dbtree_iv_ops)
@@ -757,7 +757,7 @@ vos_self_init(vos_path, false, BIO_STANDALONE_TGT_ID)
   rc = smd_init(db)
   bio_xsctxt_alloc(&self_mode.self_xs_ctxt, tgt_id, true)
   Using distance with closest side split for evtree
-run_all_tests(int keys) -> 所有的测试
+run_all_tests(int keys) -> 运行所有的测试
   dts_create_config(cfg_desc_io, "keys=%d", keys)
   run_ts_tests -> lru
   ...
@@ -959,21 +959,6 @@ d_slab_restock(eqt->de_write_slab) -> 重用slab
 
 
 
-vos_blob_format_cb
-  bio_write_blob_hdr
-    bio_write
-      bio_rw
-        bio_rwv
-          bio_iod_post 提交io描述
-            dma_rw
-              nvme_rw
-                spdk_blob_io_write rw_completion
-                  blob_request_submit_op
-                    blob_request_submit_op_single
-                      bs_batch_write_dev
-                        blob_bdev->bs_dev.write
-                        bdev_blob_write
-                          spdk_bdev_write_blocks
 
 
 
@@ -1080,7 +1065,7 @@ dfuse_main.c -> main
 
 dfuse_progress_thread
   rc = sem_wait(&fs_handle->dpi_sem) 等dpi_sem信号
-  daos_eq_poll
+  daos_eq_poll -> 先轮训事件, 然后自己调回调
   daos_event_fini 完成一个事件。 如果事件已被传递到任何 DAOS API，则它只能在从 EQ 中轮询出来时才能完成，即使通过调用 daos_event_abort() 中止也是如此。 如果事件是用父事件初始化的，那么该事件将从父事件的子列表中删除。 如果ev本身是一个父事件，那么这个函数会finalize所有的子事件和ev, 此调用返回后，ev 中的条目不应被视为有效
   ev->de_complete_cb(ev) -> dfuse_cb_write_complete 写完成回调
 
@@ -3206,7 +3191,7 @@ dss_srv_handler 服务控制器，设置cpu亲和性，初始化TLS，crt， nvm
   for (;;) 死循环
     crt_progress
 
-vos_tls_init 初始化vos本地线程存储
+vos_tls_init 初始化vos本地线程存储 
   D_INIT_LIST_HEAD(&tls->vtl_gc_pools)
   vos_obj_cache_create(LRU_CACHE_BITS 创建lru
   d_uhash_create vtl_pool_hhash vtl_cont_hhash
@@ -3791,7 +3776,14 @@ tgt_vos_create_one
       struct bio_xs_context	*xs_ctxt = vos_xsctxt_get() -> 每个xs一个nvme上下文
       store.store_type = umempobj_get_backend_type() -> 默认pm作后端, daos_md_backend = DAOS_MD_PMEM
       bio_mc_create(xs_ctxt, pool_id, meta_sz, wal_sz, nvme_sz, mc_flags)
-      bio_mc_open(xs_ctxt, pool_id, mc_flags, &mc)
+      bio_mc_open(xs_ctxt, pool_id, mc_flags, &mc) -> smd_pool_get_blob -> pool_get_blob
+        db_fetch(struct sys_db *db, char *table, d_iov_t *key, d_iov_t *val)
+          db_io_init(&io, table, key, val)
+          vos_obj_fetch -> vos_obj_fetch_ex
+            vos_fetch_begin
+              vos_ioc_create
+              vos_dth_set
+              vos_ts_set_add -> vos_ts_get_negative -> 当子树不存在时，我们需要一个负条目。 在这种情况下，条目由哈希值标识。 这会查找负条目并在必要时分配它。 将 te_create_idx 重置为 NULL
       bio_meta_get_attr(mc, &store.stor_size, &store.stor_blk_size, &store.stor_hdr_blks)
       pop = umempobj_create(path, layout, UMEMPOBJ_ENABLE_STATS, scm_sz, 0600, &store)
         pop = pmemobj_create(path, layout_name, poolsize, mode) -> 创建持久内存对象,取scm大小 -> pmdk笔记: https://blog.csdn.net/Sylvia_Wu51/article/details/117442789, 创建pm内存池: https://manpages.debian.org/experimental/libpmemobj-dev/pmemobj_create.3.en.html, 参考:持久内存编程开发人员综合指南
@@ -4177,8 +4169,8 @@ do {
 
 
 vos_blob_format_cb
-  bio_write_blob_hdr
-    bio_write
+  bio_write_blob_hdr -> 完成设置 blob 标头并将信息写入 blob 偏移量 0。
+    bio_write -> 写入每个vos实例的blob
       bio_rw
         bio_rwv
           bio_iod_post 提交io描述
@@ -4256,6 +4248,10 @@ dfuse_progress_thread
   daos_eq_poll
   daos_event_fini 完成一个事件。 如果事件已被传递到任何 DAOS API，则它只能在从 EQ 中轮询出来时才能完成，即使通过调用 daos_event_abort() 中止也是如此。 如果事件是用父事件初始化的，那么该事件将从父事件的子列表中删除。 如果ev本身是一个父事件，那么这个函数会finalize所有的子事件和ev。
   ev->de_complete_cb(ev) -> dfuse_cb_write_complete 写完成回调
+    daos_event_fini(&ev->de_ev) -> 终止事件
+    d_slab_release(ev->de_eqt->de_write_slab, ev) -> 将EV释放回EV池
+      d_list_t *entry = ptr + type->st_reg.sr_offset -> 拿到条目, 放回阻塞链表
+      d_list_add_tail(entry, &type->st_pending_list)
 
 struct fuse_lowlevel_ops dfuse_ops dfuse低层操作对象
   .create		= df_ll_create
@@ -5516,14 +5512,34 @@ dlv attach `ps aux|grep 'daos_agent'|grep -v grep|awk '{print$2}'`
 
 
 bio_ut.c -> main -> bio单元测试
-run_wal_tests
-wal_ut_setup
-wal_uts
+ut_args.bua_seed = (unsigned int)(time(NULL) & 0xFFFFFFFFUL)
+run_wal_tests()
+wal_ut_setup -> 前置函数
+  ut_init(&ut_args)
+    daos_debug_init
+    vos_self_init(db_path, false, BIO_STANDALONE_TGT_ID);
+      ABT_init(0, NULL)
+      vos_start_epoch = 0
+      vos_standalone_tls_init(DAOS_TGT_TAG)
+      vos_self_nvme_init(db_path)
+      vos_mod_init() -> 初始化vos模块
+      vos_db_init_ex(db_path, "self_db", true, true)
+      smd_init(db)
+      bio_xsctxt_alloc(&self_mode.self_xs_ctxt, tgt_id, true)
+        if (!bio_nvme_configured(SMD_DEV_TYPE_MAX))
+          ctxt->bxc_dma_buf = dma_buffer_create(bio_chk_cnt_init, tgt_id) -> DAOS-10372 bio：以 FIFO 顺序等待 DMA 缓冲区 (#9584) 当 DMA 缓冲区因繁重的工作负载而耗尽时，未能抓取 DMA 缓冲区的 IO 请求将不得不等待先前 IO 的完成，在以下情况下可能会发生饥饿：- 请求A无法抓取缓冲区，它开始等待先前的IO完成； - 后来请求B到达服务器，被推送到ABT池的先进先出队列中执行； - Prior IO完成，唤醒请求A，并将请求A推入ABT池的FIFO队列中执行； - 请求B将在请求A之前被处理，如果DMA缓冲区被请求B用完，请求A可能需要等待另一轮； 另一个问题是，一旦先前的 IO 完成，即使释放的缓冲区只能满足较少的等待者，所有等待者也会被唤醒，这会不必要地浪费 CPU 周期。 该补丁通过确保当有任何先前请求等待 DMA 缓冲区时所有传入请求都在 FIFO 队列中等待，解决了饥饿问题，并且等待者将按照 FIFO 顺序一一唤醒。 该补丁还引入了 DMA 缓冲区管理的遥测技术，抓取缓冲区失败时发出的错误消息受到速率限制
+            ABT_cond_create(&buf->bdb_wait_iod)
+            bulk_cache_create(buf)
+            dma_metrics_init(buf, tgt_id)
+            dma_buffer_grow(buf, init_cnt)
+wal_uts -> 单元测试
   wal_ut_single
+    ut_mc_init
+      bio_mc_create
   wal_ut_many_acts
   wal_ut_checkpoint
   ...
-wal_ut_teardown
+wal_ut_teardown -> 后置函数
 
 
 
@@ -5845,5 +5861,63 @@ run_aggregate_tests(true, "")
 
 test_args_init -> 测试前置函数
   vts_ctx_init
+
+
+
+
+(gdb) p * (struct vos_io_context *) 0x555555db32e0
+$2 = {ic_ent_array_alloc = {ea_data = {ea_ents = 0x0, ea_ent_nr = 0, ea_size = 0, ea_max = 0, ea_inob = 0, ea_first_delete = 0, ea_delete_nr = 0, ea_embedded_ents = 0x555555db3300}, ea_embedded = {{le_prev = 0x0, le_link = {next = 0x0, 
+          prev = 0x0}, le_ent = {en_ext = {ex_lo = 0, ex_hi = 0}, en_sel_ext = {ex_lo = 0, ex_hi = 0}, en_csum = {cs_csum = 0x0, cs_nr = 0, cs_type = 0, cs_len = 0, cs_buf_len = 0, cs_chunksize = 0}, en_ver = 0, en_visibility = 0, 
+          en_minor_epc = 0, en_addr = {ba_off = 0, ba_type = 0 '\000', ba_pad1 = 0 '\000', ba_flags = 0, ba_pad2 = 0}, en_epoch = 0, en_avail_rc = 0}} <repeats 16 times>}}, ic_ent_array = 0x0, ic_bound = 1, ic_epr = {epr_lo = 0, epr_hi = 1}, 
+  ic_oid = {id_pub = {lo = 0, hi = 0}, id_shard = 0, id_layout_ver = 0, Segmentation fault
+
+
+Breakpoint 1, vos_fetch_begin (coh=..., oid=..., epoch=1, dkey=0x7fffffffcc30, iod_nr=iod_nr@entry=1, iods=0x7fffffffcc48, vos_flags=0, shadows=0x0, ioh=0x7fffffffcb90, dth=0x0) at src/vos/vos_io.c:1472
+1472    {
+Missing separate debuginfos, use: debuginfo-install glibc-2.17-326.el7_9.x86_64 json-c-0.11-4.el7_0.x86_64 libaio-0.3.109-13.el7.x86_64 libcmocka-1.1.5-1.el7.x86_64 libgcc-4.8.5-44.el7.x86_64 libibverbs-22.4-6.el7_9.x86_64 libnl3-3.2.28-4.el7.x86_64 librdmacm-22.4-6.el7_9.x86_64 libunwind-1.2-2.el7.x86_64 libuuid-2.23.2-65.el7_9.1.x86_64 libyaml-0.1.4-11.el7_0.x86_64 lz4-1.8.3-1.el7.x86_64 numactl-libs-2.0.12-5.el7.x86_64 openssl11-libs-1.1.1k-5.el7.x86_64 zlib-1.2.7-21.el7_9.x86_64
+(gdb) bt
+#0  vos_fetch_begin (coh=..., oid=..., epoch=1, dkey=0x7fffffffcc30, iod_nr=iod_nr@entry=1, iods=0x7fffffffcc48, vos_flags=0, shadows=0x0, ioh=0x7fffffffcb90, dth=0x0) at src/vos/vos_io.c:1472
+#1  0x00007ffff77a7672 in vos_obj_fetch_ex (coh=..., oid=..., epoch=epoch@entry=1, flags=flags@entry=0, dkey=dkey@entry=0x7fffffffcc30, iod_nr=iod_nr@entry=1, iods=iods@entry=0x7fffffffcc48, sgls=0x7fffffffcc88, dth=0x0) at src/vos/vos_io.c:2837
+#2  0x00007ffff77a7c0a in vos_obj_fetch (coh=..., oid=..., epoch=epoch@entry=1, flags=flags@entry=0, dkey=dkey@entry=0x7fffffffcc30, iod_nr=iod_nr@entry=1, iods=iods@entry=0x7fffffffcc48, sgls=0x7fffffffcc88) at src/vos/vos_io.c:2875
+#3  0x00007ffff784885d in db_fetch (db=<optimized out>, table=0x7ffff7feba00 <TABLE_POOLS> "pool", key=0x7fffffffccd0, val=0x7fffffffccf0) at src/vos/sys_db.c:223
+#4  0x00007ffff7fcbc85 in smd_db_fetch (table=table@entry=0x7ffff7feba00 <TABLE_POOLS> "pool", key=key@entry=0x7fffffffcd20, key_size=key_size@entry=16, val=val@entry=0x7fffffffcd30, val_size=val_size@entry=784) at src/bio/smd/smd_store.c:29
+#5  0x00007ffff7fc98dc in pool_get_blob (pool_id=pool_id@entry=0x5555555612f0 <ut_args+16> "\217\020\336\271\250\033C\346\256\302Ǡ\264\215\"[Q\336\370d", tgt_id=4294967295, table_name=table_name@entry=0x7ffff7feba00 <TABLE_POOLS> "pool", 
+    blob_id=blob_id@entry=0x7fffffffd0a0) at src/bio/smd/smd_pool.c:279
+#6  0x00007ffff7fca640 in smd_pool_get_blob (pool_id=pool_id@entry=0x5555555612f0 <ut_args+16> "\217\020\336\271\250\033C\346\256\302Ǡ\264\215\"[Q\336\370d", tgt_id=<optimized out>, st=st@entry=SMD_DEV_TYPE_DATA, 
+    blob_id=blob_id@entry=0x7fffffffd0a0) at src/bio/smd/smd_pool.c:304
+#7  0x00007ffff7f78a95 in bio_mc_open (xs_ctxt=0x555555d9a280, pool_id=pool_id@entry=0x5555555612f0 <ut_args+16> "\217\020\336\271\250\033C\346\256\302Ǡ\264\215\"[Q\336\370d", flags=flags@entry=(unknown: 0), mc=mc@entry=0x5555555612e8 <ut_args+8>)
+    at src/bio/bio_context.c:903
+#8  0x000055555555731c in ut_mc_init (args=args@entry=0x5555555612e0 <ut_args>, meta_sz=meta_sz@entry=134217728, wal_sz=wal_sz@entry=134217728, data_sz=data_sz@entry=134217728) at src/vos/tests/wal_ut.c:38
+#9  0x000055555555bd08 in wal_ut_single (state=<optimized out>) at src/vos/tests/wal_ut.c:307
+#10 0x00007ffff79cfda2 in cmocka_run_one_test_or_fixture () from /lib64/libcmocka.so.0
+#11 0x00007ffff79d07a5 in _cmocka_run_group_tests () from /lib64/libcmocka.so.0
+#12 0x000055555555d197 in run_wal_tests () at src/vos/tests/wal_ut.c:912
+#13 0x0000555555556584 in main (argc=1, argv=0x7fffffffdbb8) at src/vos/tests/bio_ut.c:90
+
+
+
+
+
+---------- vea ----------
+vea_flush: 刷新老化缓冲区中的空闲碎片
+
+vea_reserve: 在块设备上保留一个范围，如果块设备碎片太多而无法满足连续的保留，则可以保留一个范围向量
+
+vea_load: 从 SCM 加载空间跟踪信息以初始化内存中复合索引
+
+
+
+
+
+write_header
+
+alloc_prep_block: 分配准备的块, 内部, 准备一个用于分配的内存块一旦该块被完全保留并且保证没有其他人能够写入该内存区域，就可以安全地写入分配标头并调用对象构造函数。 由于此阶段的内存块仅以瞬态保留，因此无需担心此方法的故障安全性，因为如果发生崩溃，内存将返回到空闲块集合中
+
+
+palloc_reservation_create: 创建内存块的易失性保留。 分配新块的第一步是将其保留在临时堆中 - 这由存储桶抽象表示。 为了为多线程应用程序提供最佳扩展并减少碎片，根据当前线程上下文以及请求的大小属于哪个分配类来选择适当的存储桶。 一旦选择了存储桶，就会为请求的大小保留足够的内存。 底层块分配算法（best-fit、next-fit...）根据桶容器的不同而变化
+
+
+palloc_reserve: 
+palloc_operation: palloc_operation——持久内存操作。 获取 NULL 指针或现有内存块并将其修改为至少占用“size”个字节。 malloc、free 和 realloc 例程是在该通用操作的上下文中实现的，该操作包含通常在这些方法中单独完成的所有功能。 需要做的第一件事是确定哪些内存块将受到操作的影响 - 这取决于操作是否需要修改或释放现有块和/或分配新块。 简化的分配过程流程如下： 在临时堆中保留一个新块 准备新块 创建所需修改的重做日志 新对象的块元数据偏移量 提交并处理重做日志 类似地，释放过程： 创建所需修改的重做日志 所需的修改将块元数据反转回“空闲”状态将对象偏移的目标设置为零提交并处理重做日志有一个重要的区别 释放过程 - 它不会将内存块返回到临时容器。 一旦没有更多内存可用，就会完成此操作。 重新分配是上述内容的组合，并增加了复制旧内容的步骤
 
 
