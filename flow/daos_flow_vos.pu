@@ -20,7 +20,8 @@ title DAOS_VOS单元测试
        + d_hash_table_create_inplace
      + d_uhash_create(D_HASH_FT_NOLOCK, VOS_POOL_HHASH_BITS, &tls->vtl_pool_hhash) 池hash
      + d_uhash_create vtl_cont_hhash 容器hash
-     + umem_init_txd(&tls->vtl_txd) -> 为了避免为每个事务分配阶段数据，umem 用户应该准备每个 xstream 阶段数据并通过 umem_init_txd() 对其进行初始化，该每个 xstream 阶段数据将用于同一 xstream 中的所有事务
+     + umem_init_txd(&tls->vtl_txd) -> 初始化txd，用于附加pmem事务阶段回调, 为了避免为每个事务分配阶段数据，umem 用户应该准备每个 xstream 阶段数据并通过 umem_init_txd() 对其进行初始化，该每个 xstream 阶段数据将用于同一 xstream 中的所有事务, DAOS-1301 umem：按需增长回调向量，对于像容器销毁这样的事务可能会有大量的事务回调，因此回调向量应该能够按需增长。 回调向量的上限设置为 1m，与 PMDK 撤消日志限制一致
+     + vos_ts_table_alloc(&tls->vtl_ts_table)
    + vos_self_init
    + vos_self_nvme_init(db_path)
    + vos_mod_init()
