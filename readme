@@ -324,11 +324,95 @@ umount /tmp/sxb
 strace -o xxx.log -fff exec -f config_file
 
 
-
-参考: DaosObjectType.java
+---------- ec ----------
+参考: DaosObjectClass.java, DaosObjectType.java
 oclass: 对象类型(object class), 具有明确布局的副本对象, 第一个数字是副本数，G后面的数字代表冗余组的数量
 2G1 : 2个副本, 分布在冗余组1
 8GX : 8 个副本，它分布在池中的所有目标上
+OC_S1: 1个分片
+SX: 传播到池内的所有目标
+OC_EC_2P1G1: 纠删码对象, EC2+1, 
+
+具有显式布局的纠删码对象
+- 第一个数字是冗余组内的数据单元编号
+- P后面的数字是冗余组内的奇偶校验单元数
+- G后面的数字是冗余组的数量。
+例子：
+- 2P1G1：2+1 EC 对象，具有一个冗余组, EC_2P1G1, default directory object class
+- 4P2G8：4+2 EC 对象，具有 8 个冗余组
+- 8P2G2：8+2 EC 对象，具有 2 个冗余组
+- 16P2GX：16+2 EC 对象分布在池内的所有目标上。
+
+shard_rw_prep -> 准备读写分片, EC等
+
+enum daos_obj_redun 对象冗余, 定义对象数据冗余方法。 在对象 ID 中编码超过 8 位。 冗余组的数量在对象元数据中单独编码
+
+
+VOS_ITER_RECX
+enum_pack_cb
+fill_rec
+insert_new_rec
+
+ec纠删码单元大小: ec_cell_sz 64KiB
+DAOS_OBJ_DKEY_RPC_ENUMERATE
+ds_obj_enum_handler
+
+DAOS-3600 obj：EC obj IO 重构 (#1359)
+
+EC 的 iod/sql 重新组装处理的 3 个步骤：
+1) obj_ec_recx_scan()
+扫描 iod 以查找 full_stripe recxs 和一些帮助信息
+2) obj_ec_recx_编码
+将数据编码在全条带 recx_array 中
+3）obj_ec_recx_reasb
+根据以上2步的结果重新组装iod/sql/recx。
+
+dc_obj_fetch_task(tse_task_t *task) 读对象 | 写对象 dc_obj_update(tse_task_t *task, struct dtx_epoch *epoch, ...
+obj_rw_req_reassemb
+obj_ec_req_reasb(struct dc_object *obj, daos_iod_t *iods, uint64_t dkey_hash, d_sg_list_t *sgls,
+		 struct obj_reasb_req *reasb_req, uint32_t iod_nr, bool update)
+https://github.com/ssbandjl/daos/commit/5ffd7d831bc4d9ca1d10d21fc727a35a9303e3bd
+还有一些变化：
+- 添加 obj_io_desc 和 obj_shard_iod 定义
+- 添加一些助手来操作 sql
+- 添加 obj_ec.h 以及一些宏定义和 EC 函数声明
+- 为EC添加基本的iod/sql重组功能
+- 避免为重试情况重新计算校验和。
+- 添加 obj io desc proc 函数
+- 修复 EC 段处理中的错误
+- 添加获取请求重新组装
+- 一些客户端 obj io 更改
+- 修复 obj_ec_recx_cell_nr 中的错误
+- IOD/sql 重新组装的客户端 obj IO 更改
+- 根据 IOD/sql 重新组装更改客户端 obj IO 处理。
+- 根据 IOD/sql 重新组装更改 srv obj IO 处理。
+- EC obj IO 的错误修复
+- 修复了 EC obj IO 的一些详细处理。
+- 为 EC 添加更复杂的测试 io conf 文件。
+（通过...运行它
+daos_test -x -w ./daos_io_conf_3
+
+
+
+[root@localhost daos]# daos container create sxb --oclass=EC_2P1G1 --properties=rf:1 --type POSIX sxb
+object ERR  src/object/obj_class.c:297 daos_oclass_fit_max() grp size (3) (65535) is larger than domain nr (1)
+dfs  ERR  src/client/dfs/dfs.c:1777 dfs_cont_create() Failed to generate SB OID DER_INVAL(-1003): 'Invalid parameters'
+ERROR: daos: failed to create container: DER_INVAL(-1003): Invalid parameters
+
+
+daos_array_generate_oid
+oid_gen -> dfs 对象的 OID 生成。 oid.lo uint64_t 值将使用唯一的 oid 分配器从 DAOS 容器中分配。 一次将为 dfs 挂载分配 1 个 oid。 oid.hi 值的高 32 位保留给 DAOS（obj 类、类型等）。 低 32 位将由 dfs 挂载点在本地使用，因此在卸载 dfs 时被丢弃
+daos_obj_generate_oid | daos_obj_generate_oid_by_rf
+daos_oclass_fit_max
+
+
+dc_cont_create
+  dup_cont_create_props -> 如果未提供所有者/组属性，则将 euid/egid 转换为用户名和组名，并将它们作为所有者添加到传入的 daos_prop_t 的新副本中。如果调用者未指定，则分配根 objid。 新分配的 prop 预计将由 cont create 回调释放
+    daos_obj_generate_oid_by_rf
+
+
+---------- ec ----------
+
 
 
 kill engine:
@@ -3203,6 +3287,10 @@ vos_tls_init 初始化vos本地线程存储
         *des = *src 赋值
         memset(des, 0, sizeof(*des)) 置0
     lrua_array_alloc
+      aligned_size = (payload_size + 7) & ~7 -> 按7字节对齐
+      lrua_array_alloc_one
+        init_cb(array, sub, entry, idx) -> array->la_cbs.lru_on_init
+          static void init_entry
   d_tm_add_metric
 
 dss_nvme_poll_ult
@@ -4357,8 +4445,21 @@ dc_obj_update_task(tse_task_t *task) DAOS_OPC_OBJ_UPDATE 写
       ----------------------
     obj_update_sgls_dup(obj_auxi, args) -> 用户可能提供 iov_len < iov_buf_len 的 sql，这可能会给内部处理带来一些麻烦，例如 crt_bulk_create/daos_iov_left() 总是使用 iov_buf_len。 对于这种情况，我们复制 sql 并使其 iov_buf_len = iov_len
     obj_auxi->dkey_hash = obj_dkey2hash(obj->cob_md.omd_id, args->dkey) -> 比如为1
-    if (obj_is_ec(obj))
+    if (obj_is_ec(obj)) -> 如果是EC对象, 则重新组装对象写请求
       obj_rw_req_reassemb(obj, args, NULL, obj_auxi) -> EC对象需要, 重新组装对象读写请求
+        struct obj_reasb_req	*reasb_req = &obj_auxi->reasb_req -> EC请求, 重新组装 obj 请求。 用户输入的 iod/sgl 可能需要在发送到服务器之前在客户端重新组装，例如：合并相邻的recx，或者对无序的recx进行排序并生成新的sgl与之匹配； 对于EC obj，将iod/recxs拆分到每个目标，生成新的sgl与之匹配，创建oiod/siod以指定每个shard/tgt的IO req
+        if (!obj_auxi->req_reasbed)
+          obj_reasb_req_init(&obj_auxi->reasb_req, obj, args->iods, args->nr) -> 创建reasb_req并设置iod的值，从输入iod中重用缓冲区，iod_type / iod_size分配为输入iod，iod_kcsum / iod_nr / iod_recx / iod_csums / iod_eprs数组将设置为0 / NULL
+          daos_recx_t -> 记录是任意长度的原子 blob，它总是作为一个整体来获取/更新。 记录的大小可能会随着时间的推移而改变。 记录由以下复合键唯一标识： - 分布键（又名 dkey）表示位于同一存储目标上的一组数组。 dkey 具有任意大小。 - 属性键（又名 akey）区分各个数组。 同样，akey 具有任意大小。 - 数组中的索引区分各个记录。 索引是一个范围从零到无穷大的整数。 一系列索引标识称为范围的连续记录集。 范围内的所有记录必须具有相同的大小。 记录范围是数组内相同大小的连续记录范围。 rx_idx 是该范围的第一个数组索引，rx_nr 是该范围覆盖的记录数
+        obj_ec_req_reasb(obj, args->iods, obj_auxi->dkey_hash,
+			      args->sgls, reasb_req, args->nr,
+			      obj_auxi->opc == DAOS_OBJ_RPC_UPDATE);
+          obj_ec_singv_req_reasb
+          obj_ec_recx_scan
+          obj_ec_recx_reasb
+          obj_ec_encode
+            obj_ec_recx_encode -> 对全条带recx_array中的数据进行编码，结果奇偶校验存储在struct obj_ec_recx_array::oer_pbufs中
+              obj_ec_stripe_encode -> 编码一个完整的条带，结果奇偶校验缓冲区将被填满
     obj_update_shards_get
     obj_shards_2_fwtgts -> 根据分片查找转发的目标
       req_tgts->ort_shard_tgts = req_tgts->ort_tgts_inline -> 分片目标数组，包含 (ort_grp_nr * ort_grp_size) 个目标。 如果#targets <= OBJ_TGT_INLINE_NR 那么它指向ort_tgts_inline。 在数组中，[0, ort_grp_size - 1] 表示第一组，[ort_grp_size, ort_grp_size * 2 - 1] 表示第二组，依此类推。 如果 (ort_srv_disp == 1)，则在每个组中，第一个目标是领导分片，后面的 (ort_grp_size - 1) 目标是前向非领导分片。 现在只有一种情况 (ort_grp_nr > 1) 用于对象打孔，所有其他情况均为 (ort_grp_nr == 1)
@@ -5364,7 +5465,7 @@ parseOpts -> func (cmd *containerCreateCmd) Execute(_ []string) (err error)
 
 container不开辟空间，仅设置数据存储策略
 
-enum daos_obj_redun 对象冗余
+
 
 daos container create --pool sxb --type POSIX --label sxb
 daos cont create --label Cont1 --type POSIX --oclass RP_3G1 --properties rf:2 Pool1 
@@ -5919,5 +6020,7 @@ palloc_reservation_create: 创建内存块的易失性保留。 分配新块的�
 
 palloc_reserve: 
 palloc_operation: palloc_operation——持久内存操作。 获取 NULL 指针或现有内存块并将其修改为至少占用“size”个字节。 malloc、free 和 realloc 例程是在该通用操作的上下文中实现的，该操作包含通常在这些方法中单独完成的所有功能。 需要做的第一件事是确定哪些内存块将受到操作的影响 - 这取决于操作是否需要修改或释放现有块和/或分配新块。 简化的分配过程流程如下： 在临时堆中保留一个新块 准备新块 创建所需修改的重做日志 新对象的块元数据偏移量 提交并处理重做日志 类似地，释放过程： 创建所需修改的重做日志 所需的修改将块元数据反转回“空闲”状态将对象偏移的目标设置为零提交并处理重做日志有一个重要的区别 释放过程 - 它不会将内存块返回到临时容器。 一旦没有更多内存可用，就会完成此操作。 重新分配是上述内容的组合，并增加了复制旧内容的步骤
+
+
 
 
