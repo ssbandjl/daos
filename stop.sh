@@ -4,11 +4,13 @@ echo -e "stop"
 # run_all "pkill daos_agent;pkill daos_server"
 
 source /root/.bashrc
-umount /mnt/daos
-df -h|grep '/mnt/daos'
+umount /tmp/sxb
 
 pkill daos_agent 
 pkill daos_server
+
+umount /mnt/daos
+df -h|grep '/mnt/daos'
 
 rm -f /tmp/daos*.log
 rm -f /tmp/.daos_engine.0.log.swp

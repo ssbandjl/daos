@@ -1027,7 +1027,8 @@ master -> src/client/dfuse/ops/write.c -> dfuse_cb_write(fuse_req_t req, fuse_in
 struct dfuse_projection_info *fs_handle = fuse_req_userdata(req)
 eqt_idx = atomic_fetch_add_relaxed(&fs_handle->di_eqt_idx, 1) -> 原子递增,每次返回+1前的值, 比如: eqt_idx=7
 eqt = &fs_handle->di_eqt[eqt_idx % fs_handle->di_eq_count] -> 取余打散到eq
-ev = d_slab_acquire(eqt->de_write_slab) -> 分配EV, 需要提前注册: d_slab_register(&fs_handle->di_slab, &write_slab, eqt, &eqt->de_write_slab)
+ev = d_slab_acquire(eqt->de_write_slab) -> 分配EV, 需要提前注册: d_slab_register(&fs_handle->di_slab, &write_slab, eqt, &eqt->de_write_slab) -> 分配后sg_nr数量设置为1, 
+ev->de_iov.iov_len = len -> 设置写长度
 ev->de_complete_cb = dfuse_cb_write_complete
 oh->doh_ie->ie_stat.st_size = len + position -> 比如写10字节
 此时SGL上已经有用户数据
@@ -1429,8 +1430,12 @@ crt_ctx_epi_abort
 
 dc_pool_query
 
-
-.sr_reset   = dfuse_write_event_reset
+sgl
+.sr_reset   = dfuse_write_event_reset -> 重置写事件
+  D_ALLOC(ev->de_iov.iov_buf, DFUSE_MAX_READ) -> 分配向量IO缓冲区
+  ev->de_iov.iov_buf_len = DFUSE_MAX_READ -> 设置向量IO最大读取长度为1MB
+  ev->de_sgl.sg_iovs     = &ev->de_iov -> 将EV的SGL_IOVS(sg_iovs)指向(d_iov_t)
+  ev->de_sgl.sg_nr       = 1 -> 设置SGL个数为1个
   daos_event_init(&ev->de_ev, ev->de_eqt->de_eq, NULL)
   
 daos_event_init
@@ -4370,7 +4375,7 @@ write -> dfuse_cb_write 回调写 src/client/dfuse/fuse3, 将用户数据拷贝�
     daos_eq_putref 从事件队列继承传输上下文
   ev->de_complete_cb = dfuse_cb_write_complete 设置回调
   d_iov_set(&ev->de_iov, ibuf.buf[0].mem, len)  # 设置io向量， 将第二参数的地址和长度赋值给第一个参数
-  ev->de_sgl.sg_iovs = &ev->de_iov   sgl分散聚集列表
+  ev->de_sgl.sg_iovs = &ev->de_iov   -> sgl分散聚集列表
   readahead ie_truncated 预读和截断
   dfs_write (文件系统， 对象，sgl列表，文件(对象)偏移，事件) 将数据写到文件对象
     事件为空
@@ -6020,7 +6025,4 @@ palloc_reservation_create: 创建内存块的易失性保留。 分配新块的�
 
 palloc_reserve: 
 palloc_operation: palloc_operation——持久内存操作。 获取 NULL 指针或现有内存块并将其修改为至少占用“size”个字节。 malloc、free 和 realloc 例程是在该通用操作的上下文中实现的，该操作包含通常在这些方法中单独完成的所有功能。 需要做的第一件事是确定哪些内存块将受到操作的影响 - 这取决于操作是否需要修改或释放现有块和/或分配新块。 简化的分配过程流程如下： 在临时堆中保留一个新块 准备新块 创建所需修改的重做日志 新对象的块元数据偏移量 提交并处理重做日志 类似地，释放过程： 创建所需修改的重做日志 所需的修改将块元数据反转回“空闲”状态将对象偏移的目标设置为零提交并处理重做日志有一个重要的区别 释放过程 - 它不会将内存块返回到临时容器。 一旦没有更多内存可用，就会完成此操作。 重新分配是上述内容的组合，并增加了复制旧内容的步骤
-
-
-
 
