@@ -5725,6 +5725,12 @@ ln -s $daospath/include            /usr/share/spdk/include
 
 /opt/daos/prereq/debug/spdk/share/spdk/scripts/setup.sh
 
+spdk setup.sh问题解决: src/control/server/init/setup_spdk.sh 脚本会去以下目录找spdk脚本
+mkdir -p /usr/share/spdk/scripts
+ln -sf $daospath/prereq/debug/spdk/share/spdk/scripts/setup.sh /usr/share/spdk/scripts
+ln -sf $daospath/prereq/debug/spdk/share/spdk/scripts/common.sh /usr/share/spdk/scripts
+
+
 
 func (p *Provider) mountRamdisk
 ramFsType = system.FsTypeTmpfs

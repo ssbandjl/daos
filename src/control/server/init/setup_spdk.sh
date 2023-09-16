@@ -60,6 +60,7 @@ echo "start of script: $thisscriptpath/$thisscriptname"
 
 rootdir="$(readlink -f "$(dirname "$0")")"/../..
 scriptpath="$rootdir/spdk/scripts/setup.sh"
+echo "scriptpath:$scriptpath, rootdir:$rootdir"
 if [ ! -f "$scriptpath" ]; then
     if [ -f /usr/share/spdk/scripts/setup.sh ]; then
         scriptpath=/usr/share/spdk/scripts/setup.sh
