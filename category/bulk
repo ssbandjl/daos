@@ -1,0 +1,102 @@
+要点:
+1. daos的bulk用法, 我理解是把一段不连续的内存封装为sgl, 调用bulk_create分段注册好, 参考: crt_bulk_create(crt_ctx, &sgl, perm, bulk)
+2. 
+
+
+
+设置/获取池属性 -> src/tests/suite/daos_pool.c -> { "POOL7: set/get/list user-defined pool attributes (sync)" -> pool_attribute
+  daos_pool_list_attr(poh, NULL, &total_size, arg->async ? &ev : NULL) -> 查询池属性
+    dc_task_create(dc_pool_list_attr, NULL, ev, &task)
+    args->buf	= buf
+    args->size	= size -> 0
+    dc_task_schedule(task, true)
+...    
+dc_pool_list_attr(tse_task_t *task)
+  pool_req_prepare(args->poh, POOL_ATTR_LIST, daos_task2ctx(task), &cb_args); -> 准备RPC请求
+    opcode = DAOS_RPC_OPCODE -> 反解析OPC
+    crt_req_create(crt_ctx, tgt_ep, opcode, req)
+  crt_bulk_create(daos_task2ctx(task), &sgl, CRT_BULK_RW, &in->pali_bulk);
+    crt_hg_bulk_create(&ctx->cc_hg_ctx, sgl, bulk_perm, bulk_hdl)
+      buf_sizes[i] = sgl->sg_iovs[i].iov_buf_len
+      buf_ptrs[i] = sgl->sg_iovs[i].iov_buf
+      hg_return_t HG_Bulk_create(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,const hg_size_t *buf_sizes, hg_uint8_t flags, hg_bulk_t *handle)
+      "Creating new bulk handle with %u segment(s)", count) -> 打印有多少分段
+  cb_args.pra_bulk = in->pali_bulk -> 设置bulk
+  return daos_rpc_send(cb_args.pra_rpc, task) -> 发送RPC到服务端
+...
+ds_pool_attr_list_handler(crt_rpc_t *rpc) -> 服务端收到RPC
+  ds_rsvc_list_attr(&svc->ps_rsvc, &tx, &svc->ps_user,in->pali_bulk, rpc, &out->palo_size) -> 拿到池属性列表参数上的bulk(客户端已注册), 服务端解释为远端bulk: remote_bulk
+  rc = crt_bulk_get_len(remote_bulk, &bulk_size)
+  d_sg_list_t	 sgl -> 将服务端属性设置到sgl上
+  rc = crt_bulk_create(rpc->cr_ctx, &sgl, CRT_BULK_RW, &local_bulk); -> 创建本地BULK, 放入sgl内容
+  attr_bulk_transfer(rpc, CRT_BULK_PUT, local_bulk, remote_bulk, 0, 0, bulk_size - iter_args.available) -> 服务端调用RDMA写操作将数据DMA给客户端
+    crt_bulk_transfer(&bulk_desc, bulk_cb, &eventual, NULL)
+  crt_bulk_free(local_bulk) -> 释放服务端的BULK
+
+
+
+
+iv_op_ult(void *arg)
+  crt_iv_update_internal
+    crt_ivsync_rpc_issue
+      crt_bulk_create
+
+
+dmg pool list -v
+func (cmd *poolQueryCmd) Execute(_ []string)
+C.daos_pool_query(cmd.cPoolHandle, rlPtr, &pinfo, nil, nil)
+dc_pool_query(tse_task_t *task)
+  map_bulk_create(daos_task2ctx(task), &in->pqi_map_bulk, &map_buf, pool_buf_nr(pool->dp_map_sz)) -> 池创建bulk
+    d_iov_set(&iov, *buf, pool_buf_size((*buf)->pb_nr));
+    sgl.sg_nr = 1;
+    sgl.sg_nr_out = 0;
+    sgl.sg_iovs = &iov;
+    rc = crt_bulk_create(ctx, &sgl, CRT_BULK_RW, bulk);
+客户端
+---------------------------
+服务端
+ds_pool_query_handler_v5 <- POOL_QUERY -> ds_pool_query_handler(rpc, 5)
+ds_pool_query_handler(crt_rpc_t *rpc, int version)
+  pool_svc_lookup_leader
+  ds_rebuild_query
+  rdb_tx_begin(svc->ps_rsvc.s_db, svc->ps_rsvc.s_term, &tx)
+  daos_rpc_from_client(crt_rpc_t *rpc)
+    crt_req_src_rank_get(rpc, &srcrank)
+  pool_prop_read(&tx, svc, DAOS_PO_QUERY_PROP_GLOBAL_VERSION, &prop);
+  daos_prop_entry_get
+  rc = read_map_buf(&tx, &svc->ps_root, &map_buf, &map_version) -> 读取到map_buf(池映射)
+    rc = locate_map_buf(tx, kvs, &b, version)
+    size = pool_buf_size(b->pb_nr)
+    memcpy(*buf, b, size)
+  ds_pool_transfer_map_buf(map_buf, map_version, rpc, in->pqi_map_bulk, &out->pqo_map_buf_size)
+    crt_bulk_get_len(remote_bulk, &remote_bulk_size) -> remote_bulk_size = 4096, map_buf_size=128
+    d_iov_set(&map_iov, map_buf, map_buf_size) -> 
+    map_sgl.sg_nr = 1;
+    map_sgl.sg_nr_out = 0;
+    map_sgl.sg_iovs = &map_iov;
+    crt_bulk_create(rpc->cr_ctx, &map_sgl, CRT_BULK_RO, &bulk) -> 用服务端的map_sgl数据, 服务端创建只读本地BULK
+      ...
+      hg_bulk = (struct hg_bulk *) calloc(1, sizeof(*hg_bulk))
+      hg_bulk->desc.info.segment_count = count -> 1段
+      segments = hg_bulk->desc.segments.s
+      segments[i].base = (hg_ptr_t) bufs[i] -> 140039780584816
+      segments[i].len = lens[i] -> 128
+      hg_bulk->desc.info.len += lens[i]
+      hg_bulk_create_na_mem_descs(&hg_bulk->na_mem_descs, na_class,
+            segments, count, flags, (enum na_mem_type) attrs->mem_type,
+            attrs->device)
+        na_mem_handles = na_mem_descs->handles.s
+        hg_bulk_register(na_class, (void *) segments[i].base,
+            segments[i].len, flags, mem_type, device, &na_mem_handles[i],
+            &na_mem_serialize_sizes[i])
+        ...
+    map_desc.bd_bulk_op = CRT_BULK_PUT -> 设置为服务端通过RDMA写内存的方式, 将map写给客户端
+    map_desc.bd_remote_hdl = remote_bulk
+    map_desc.bd_local_hdl = bulk
+    crt_bulk_transfer(&map_desc, bulk_cb, &eventual, &map_opid) -> 传输BULK, 在: rc = bulk_cbinfo->bci_cb(&crt_bulk_cbinfo) 中执行回调
+    
+
+      
+
+
+

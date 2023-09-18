@@ -1,0 +1,177 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+
+    {
+      "name": "go_daos_server",
+      "type": "go",
+      "request": "launch",
+      "args": ["nvme", "scan"],
+      "mode": "exec",
+      // "cwd": "/opt/daos/bin",
+      "program": "/opt/daos/bin/daos_server",
+    },
+    {
+      "name": "daos_debug",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "/opt/daos/bin/vos_tests",
+      // "program": "/opt/daos/bin/bio_ut",
+      // "program": "/opt/daos/bin/eq_tests",
+      // "program": "/opt/daos/bin/dfuse",
+      // "program": "/home/xb/project/stor/daos/main/daos/build/debug/gcc/src/common/tests/tse_sched_deps_task_tests",
+      // "args": ["-c", "0"],
+      // "args": ["-a"],
+      // "args": ["-a"], // bio_ut
+      "stopAtEntry": false,
+      // "cwd": "/opt/daos/bin/",
+      "cwd": "/home/xb/project/stor/daos/main/daos/build/debug/gcc/src/common/tests",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/bin/gdb",
+      "setupCommands": [
+          {
+              "description": "Enable pretty-printing for gdb",
+              "text": "-enable-pretty-printing",
+              "ignoreFailures": true
+          },
+          {
+              "description": "Set Disassembly Flavor to Intel",
+              "text": "-gdb-set disassembly-flavor intel",
+              "ignoreFailures": true
+          }
+      ]
+    },
+    {
+      "name": "dfuse_mount",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "/opt/daos/bin/dfuse",
+      "args": ["--mountpoint=/tmp/sxb", "--pool=sxb", "--cont=sxb", "-f"],
+      "stopAtEntry": false,
+      "cwd": "/opt/daos/bin/",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/bin/gdb",
+      "setupCommands": [
+          {
+              "description": "Enable pretty-printing for gdb",
+              "text": "-enable-pretty-printing", // GDB更好的输出
+              "ignoreFailures": true
+          },
+          {
+              "description": "Set Disassembly Flavor to Intel",
+              "text": "-gdb-set disassembly-flavor intel", // GDB 将使用 Intel 反汇编样式
+              "ignoreFailures": true
+          }
+      ]
+    },
+    {
+      "name": "gdb_attach_dfuse",
+      "type": "cppdbg",
+      "request": "attach",
+      "program": "/opt/daos/bin/dfuse",
+      "processId": "22422",
+      "MIMode": "gdb",
+      "miDebuggerPath": "/bin/gdb",
+      "setupCommands": [
+          {
+              "description": "Enable pretty-printing for gdb",
+              "text": "-enable-pretty-printing", // GDB更好的输出
+              "ignoreFailures": true
+          },
+          {
+              "description": "Set Disassembly Flavor to Intel",
+              "text": "-gdb-set disassembly-flavor intel", // GDB 将使用 Intel 反汇编样式
+              "ignoreFailures": true
+          }
+      ]
+    },
+    {
+      "name": "gdb_attach_engine",
+      "type": "cppdbg",
+      "request": "attach",
+      "program": "/opt/daos/bin/daos_engine",
+      "processId": "2738",
+      "MIMode": "gdb",
+      "miDebuggerPath": "/bin/gdb",
+      "setupCommands": [
+          {
+              "description": "Enable pretty-printing for gdb",
+              "text": "-enable-pretty-printing", // GDB更好的输出
+              "ignoreFailures": true
+          },
+          {
+              "description": "Set Disassembly Flavor to Intel",
+              "text": "-gdb-set disassembly-flavor intel", // GDB 将使用 Intel 反汇编样式
+              "ignoreFailures": true
+          }
+      ]
+    },
+    {
+      "name": "dfuse_write",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "/home/xb/project/stor/daos/main/daos/xb/write",
+      "stopAtEntry": false,
+      "cwd": "/home/xb/project/stor/daos/main/daos/xb",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/bin/gdb",
+      "setupCommands": [
+          {
+              "description": "Enable pretty-printing for gdb",
+              "text": "-enable-pretty-printing", // GDB更好的输出
+              "ignoreFailures": true
+          },
+          {
+              "description": "Set Disassembly Flavor to Intel",
+              "text": "-gdb-set disassembly-flavor intel", // GDB 将使用 Intel 反汇编样式
+              "ignoreFailures": true
+          }
+      ]
+    },
+  ]
+}
+
+
+// {
+//   // Use IntelliSense to learn about possible attributes.
+//   // Hover to view descriptions of existing attributes.
+//   // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+//   "version": "0.2.0",
+//   "configurations": [
+
+//     {
+//       "name": "ucx_perftest",
+//       "type": "cppdbg",
+//       "request": "launch",
+//       "program": "${workspaceFolder}/install-debug/bin/ucx_perftest",
+//       "args": ["-c", "0"],
+//       "stopAtEntry": false,
+//       "cwd": "${workspaceFolder}/install-debug/bin",
+//       "environment": [],
+//       "externalConsole": false,
+//       "MIMode": "gdb",
+//       "miDebuggerPath": "/bin/gdb",
+//       "setupCommands": [
+//           {
+//               "description": "Enable pretty-printing for gdb",
+//               "text": "-enable-pretty-printing",
+//               "ignoreFailures": true
+//           },
+//           {
+//               "description": "Set Disassembly Flavor to Intel",
+//               "text": "-gdb-set disassembly-flavor intel",
+//               "ignoreFailures": true
+//           }
+//       ]
+//     },
+//   ]
+// }

@@ -6,6 +6,8 @@ c_raft实现: https://github.com/willemt/raft, 文档: raft.h,
 
 依赖缓存包: http://rz2fg6ogr.hn-bkt.clouddn.com/cache_tgz
 
+libfuse_git: https://github.com/ssbandjl/libfuse.git
+添加子模块: git submodule add https://github.com/ssbandjl/libfuse.git libfuse
 
 欢迎对DAOS, SPDK, RDMA等高性能技术感兴趣的朋友加入[DAOS技术交流(群)]
 
@@ -566,13 +568,9 @@ crt_req_create -> crt_req_create_internal -> crt_rpc_priv_alloc 分配rpc请求�
 
 RPC_STATE_INITED -> 
 
-查找目标地址:
-crt_req_send -> crt_req_send_internal -> crt_req_ep_lc_lookup -> crp_hg_addr (na_addr) -> 地址作为 HG_Create 的参数(目的地址) -> crt_req_send_immediately -> crt_hg_req_create RPC_STATE_REQ_SENT 创建请求,设置状态为发送 -> crt_hg_req_send -> HG_Forward -> HG_Core_forward -> forward(hg_core_handle) -> hg_core_forward_na -> NA_Msg_send_unexpected -> na_ofi_msg_send_unexpected -> na_ofi_msg_send -> fi_tsend
 
-目标地址: crp_tgt_uri
-crt_req_send_internal -> crt_req_ep_lc_lookup -> crt_req_fill_tgt_uri -> crp_tgt_uri
 
-crt_issue_uri_lookup
+
 
 
 crt_hg_req_create -> 控制器复用:HG_Reset -> 不复用:HG_Create -> 
@@ -1020,7 +1018,7 @@ dfs_write
 
 
 
-
+---------- dfuse ----------
 
 DAOS用户态文件系统, 写流程
 master -> src/client/dfuse/ops/write.c -> dfuse_cb_write(fuse_req_t req, fuse_ino_t ino, struct fuse_bufvec *bufv, off_t position, struct fuse_file_info *fi)
@@ -1234,6 +1232,72 @@ dc_array_write
       tse_sched_run
 
 
+
+libfuse:
+注册文件系统操作:
+static struct {
+	void (*func)(fuse_req_t, fuse_ino_t, const void *);
+	const char *name;
+} fuse_ll_ops[] = {
+	[FUSE_LOOKUP]	   = { do_lookup,      "LOOKUP"	     },
+	[FUSE_FORGET]	   = { do_forget,      "FORGET"	     },
+	[FUSE_GETATTR]	   = { do_getattr,     "GETATTR"     },
+	[FUSE_SETATTR]	   = { do_setattr,     "SETATTR"     },
+	[FUSE_READLINK]	   = { do_readlink,    "READLINK"    },
+	[FUSE_SYMLINK]	   = { do_symlink,     "SYMLINK"     },
+	[FUSE_MKNOD]	   = { do_mknod,       "MKNOD"	     },
+	[FUSE_MKDIR]	   = { do_mkdir,       "MKDIR"	     },
+	[FUSE_UNLINK]	   = { do_unlink,      "UNLINK"	     },
+	[FUSE_RMDIR]	   = { do_rmdir,       "RMDIR"	     },
+	[FUSE_RENAME]	   = { do_rename,      "RENAME"	     },
+	[FUSE_LINK]	   = { do_link,	       "LINK"	     },
+	[FUSE_OPEN]	   = { do_open,	       "OPEN"	     },
+	[FUSE_READ]	   = { do_read,	       "READ"	     },
+	[FUSE_WRITE]	   = { do_write,       "WRITE"	     },
+	[FUSE_STATFS]	   = { do_statfs,      "STATFS"	     },
+	[FUSE_RELEASE]	   = { do_release,     "RELEASE"     },
+	[FUSE_FSYNC]	   = { do_fsync,       "FSYNC"	     },
+	[FUSE_SETXATTR]	   = { do_setxattr,    "SETXATTR"    },
+	[FUSE_GETXATTR]	   = { do_getxattr,    "GETXATTR"    },
+	[FUSE_LISTXATTR]   = { do_listxattr,   "LISTXATTR"   },
+	[FUSE_REMOVEXATTR] = { do_removexattr, "REMOVEXATTR" },
+	[FUSE_FLUSH]	   = { do_flush,       "FLUSH"	     },
+	[FUSE_INIT]	   = { do_init,	       "INIT"	     },
+	[FUSE_OPENDIR]	   = { do_opendir,     "OPENDIR"     },
+	[FUSE_READDIR]	   = { do_readdir,     "READDIR"     },
+	[FUSE_RELEASEDIR]  = { do_releasedir,  "RELEASEDIR"  },
+	[FUSE_FSYNCDIR]	   = { do_fsyncdir,    "FSYNCDIR"    },
+	[FUSE_GETLK]	   = { do_getlk,       "GETLK"	     },
+	[FUSE_SETLK]	   = { do_setlk,       "SETLK"	     },
+	[FUSE_SETLKW]	   = { do_setlkw,      "SETLKW"	     },
+	[FUSE_ACCESS]	   = { do_access,      "ACCESS"	     },
+	[FUSE_CREATE]	   = { do_create,      "CREATE"	     },
+	[FUSE_INTERRUPT]   = { do_interrupt,   "INTERRUPT"   },
+	[FUSE_BMAP]	   = { do_bmap,	       "BMAP"	     },
+	[FUSE_IOCTL]	   = { do_ioctl,       "IOCTL"	     },
+	[FUSE_POLL]	   = { do_poll,        "POLL"	     },
+	[FUSE_FALLOCATE]   = { do_fallocate,   "FALLOCATE"   },
+	[FUSE_DESTROY]	   = { do_destroy,     "DESTROY"     },
+	[FUSE_NOTIFY_REPLY] = { (void *) 1,    "NOTIFY_REPLY" },
+	[FUSE_BATCH_FORGET] = { do_batch_forget, "BATCH_FORGET" },
+	[FUSE_READDIRPLUS] = { do_readdirplus,	"READDIRPLUS"},
+	[FUSE_RENAME2]     = { do_rename2,      "RENAME2"    },
+	[FUSE_COPY_FILE_RANGE] = { do_copy_file_range, "COPY_FILE_RANGE" },
+	[FUSE_LSEEK]	   = { do_lseek,       "LSEEK"	     },
+	[CUSE_INIT]	   = { cuse_lowlevel_init, "CUSE_INIT"   },
+};
+
+
+处理通用缓冲区中提供的原始请求 fusion_buf *buf 可能包含内存缓冲区或管道文件描述符
+void fuse_session_process_buf(struct fuse_session *se, const struct fuse_buf *buf) -> fuse_session_process_buf_int(se, buf, NULL /* fuse_chan */)
+  fuse_ll_ops[in->opcode].func(req, in->nodeid, inarg) -> 调用上面的方法 -> static void do_write
+    req->se->op.write(req, nodeid, param, arg->size, arg->offset, &fi) -> dfuse_cb_write
+    
+
+
+---------- dfuse ----------
+
+
 check_short_read_cb
 
 通过以下对象连接
@@ -1426,6 +1490,8 @@ dc_rw_cb DER_NO_HDL 'Invalid handle' 1002 追rc
 crt_ctx_epi_abort
   crt_rpc_complete
 
+dsc_pool_svc_call(uuid_t uuid, d_rank_list_t *ranks, struct dsc_pool_svc_call_cbs *cbs, void *arg,uint64_t deadline)
+调用PS操作。 引擎代码中的所有地方最终都会迁移到这个模板来调用 PS 操作。 PS由uuid和rank指定，操作由cbs和arg指定，整个调用的deadline由deadline指定。 实现很简单，如果不是太简单的话。 供将来考虑的一些想法： 在单个调用之外缓存 rsvc_client 对象，以便对同一 PS 的后续调用不需要从领导者搜索开始。 使用一些可以容忍较短 RPC 超时的 RPC 来搜索领导者。 将 PS 的可用性状态缓存一段时间，这样就不必每次对不可用 PS 的调用都需要达到其截止时间。
 
 
 dc_pool_query
@@ -1608,7 +1674,8 @@ master: src/client/dfuse/dfuse_main.c:659 -> main
 start_one(struct dfuse_tm *dtm)
 pthread_create(&dt->dt_id, NULL, dfuse_do_work, dt)
 dfuse_do_work
-  fuse_session_process_buf_int -> 处理通用缓冲区中提供的原始请求 fusion_buf 可能包含内存缓冲区或管道文件描述符
+  fuse_session_process_buf_int -> 核心函数, 原本被 fuse_main 调用, 处理通用缓冲区中提供的原始请求 fusion_buf 可能包含内存缓冲区或管道文件描述符
+  fuse_session_process_buf
   dfuse_cb_write
     dfuse_mcache_evict -> 将缓存置为无效
     ev = d_slab_acquire(eqt->de_write_slab) -> d_slab_acquire(struct d_slab_type *type) -> 获取一个新对象，这是在关键路径上考虑的，所以应该尽可能轻量级
@@ -1991,7 +2058,24 @@ crt_req_send(req, shard_update_req_cb, remote_arg)  complete_cb = shard_update_r
                                                     ssize_t rxm_get_conn 新建或复用连接
                                                     rxm_send_common
                                                 na_ofi_op_retry -> na_ofi_cq_process_retries HG_QUEUE_POP_HEAD
+        crt_req_hg_addr_lookup -> 见下面
+查找目标地址:
+crt_req_send -> crt_req_send_internal -> crt_req_ep_lc_lookup -> crp_hg_addr (na_addr) -> 地址作为 HG_Create 的参数(目的地址) -> crt_req_send_immediately -> crt_hg_req_create RPC_STATE_REQ_SENT 创建请求,设置状态为发送 -> crt_hg_req_send -> HG_Forward -> HG_Core_forward -> forward(hg_core_handle) -> hg_core_forward_na -> NA_Msg_send_unexpected -> na_ofi_msg_send_unexpected -> na_ofi_msg_send -> fi_tsend
 
+目标地址: crp_tgt_uri
+crt_req_send_internal -> crt_req_ep_lc_lookup -> crt_req_fill_tgt_uri -> crp_tgt_uri
+
+crt_issue_uri_lookup
+
+
+crt_req_hg_addr_lookup -> 根据url和标签查找NA地址, 我们有基本 URI 但没有标签的 NA 地址的情况
+  HG_Addr_lookup2(crt_ctx->cc_hg_ctx.chc_hgcla, rpc_priv->crp_tgt_uri, &hg_addr) -> 根据目标url查询地址信息
+  crt_grp_lc_addr_insert -> 缓存, 根据tag查找hg_addr, 填写crt_ctx的查找缓存中某个标签的hg地址。 在调用此例程之前，标签所在的主机等级必须存在于缓存中
+    rank = crt_grp_priv_get_primary_rank(passed_grp_priv, rank) -> 获取主rank
+    ctx_idx = crt_ctx->cc_idx
+    rlink = d_hash_rec_find(&grp_priv->gp_lookup_cache[ctx_idx],(void *)&rank, sizeof(rank)) -> 根据上下文索引在缓存中查找rank
+    li = crt_li_link2ptr(rlink) -> 根据链表找到列表条目
+    li->li_tag_addr[tag] = *hg_addr -> 将tag作为key, hg_addr作为value存入标签_地址映射中
 
 
 
@@ -2042,8 +2126,8 @@ crt_init_opt daos_crt_init_opt_get
             crt_grp_priv_create
             grp_priv_init_membs
             crt_grp_lc_create
-                d_hash_table_create_inplace gp_lookup_cache
-                d_hash_table_create_inplace gp_uri_lookup_cache
+                d_hash_table_create_inplace gp_lookup_cache -> 地址查找缓存，仅对主要组有效
+                d_hash_table_create_inplace gp_uri_lookup_cache -> url缓存, 仅对主要组有效
     crt_plugin_init
         cpg_timeout_cbs 分配超时回调
         cpg_event_cbs 事件控制器回调
@@ -2146,6 +2230,31 @@ dss_sched_init
                       crt_handle_rpc
 
 
+---------- opc ----------
+
+/** specify an RPC protocol */
+struct crt_proto_format {
+	const char			*cpf_name;
+	uint32_t			 cpf_ver;
+	/** number of RPCs in this protocol, i.e. number of entries in
+	 * cpf_prf
+	 */
+	uint32_t			 cpf_count;
+	/** Array of RPC definitions */
+	struct crt_proto_rpc_format	*cpf_prf;
+	/** protocol base opcode */
+	crt_opcode_t			 cpf_base;
+
+};
+
+/**
+ * given the base opcode, version of a protocol, and a member RPC index, compute
+ * the RPC opcode of that member RPC
+ */
+#define CRT_PROTO_OPC(base_opc, version, rpc_index)			\
+	((uint32_t)(base_opc) |						\
+	(uint32_t)(version) << 16 |					\
+	(uint32_t)(rpc_index))
 
 常见操作码 注册操作码
 .cpf_name   =  "pool"
@@ -2157,6 +2266,8 @@ cont, 0x3000000
 daos-object, 0x4000000
 swim, 0xfe000000
 ...
+
+---------- opc ----------
 
 打开调试
 HG_LOG_LEVEL=debug
@@ -2255,7 +2366,7 @@ main
               calloc
               na_ofi_mem_desc s[0] 单段， d 多段
               flags & 0xff 全1
-          NA_Mem_register
+          NA_Mem_register -> 注册内存
             mem_register na_ofi_mem_register
               requested_key 自增
               NA_MEM_READ_ONLY 
@@ -2277,7 +2388,7 @@ main
                   rxm_mr_init
               fi_mr_key 取回内存key
               ...desc.info.fi_mr_key = 远程键
-          NA_Mem_handle_get_serialize_size na_ofi_mem_handle_get_serialize_size
+          NA_Mem_handle_get_serialize_size na_ofi_mem_handle_get_serialize_size 缓存大小
             sizeof iovec info + iovcnt
     HG_Forward
     save_completed
@@ -4023,27 +4134,41 @@ vos_cont_destroy
 
 
 查池
-umg pool list -v
+dmg pool list -v
 func (cmd *PoolListCmd) Execute
 func ListPools
   PoolQuery(ctx, rpcClient, &PoolQueryReq{ID: p.UUID})
   func (svc *mgmtSvc) PoolQuery
   svc.makePoolServiceCall(ctx, drpc.MethodPoolQuery, req)
   MethodPoolQuery MgmtMethod = C.DRPC_METHOD_MGMT_POOL_QUERY
+  客户端
+  -------------------------
+  服务端
+  static void ABTD_ythread_context_func_wrapper(fcontext_t *p_fctx)
+    ABTD_ythread_func_wrapper(p_ctx)
+      p_ythread->thread.f_thread(p_ythread->thread.p_arg)
+        drpc_handler_ult(void *call_ctx)
+          ctx->session->handler(ctx->call, ctx->resp) -> drpc_hdlr_process_msg(Drpc__Call *request, Drpc__Response *resp) -> handler(request, resp)
+            ds_mgmt_drpc_pool_query(drpc_req, drpc_resp)
+  --------------------------------            
   DRPC_METHOD_MGMT_POOL_QUERY
-  ds_mgmt_drpc_pool_query
-    ds_mgmt_pool_query
+  ds_mgmt_drpc_pool_query(Drpc__Call *drpc_req, Drpc__Response *drpc_resp)
+    mgmt__pool_query_req__unpack(&alloc.alloc, drpc_req->body.len, drpc_req->body.data)
+    ds_mgmt_pool_query(uuid, svc_ranks, &ranks, &pool_info, &resp.pool_layout_ver, &resp.upgrade_layout_ver)
       ds_pool_svc_query
         rsvc_client_init
         rsvc_client_choose
-        pool_req_create POOL_QUERY 创建查池RPC请求
+        pool_req_create(info->dmi_ctx, &ep, cbs->pscc_op, &rpc) -> 拿到模块的上下文, POOL_QUERY 创建查池RPC请求
         in = crt_req_get(rpc)
         pool_query_bits
         map_bulk_create 创建池map bulk
           *buf = pool_buf_alloc(nr) 分配一个缓冲
-          d_iov_set(&iov, *buf, pool_buf_size((*buf)->pb_nr))
-          sgl.sg_iovs = &iov;
+          d_iov_set(&iov, *buf, pool_buf_size((*buf)->pb_nr)); -> 将buf设置到iov(向量IO上)
+          sgl.sg_nr = 1;
+          sgl.sg_nr_out = 0;
+          sgl.sg_iovs = &iov; -> 封装为SGL
           crt_bulk_create(ctx, &sgl, CRT_BULK_RW, bulk)
+            crt_hg_bulk_create(&ctx->cc_hg_ctx, sgl, bulk_perm, bulk_hdl) -> 传入SGL
         dss_rpc_send(rpc) -> ds_pool_query_handler
         out = crt_reply_get(rpc)
         pool_rsvc_client_complete_rpc
@@ -4069,9 +4194,10 @@ ds_pool_query_handler
     locate_map_buf 将持久内存中的池映射缓冲区地址和池映射版本分别检索到“map_buf”和“map_version”
       d_iov_set
       rdb_tx_lookup
-  ds_pool_transfer_map_buf 传输大块数据, 将池映射缓冲区传输到“remote_bulk”。 如果远程批量缓冲区太小，则返回 -DER_TRUNC 并将“required_buf_size”设置为本地池映射缓冲区大小。
+  ds_pool_transfer_map_buf -> 传输池的大块数据, 将池映射缓冲区传输到“remote_bulk”。 如果远程批量缓冲区太小，则返回 -DER_TRUNC 并将“required_buf_size”设置为本地池映射缓冲区大小。
     pool_buf_size
-    crt_bulk_get_len
+    crt_bulk_get_len(remote_bulk, &remote_bulk_size) -> 获取远程内存缓冲区大小
+      HG_Bulk_get_size(bulk_hdl)
     crt_bulk_create(rpc->cr_ctx, &map_sgl, CRT_BULK_RO, &bulk)
     ABT_eventual_create(sizeof(*status), &eventual)
     crt_bulk_transfer(&map_desc, bulk_cb, &eventual, &map_opid)
@@ -4498,7 +4624,7 @@ dc_obj_update_task(tse_task_t *task) DAOS_OPC_OBJ_UPDATE 写
       daos_sgls_packed_size -> 内联提取需要将 sqls 缓冲区打包到 RPC 中，因此使用它来检查是否需要批量传输
       obj_bulk_prep
         crt_bulk_create
-        crt_bulk_bind
+        crt_bulk_bind -> 将批量句柄绑定到本地上下文，将本地上下文的源地址与批量句柄关联起来。 它可用于将批量句柄从一台服务器转发/共享到另一台服务器，在这种情况下，批量句柄的原始地址可以即时序列化/反序列化。 示例用法：客户端向服务器 A 发送嵌入批量句柄的 RPC 请求，服务器 A 将客户端批量句柄转发到另一台服务器 B。对于该用法，客户端应调用此 API 将批量句柄与其本地上下文绑定 因此，当服务器B收到服务器A转发的反序列化的批量句柄时，服务器B就可以知道客户端的原始地址来进行批量传输。 用户应注意，绑定批量句柄会增加序列化的额外开销，因此建议谨慎使用。 在源上绑定批量句柄时，应使用 crt_bulk_bind_transfer()，因为源地址信息嵌入在句柄中
     obj_req_fanout(obj, obj_auxi, dkey_hash, map_ver, epoch, shard_rw_prep, dc_obj_shard_rw, task) -> 扇出 shard_io_cb = io_cb = dc_obj_shard_rw
 
 
@@ -6025,4 +6151,8 @@ palloc_reservation_create: 创建内存块的易失性保留。 分配新块的�
 
 palloc_reserve: 
 palloc_operation: palloc_operation——持久内存操作。 获取 NULL 指针或现有内存块并将其修改为至少占用“size”个字节。 malloc、free 和 realloc 例程是在该通用操作的上下文中实现的，该操作包含通常在这些方法中单独完成的所有功能。 需要做的第一件事是确定哪些内存块将受到操作的影响 - 这取决于操作是否需要修改或释放现有块和/或分配新块。 简化的分配过程流程如下： 在临时堆中保留一个新块 准备新块 创建所需修改的重做日志 新对象的块元数据偏移量 提交并处理重做日志 类似地，释放过程： 创建所需修改的重做日志 所需的修改将块元数据反转回“空闲”状态将对象偏移的目标设置为零提交并处理重做日志有一个重要的区别 释放过程 - 它不会将内存块返回到临时容器。 一旦没有更多内存可用，就会完成此操作。 重新分配是上述内容的组合，并增加了复制旧内容的步骤
+
+
+nvme重新绑定: dmg nvme-rebind
+
 

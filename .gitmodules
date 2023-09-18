@@ -1,3 +1,6 @@
 [submodule "raft"]
 	path = src/rdb/raft
 	url = https://github.com/daos-stack/raft.git
+[submodule "libfuse"]
+	path = src/libfuse
+	url = https://github.com/ssbandjl/libfuse.git
