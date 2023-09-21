@@ -52,6 +52,7 @@ dc_pool_query(tse_task_t *task)
     sgl.sg_nr_out = 0;
     sgl.sg_iovs = &iov;
     rc = crt_bulk_create(ctx, &sgl, CRT_BULK_RW, bulk);
+  return daos_rpc_send(rpc, task) 发送RPC
 客户端
 ---------------------------
 服务端
@@ -90,11 +91,11 @@ ds_pool_query_handler(crt_rpc_t *rpc, int version)
             segments[i].len, flags, mem_type, device, &na_mem_handles[i],
             &na_mem_serialize_sizes[i])
         ...
-    map_desc.bd_bulk_op = CRT_BULK_PUT -> 设置为服务端通过RDMA写内存的方式, 将map写给客户端
+    map_desc.bd_bulk_op = CRT_BULK_PUT -> 设置为服务端通过RDMA写操作(wr.opcode = IBV_WR_RDMA_WRITE), 将池map, DMA给客户端
     map_desc.bd_remote_hdl = remote_bulk
     map_desc.bd_local_hdl = bulk
     crt_bulk_transfer(&map_desc, bulk_cb, &eventual, &map_opid) -> 传输BULK, 在: rc = bulk_cbinfo->bci_cb(&crt_bulk_cbinfo) 中执行回调
-    
+
 
       
 
