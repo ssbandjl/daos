@@ -16,9 +16,14 @@ umount /mnt/daos
 
 #export HG_LOG_LEVEL=debug
 #export HG_LOG_LEVEL=warn
-
+daospath=/opt/daos
+mkdir -p /var/run/daos_agent/
 daos_agent &
 # echo -e "dmg storage format"
+
+# ./build/external/debug/spdk/scripts/setup.sh
+# ./build/external/debug/spdk/scripts/setup.sh reset
+mkdir -p /var/run/daos_server
 daos_server start &
 
 # count=0

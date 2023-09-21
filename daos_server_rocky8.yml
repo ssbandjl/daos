@@ -1,0 +1,51 @@
+# For a single-server system
+
+name: daos_server
+access_points:
+- 192.168.1.8
+port: 10001
+provider: ofi+sockets
+control_log_mask: DEBUG
+control_log_file: /tmp/daos_server.log
+helper_log_file: /tmp/daos_server_helper.log
+transport_config:
+   allow_insecure: false
+   client_cert_dir: /etc/daos/certs/clients
+   ca_cert: /etc/daos/certs/daosCA.crt
+   cert: /etc/daos/certs/server.crt
+   key: /etc/daos/certs/server.key
+
+engines:
+-
+  targets: 1
+  first_core: 0
+  nr_xs_helpers: 0
+  fabric_iface: ens3
+  fabric_iface_port: 31416
+  log_mask: DEBUG
+  log_file: /tmp/daos_engine.0.log
+
+  env_vars:
+  - FI_LOG_LEVEL=warn
+  - FI_SOCKETS_MAX_CONN_RETRY=1
+  - FI_SOCKETS_CONN_TIMEOUT=2000
+  - D_LOG_MASK=DEBUG
+  - DD_SUBSYS=all
+  - DD_MASK=all
+  - HG_LOG_LEVEL=debug
+
+  # Storage definitions
+
+  # When scm_class is set to ram, tmpfs will be used to emulate SCM.
+  # The size of ram is specified by scm_size in GB units.
+  scm_mount: /mnt/daos  # map to -s /mnt/daos
+  scm_class: ram
+  scm_size: 4  #内存模拟scm
+
+  # When bdev_class is set to file, Linux AIO will be used to emulate NVMe.
+  # The size of file that will be created is specified by bdev_size in GB units.
+  # The location of the files that will be created is specified in bdev_list.
+  bdev_class: nvme
+  bdev_list:
+  # get_pci: nvme list -v
+  - "0000:00:08.0" 

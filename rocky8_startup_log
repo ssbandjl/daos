@@ -1,0 +1,505 @@
+[root@rocky8 daos]# ./start.sh 
+start
+Signal received.  Caught terminated; shutting down
+flushing all open local pool handles on shutdown
+umount: /mnt/daos: no mount point specified.
+Starting DAOS Agent version 2.5.100-g2e86a2-dirty (pid 6845)
+DAOS Agent version 2.5.100-g2e86a2-dirty (pid 6845) listening on /var/run/daos_agent/daos_agent.sock
+DAOS Server config loaded from /opt/daos/etc/daos_server.yml
+daos_server logging to file /tmp/daos_server.log
+DEBUG 01:23:34.740092 start.go:99: Switching control log level to DEBUG
+DEBUG 01:23:34.763106 fabric.go:1085: fabric interface "ens3" is ready
+DEBUG 01:23:34.763284 provider.go:87: getting topology with hwloc version 0x20100
+DEBUG 01:23:34.779505 fabric.go:966: discovered 2 fabric interfaces:
+ens3 (interface: ens3) (providers: ofi+sockets)
+lo (interface: lo) (providers: ofi+sockets)
+DEBUG 01:23:34.779669 server.go:878: detected NUMA affinity 0 for engine 0
+DEBUG 01:23:34.779718 server.go:885: setting legacy core allocation algorithm on engine 0
+DEBUG 01:23:34.779773 server.go:620: validating config file read from "/opt/daos/etc/daos_server.yml"
+DEBUG 01:23:34.779814 server.go:642: vfio=true hotplug=false vmd=true requested in config
+NOTICE: Configuration includes only one access point. This provides no redundancy in the event of an access point failure.
+NOTICE: engine 0: Legacy storage configuration detected. Please migrate to new-style storage configuration.
+DEBUG 01:23:34.780586 server.go:472: engine 0 fabric numa 0, storage numa 0
+DEBUG 01:23:34.780654 server.go:496: calculated nr_hugepages: 512 for 1 targets
+hugepage count automatically set to 512 (1.0 GiB)
+DEBUG 01:23:34.780781 scm.go:597: ram-disk size 4.5 GiB calculated using mem stats: total 7.5 GiB (8070955008) - (hugepages 1.0 GiB + sys rsvd 1.0 GiB + (engine rsvd 1.0 GiB * nr engines 1). 1 tgts-per-engine)
+DEBUG 01:23:34.781041 server_utils.go:203: setting OFI_DOMAIN=ens3 for ens3
+DEBUG 01:23:34.782251 server.go:414: active config saved to /var/run/daos_server/.daos_server.active.yml (read-only)
+DEBUG 01:23:34.782357 server.go:555: fault domain: /rocky8
+DEBUG 01:23:34.782739 server.go:242: setting core dump filter to 0x13
+DEBUG 01:23:34.783760 server.go:145: time to init network: 236.212µs
+VMD not enabled because IOMMU disabled on platform
+DEBUG 01:23:34.783990 server_utils.go:330: allocating 514 hugepages on each of these numa nodes: [0]
+DEBUG 01:23:34.933444 server.go:145: time to prepare bdev storage: 149.53287ms
+ERROR: /opt/daos/bin/daos_server_helper Error with SPDK log page
+DEBUG 01:23:35.103768 server.go:145: time to scan bdev storage: 170.017832ms
+DEBUG 01:23:35.104248 provider.go:742: setting bdev cache in storage provider for engine 0: 0000:00:08.0
+DEBUG 01:23:35.104635 server.go:343: waiting for engines to start...
+DEBUG 01:23:35.108888 pprof.go:28: profiling service started on port 6060
+DAOS Control Server v2.5.100 (pid 6847) listening on 192.168.1.8:10001
+DEBUG 01:23:35.109796 mgmt_svc.go:307: starting serialReqLoop
+DEBUG 01:23:35.109796 mgmt_svc.go:326: starting batchReqLoop
+DEBUG 01:23:35.109882 instance_exec.go:36: instance 0: checking if storage is formatted
+Checking DAOS I/O Engine instance 0 storage ...
+DEBUG 01:23:35.110053 instance_storage.go:93: needsMetaFormat: false
+DEBUG 01:23:35.110189 provider.go:361: /mnt/daos: checking formatting
+DEBUG 01:23:35.141526 provider.go:374: /mnt/daos (ram) needs format: true
+DEBUG 01:23:35.141618 instance_storage.go:100: needsScmFormat: true
+SCM format required on instance 0
+DEBUG 01:23:39.764565 interceptors.go:239: gRPC request: *ctl.StorageFormatReq
+DEBUG 01:23:39.764685 ctl_storage_rpc.go:590: no control metadata format needed
+DEBUG 01:23:39.764751 provider.go:361: /mnt/daos: checking formatting
+DEBUG 01:23:39.813763 provider.go:374: /mnt/daos (ram) needs format: true
+DEBUG 01:23:39.814329 server_utils.go:525: checking MemAvailable (5.5 GiB) covers at least 90% of engine ram-disks (3.6 GiB required to cover 4.0 GiB ram-disk mem): check successful!
+Instance 0: starting format of SCM (ram:/mnt/daos) src/control/server/storage/provider.go:391
+Instance 0: finished format of SCM (ram:/mnt/daos)
+Format of SCM storage for DAOS I/O Engine instance 0 (reformat: false): 35.706234ms
+DEBUG 01:23:39.850483 instance_storage.go:29: checking if metadata is mounted
+DEBUG 01:23:39.850616 provider.go:189: control metadata config: {Path: DevicePath:}
+DEBUG 01:23:39.851235 instance_storage.go:35: IsMounted: true
+DEBUG 01:23:39.851484 instance_superblock.go:175: instance 0: failed to read superblock at /mnt/daos/superblock: Failed to read Superblock from /mnt/daos/superblock: open /mnt/daos/superblock: no such file or directory
+DEBUG 01:23:39.851658 instance_superblock.go:100: instance 0: superblock not found
+Instance 0: starting format of nvme block devices 0000:00:08.0
+Instance 0: finished format of nvme block devices 0000:00:08.0
+DEBUG 01:23:40.150476 instance_storage_rpc.go:86: instance 0: tier 1: device fmt of 0000:00:08.0, status &{Formatted:true Error:(nil)}
+Format of NVMe storage for DAOS I/O Engine instance 0: 299.005599ms
+DEBUG 01:23:40.151391 provider.go:591: BdevWriteConfigRequest: &{ForwardableRequest:{Forwarded:false} ConfigOutputPath:/mnt/daos/daos_nvme.conf OwnerUID:0 OwnerGID:0 TierProps:[{Class:nvme DeviceList:0000:00:08.0 DeviceFileSize:0 Tier:1 DeviceRoles:{OptionBits:0}}] VMDEnabled:false HotplugEnabled:false HotplugBusidBegin:0 HotplugBusidEnd:0 Hostname:rocky8 BdevCache:<nil> AccelProps:{Engine: Options:0} SpdkRpcSrvProps:{Enable:false SockAddr:}}
+Writing NVMe config file for engine instance 0 to "/mnt/daos/daos_nvme.conf"
+DAOS I/O Engine instance 0 storage ready
+DEBUG 01:23:40.185306 instance_storage.go:29: checking if metadata is mounted
+DEBUG 01:23:40.185392 provider.go:189: control metadata config: {Path: DevicePath:}
+DEBUG 01:23:40.185924 instance_storage.go:35: IsMounted: true
+DEBUG 01:23:40.186078 instance_superblock.go:175: instance 0: failed to read superblock at /mnt/daos/superblock: Failed to read Superblock from /mnt/daos/superblock: open /mnt/daos/superblock: no such file or directory
+DEBUG 01:23:40.186123 instance_superblock.go:100: instance 0: superblock not found
+DEBUG 01:23:40.186151 instance_storage.go:29: checking if metadata is mounted
+DEBUG 01:23:40.186198 provider.go:189: control metadata config: {Path: DevicePath:}
+DEBUG 01:23:40.186484 instance_storage.go:35: IsMounted: true
+DEBUG 01:23:40.186567 instance_superblock.go:153: index 0: creating /mnt/daos/superblock: (rank: NilRank, uuid: 842505d0-1c66-4f06-aa65-8e79df60cbfa)
+DEBUG 01:23:40.186610 instance_superblock.go:162: instance 0: writing superblock at /mnt/daos/superblock
+DEBUG 01:23:40.187252 database.go:433: system db start: isReplica: true, isBootstrap: true
+Format Summary:
+  Hosts     SCM Devices NVMe Devices 
+  -----     ----------- ------------ 
+  localhost 1           1            
+DEBUG 01:23:40.189053 api.go:588: initial configuration: index=0 servers=[%+v []]
+DEBUG 01:23:40.189313 raft.go:348: isBootstrap: true, newDB: true
+DEBUG 01:23:40.189423 raft.go:351: bootstrapping MS on 192.168.1.8:10001
+DEBUG 01:23:40.189522 raft.go:157: entering follower state: follower=Node at 192.168.1.8:10001 [Follower] leader-address= leader-id=
+DEBUG 01:23:40.192672 server_utils.go:576: engine 0: storage ready
+DEBUG 01:23:40.192779 database.go:491: (re-)starting leadership monitoring loop
+[root@rocky8 daos]# DEBUG 01:23:40.257459 server_utils.go:499: cleanup hugepages via bdev backend: 1 removed
+DEBUG 01:23:40.258750 server_utils.go:468: Per-engine MemSize:1024MB, HugepageSize:2MB (meminfo: {HugepagesTotal:514 HugepagesFree:514 HugepagesRsvd:0 HugepagesSurp:0 HugepageSizeKiB:2048 MemTotalKiB:7881792 MemFreeKiB:5264732 MemAvailableKiB:5826276})
+DEBUG 01:23:40.259419 server_utils.go:525: checking MemAvailable (5.6 GiB) covers at least 90% of engine ram-disks (3.6 GiB required to cover 4.0 GiB ram-disk mem): check successful!
+SCM @ /mnt/daos: 4.0 GiB Total/4.0 GiB Avail
+DEBUG 01:23:40.261814 exec.go:79: daos_engine:0 args: [-t 1 -x 0 -g daos_server -d /var/run/daos_server -T 2 -n /mnt/daos/daos_nvme.conf -I 0 -r 1024 -H 2 -s /mnt/daos]
+DEBUG 01:23:40.261940 exec.go:80: daos_engine:0 env: [CRT_PHY_ADDR_STR=ofi+sockets DD_MASK=all FI_LOG_LEVEL=warn OFI_PORT=31416 CRT_CTX_SHARE_ADDR=0 HG_LOG_LEVEL=debug VOS_BDEV_CLASS=NVME OFI_DOMAIN=ens3 FI_SOCKETS_MAX_CONN_RETRY=1 FI_OFI_RXM_USE_SRX=1 CRT_TIMEOUT=0 D_LOG_FILE=/tmp/daos_engine.0.log FI_SOCKETS_CONN_TIMEOUT=2000 OFI_INTERFACE=ens3 D_LOG_MASK=DBUG]
+Starting I/O Engine instance 0: /opt/daos/bin/daos_engine
+DEBUG 01:23:43.953014 raft.go:239: heartbeat timeout reached, starting election: last-leader-addr= last-leader-id=
+DEBUG 01:23:43.953406 raft.go:282: entering candidate state: node=Node at 192.168.1.8:10001 [Candidate] term=2
+DEBUG 01:23:43.957474 raft.go:301: votes: needed=1
+DEBUG 01:23:43.957859 raft.go:324: vote granted: from=192.168.1.8:10001 term=2 tally=1
+DEBUG 01:23:43.958177 raft.go:329: election won: tally=1
+DEBUG 01:23:43.958609 raft.go:418: entering leader state: leader=Node at 192.168.1.8:10001 [Leader]
+DEBUG 01:23:43.959453 database.go:516: node 192.168.1.8:10001 gained MS leader state
+MS leader running on rocky8
+DEBUG 01:23:43.961801 mgmt_svc.go:369: starting leaderTaskLoop
+DEBUG 01:23:43.961860 server.go:403: requesting immediate GroupUpdate after leader change
+DEBUG 01:23:43.962403 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:43.962494 mgmt_pool.go:554: checking 0 pools
+DEBUG 01:23:43.962573 database.go:491: (re-)starting leadership monitoring loop
+DEBUG 01:23:44.462629 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:44.963401 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:45.464233 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:45.964815 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:46.465204 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:46.966412 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:47.466919 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:47.967422 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:48.468416 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:48.969557 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:49.470536 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:49.971809 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:50.472431 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:50.972660 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:51.473711 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:51.974854 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:52.475552 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:52.976266 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:53.477349 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:53.977742 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:54.479150 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:54.980767 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:55.481167 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:55.982767 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:56.483211 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:56.984135 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:57.484735 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:57.985105 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:58.486173 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:58.987049 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:59.487992 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:23:59.989203 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:24:00.490345 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:24:00.991502 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:24:01.492030 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:24:01.992481 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+daos_engine:0 sleep 0 for gdb, cmd:gdb attach 7036
+sleep 1 for gdb, cmd:gdb attach 7036
+sleep 2 for gdb, cmd:gdb attach 7036
+sleep 3 for gdb, cmd:gdb attach 7036
+sleep 4 for gdb, cmd:gdb attach 7036
+sleep 5 for gdb, cmd:gdb attach 7036
+sleep 6 for gdb, cmd:gdb attach 7036
+sleep 7 for gdb, cmd:gdb attach 7036
+sleep 8 for gdb, cmd:gdb attach 7036
+sleep 9 for gdb, cmd:gdb attach 7036
+sleep 10 for gdb, cmd:gdb attach 7036
+sleep 11 for gdb, cmd:gdb attach 7036
+sleep 12 for gdb, cmd:gdb attach 7036
+sleep 13 for gdb, cmd:gdb attach 7036
+sleep 14 for gdb, cmd:gdb attach 7036
+sleep 15 for gdb, cmd:gdb attach 7036
+sleep 16 for gdb, cmd:gdb attach 7036
+sleep 17 for gdb, cmd:gdb attach 7036
+sleep 18 for gdb, cmd:gdb attach 7036
+sleep 19 for gdb, cmd:gdb attach 7036
+sleep 20 for gdb, cmd:gdb attach 7036
+Using legacy core allocation algorithm
+DEBUG 01:24:02.493407 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:24:02.994416 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:24:03.421508 instance_drpc.go:53: DAOS I/O Engine instance 0 drpc ready: uri:"ofi+sockets://192.168.1.8:31416" nctxs:3 drpcListenerSock:"/var/run/daos_server/daos_engine_7036.sock" ntgts:1 incarnation:1366122286890090496
+DEBUG 01:24:03.421950 server_utils.go:633: marking bootstrap instance as rank 0
+DEBUG 01:24:03.423272 system.go:165: DAOS system join request: sys:"daos_server-2.5.100" uuid:"842505d0-1c66-4f06-aa65-8e79df60cbfa" uri:"ofi+sockets://192.168.1.8:31416" nctxs:3 addr:"192.168.1.8:10001" srvFaultDomain:"/rocky8" incarnation:1366122286890090496
+DEBUG 01:24:03.425209 rpc.go:260: request hosts: [192.168.1.8:10001]
+DEBUG 01:24:03.510703 interceptors.go:239: gRPC request: *mgmt.JoinReq (sys:"daos_server-2.5.100" uuid:"842505d0-1c66-4f06-aa65-8e79df60cbfa" uri:"ofi+sockets://192.168.1.8:31416" nctxs:3 addr:"192.168.1.8:10001" srvFaultDomain:"/rocky8" incarnation:1366122286890090496)
+DEBUG 01:24:03.512109 server.go:418: no engines ready for GroupUpdate; waiting 500ms
+DEBUG 01:24:03.610088 mgmt_svc.go:346: processing 1 *mgmt.JoinReq requests
+DEBUG 01:24:03.611567 raft.go:437: member 0:12f570fb5dd40000 updated @ 2023-09-16T01:24:03.610-04:00
+DEBUG 01:24:03.612738 mgmt_system.go:168: new system member: rank 0, addr 192.168.1.8:10001, uri ofi+sockets://192.168.1.8:31416
+DEBUG 01:24:03.625130 instance_drpc.go:83: dRPC to index 0: SetRank/2B/12.021833ms
+daos_engine:0 DAOS I/O Engine (v2.5.100) process 7036 started on rank 0 with 1 target, 0 helper XS, firstcore 0, host rocky8.
+DEBUG 01:24:03.627145 instance_drpc.go:83: dRPC to index 0: SetUp/0B/1.721738ms
+DEBUG 01:24:03.627286 mgmt_svc.go:257: requesting immediate group update after join(s)
+DEBUG 01:24:03.628213 interceptors.go:262: gRPC response for *mgmt.JoinReq: *mgmt.JoinResp rank:0 (state:IN, local:true) map:1 (elapsed: 116.565107ms)
+DEBUG 01:24:03.629954 mgmt_system.go:251: group update request: version: 2, ranks: 0
+DEBUG 01:24:03.631110 response.go:168: 192.168.1.8:10001: *mgmt.JoinResp rank:0 (state:IN, local:true) map:1
+DEBUG 01:24:03.631458 instance_superblock.go:162: instance 0: writing superblock at /mnt/daos/superblock
+DEBUG 01:24:03.632325 server.go:345: engines have started
+DEBUG 01:24:03.634293 instance_drpc.go:83: dRPC to index 0: GroupUpdate/47B/4.152541ms
+DEBUG 01:24:04.015003 mgmt_system.go:251: group update request: version: 3, ranks: 0
+DEBUG 01:24:04.016622 instance_drpc.go:83: dRPC to index 0 (rank 0): GroupUpdate/47B/1.468829ms
+
+[root@rocky8 daos]# dmg pool list -v
+DEBUG 01:24:13.622054 interceptors.go:239: gRPC request: *mgmt.ListPoolsReq (sys:"daos_server-2.5.100")
+DEBUG 01:24:13.622795 interceptors.go:262: gRPC response for *mgmt.ListPoolsReq: *mgmt.ListPoolsResp3 0 pools: (elapsed: 42.107µs)
+no pools in system
+[root@rocky8 daos]# bash daos_create_pool_cont_mount_dfuse 
+Creating DAOS pool with automatic storage allocation: 4.0 GB total, 6.00%,94.00% tier ratio
+DEBUG 01:24:26.227552 interceptors.go:239: gRPC request: *mgmt.PoolCreateReq uuid:7c66352c-630a-445c-966f-961c2c1ca2ff u:root@ g:root@ p:[number:1 strval:"sxb"] ranks: tiers:
+DEBUG 01:24:26.228072 mgmt_svc.go:294: invoking serial handler for *mgmt.PoolCreateReq
+DEBUG 01:24:26.228276 mgmt_pool.go:508: System Property 'pool_scrub_mode:off' converted to Pool Property 'pool_scrub_mode:off'
+DEBUG 01:24:26.228396 mgmt_pool.go:508: System Property 'pool_scrub_thresh:0' converted to Pool Property 'pool_scrub_thresh:0'
+DEBUG 01:24:26.228857 pool_lock.go:169: 7c66352c: lock taken (id: 2d462a24)
+DEBUG 01:24:26.229913 raft.go:449: pool 7c66352c (Creating) updated @ 2023-09-16T01:24:26.229-04:00
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+daos_engine:0 7c66352c: rank 0 became pool service leader 1: srv_pool_hdl=e2e0b05f srv_cont_hdl=170328d7
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+ERROR: failed to take lock for pool svc update: system: code = 402 description = "pool 7c66352c-630a-445c-966f-961c2c1ca2ff is locked (id: 2d462a24-cb5c-42a6-bdf5-10d38d45146f, time: 2023-09-16T01:24:26.228-04:00)"
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+DEBUG 01:24:26.532914 instance_drpc.go:83: dRPC to index 0 (rank 0): PoolCreate/135B/302.251525ms
+DEBUG 01:24:26.536775 raft.go:449: pool 7c66352c (Ready) updated @ 2023-09-16T01:24:26.536-04:00
+DEBUG 01:24:26.537763 pool_lock.go:178: 7c66352c: lock released
+DEBUG 01:24:26.538519 interceptors.go:262: gRPC response for *mgmt.PoolCreateReq: *mgmt.PoolCreateResp svc_ldr:0 svc_ranks:0 tgt_ranks:0 tiers:0:240001024 1:3760000000  (elapsed: 310.261806ms)
+Pool created with 6.00%,94.00% storage tier ratio
+-------------------------------------------------
+  UUID                 : 7c66352c-630a-445c-966f-961c2c1ca2ff
+  Service Leader       : 0                                   
+  Service Ranks        : 0                                   
+  Storage Ranks        : 0                                   
+  Total Size           : 4.0 GB                              
+  Storage tier 0 (SCM) : 240 MB (240 MB / rank)              
+  Storage tier 1 (NVMe): 3.8 GB (3.8 GB / rank)              
+
+DEBUG 01:24:26.632354 interceptors.go:239: gRPC request: *mgmt.ListPoolsReq (sys:"daos_server-2.5.100")
+DEBUG 01:24:26.633014 interceptors.go:262: gRPC response for *mgmt.ListPoolsReq: *mgmt.ListPoolsResp5 1 pools: sxb:Ready (elapsed: 41.377µs)
+DEBUG 01:24:26.678151 interceptors.go:239: gRPC request: *mgmt.PoolQueryReq (sys:"daos_server-2.5.100" id:"7c66352c-630a-445c-966f-961c2c1ca2ff")
+DEBUG 01:24:26.742795 instance_drpc.go:83: dRPC to index 0 (rank 0): PoolQuery/62B/64.427332ms
+DEBUG 01:24:26.744428 interceptors.go:262: gRPC response for *mgmt.PoolQueryReq: *mgmt.PoolQueryResp status:DER_SUCCESS(0): Success (uuid:"7c66352c-630a-445c-966f-961c2c1ca2ff" total_targets:1 active_targets:1 rebuild:{} tier_stats:{total:240001024 free:239934272 min:239934272 max:239934272 mean:239934272} tier_stats:{total:3760000000 free:3718049792 min:3718049792 max:3718049792 mean:3718049792 media_type:NVME} version:1 total_engines:1 pool_layout_ver:3 upgrade_layout_ver:3) (elapsed: 65.283863ms)
+Label UUID                                 State SvcReps SCM Size SCM Used SCM Imbalance NVME Size NVME Used NVME Imbalance Disabled UpgradeNeeded? Rebuild State 
+----- ----                                 ----- ------- -------- -------- ------------- --------- --------- -------------- -------- -------------- ------------- 
+sxb   7c66352c-630a-445c-966f-961c2c1ca2ff Ready 0       240 MB   67 kB    0%            3.8 GB    42 MB     0%             0/1      None           idle          
+
+DEBUG 01:24:27.345708 interceptors.go:262: gRPC response for *mgmt.GetAttachInfoReq: *mgmt.GetAttachInfoResp@5 ms:0 ranks:0 client:provider:"ofi+sockets" net_dev_class:1 srv_srx_set:1 (elapsed: 55.625µs)
+pid:7175 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7175 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7175 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7175 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7175 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7175 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+DEBUG 01:24:27.559761 mgmt_drpc.go:130: handling PoolFindByLabel: label:"sxb"
+DEBUG 01:24:27.560334 mgmt_drpc.go:143: GetPoolSvcResp: uuid:"7c66352c-630a-445c-966f-961c2c1ca2ff" svcreps:0
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+Successfully created container e168604b-b968-47be-a6d7-c63a4b693695
+  Container UUID : e168604b-b968-47be-a6d7-c63a4b693695
+  Container Label: sxb                                 
+  Container Type : POSIX                               
+
+ERROR: daos_engine:0 libfabric:7036:1694841867::sockets:ep_data:sock_pe_progress_rx_pe_entry():2039<warn> Peer disconnected: removing fd from pollset: fi_sockaddr_in://192.168.1.8:44013
+libfabric:7036:1694841867::sockets:ep_data:sock_pe_progress_rx_pe_entry():2039<warn> Peer disconnected: removing fd from pollset: fi_sockaddr_in://192.168.1.8:44013
+libfabric:7036:1694841867::sockets:ep_data:sock_pe_progress_rx_pe_entry():2039<warn> Peer disconnected: removing fd from pollset: fi_sockaddr_in://192.168.1.8:44013
+pid:7196 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7196 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7196 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7196 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7196 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7196 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+DEBUG 01:24:28.159478 mgmt_drpc.go:130: handling PoolFindByLabel: label:"sxb"
+DEBUG 01:24:28.159610 mgmt_drpc.go:143: GetPoolSvcResp: uuid:"7c66352c-630a-445c-966f-961c2c1ca2ff" svcreps:0
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+  Container UUID              : e168604b-b968-47be-a6d7-c63a4b693695                        
+  Container Label             : sxb                                                         
+  Container Type              : POSIX                                                       
+  Pool UUID                   : 7c66352c-630a-445c-966f-961c2c1ca2ff                        
+  Container redundancy factor : 0                                                           
+  Number of open handles      : 1                                                           
+  Latest open time            : 0x12f571580bb00000 (2023-09-16 01:24:27.808997376 -0400 EDT)
+  Latest close/modify time    : 0x12f571583d780000 (2023-09-16 01:24:27.8611968 -0400 EDT)  
+  Number of snapshots         : 0                                                           
+  Object Class                : UNKNOWN                                                     
+  Dir Object Class            : UNKNOWN                                                     
+  File Object Class           : UNKNOWN                                                     
+  Chunk Size                  : 1.0 MiB                                                     
+
+ERROR: daos_engine:0 libfabric:7036:1694841868::sockets:ep_data:sock_pe_progress_rx_pe_entry():2039<warn> Peer disconnected: removing fd from pollset: fi_sockaddr_in://192.168.1.8:46625
+libfabric:7036:1694841868::sockets:ep_data:sock_pe_progress_rx_pe_entry():2039<warn> Peer disconnected: removing fd from pollset: fi_sockaddr_in://192.168.1.8:46625
+libfabric:7036:1694841868::sockets:ep_data:sock_pe_progress_rx_pe_entry():2039<warn> Peer disconnected: removing fd from pollset: fi_sockaddr_in://192.168.1.8:46625
+pid:7223 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7223 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7223 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7223 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7223 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7223 (daos): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+DEBUG 01:24:28.604420 mgmt_drpc.go:130: handling PoolFindByLabel: label:"sxb"
+DEBUG 01:24:28.604568 mgmt_drpc.go:143: GetPoolSvcResp: uuid:"7c66352c-630a-445c-966f-961c2c1ca2ff" svcreps:0
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+Properties for container sxb
+Name                                             Value                               
+----                                             -----                               
+Highest Allocated OID (alloc_oid)                0                                   
+Checksum (cksum)                                 off                                 
+Checksum Chunk Size (cksum_size)                 32 KiB                              
+Compression (compression)                        off                                 
+Deduplication (dedup)                            off                                 
+Dedupe Threshold (dedup_threshold)               4.0 KiB                             
+EC Cell Size (ec_cell_sz)                        64 KiB                              
+Performance domain affinity level of EC (ec_pda) 1                                   
+Encryption (encryption)                          off                                 
+Global Version (global_version)                  3                                   
+Group (group)                                    root@                               
+Label (label)                                    sxb                                 
+Layout Type (layout_type)                        POSIX (1)                           
+Layout Version (layout_version)                  1                                   
+Max Snapshot (max_snapshot)                      0                                   
+Object Version (obj_version)                     1                                   
+Owner (owner)                                    root@                               
+Performance domain level (perf_domain)           root (255)                          
+Redundancy Factor (rd_fac)                       rd_fac0                             
+Redundancy Level (rd_lvl)                        node (2)                            
+Performance domain affinity level of RP (rp_pda) 4294967295                          
+Server Checksumming (srv_cksum)                  off                                 
+Health (status)                                  HEALTHY                             
+Access Control List (acl)                        A::OWNER@:rwdtTaAo, A:G:GROUP@:rwtT 
+ERROR: daos_engine:0 libfabric:7036:1694841868::sockets:ep_data:sock_pe_progress_rx_pe_entry():2039<warn> Peer disconnected: removing fd from pollset: fi_sockaddr_in://192.168.1.8:44479
+ERROR: daos_engine:0 libfabric:7036:1694841868::sockets:ep_data:sock_pe_progress_rx_pe_entry():2039<warn> Peer disconnected: removing fd from pollset: fi_sockaddr_in://192.168.1.8:44479
+pid:7236 (dfuse): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7236 (dfuse): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7236 (dfuse): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7236 (dfuse): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7236 (dfuse): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+pid:7236 (dfuse): numa:0 iface:ens3 dom:ens3 prov:ofi+sockets srx:1 mgmt_rpc.go:150
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+DEBUG 01:24:29.076488 mgmt_drpc.go:130: handling PoolFindByLabel: label:"sxb"
+DEBUG 01:24:29.076643 mgmt_drpc.go:143: GetPoolSvcResp: uuid:"7c66352c-630a-445c-966f-961c2c1ca2ff" svcreps:0
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+ERROR: daos_engine:0 [self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+[self.c:281] ABT_self_get_type: 4
+fuse: warning: library too old, some operations may not work
+Filesystem           Size  Used Avail Use% Mounted on
+devtmpfs             3.8G     0  3.8G   0% /dev
+tmpfs                3.8G     0  3.8G   0% /dev/shm
+tmpfs                3.8G  8.6M  3.8G   1% /run
+tmpfs                3.8G     0  3.8G   0% /sys/fs/cgroup
+/dev/mapper/rl-root   44G  8.3G   36G  19% /
+/dev/sda1           1014M  192M  823M  19% /boot
+tmpfs                770M     0  770M   0% /run/user/0
+tmpfs                4.0G  492M  3.6G  13% /mnt/daos
+dfuse                3.8G   41M  3.7G   2% /tmp/sxb
+[root@rocky8 daos]# 
+[root@rocky8 daos]# df -h
+Filesystem           Size  Used Avail Use% Mounted on
+devtmpfs             3.8G     0  3.8G   0% /dev
+tmpfs                3.8G     0  3.8G   0% /dev/shm
+tmpfs                3.8G  8.6M  3.8G   1% /run
+tmpfs                3.8G     0  3.8G   0% /sys/fs/cgroup
+/dev/mapper/rl-root   44G  8.3G   36G  19% /
+/dev/sda1           1014M  192M  823M  19% /boot
+tmpfs                770M     0  770M   0% /run/user/0
+tmpfs                4.0G  492M  3.6G  13% /mnt/daos
+dfuse                3.8G   41M  3.7G   2% /tmp/sxb
+[root@rocky8 daos]# ./xb/write.sh 
+gcc: error: write.c: No such file or directory
+gcc: fatal error: no input files
+compilation terminated.
+chmod: cannot access 'write': No such file or directory
+./xb/write.sh: line 2: ./write: No such file or directory
+[root@rocky8 daos]# cd xb/
+[root@rocky8 xb]# gcc -O0 -g3 -o write write.c; chmod +x write; ./write
+write pid:7365, fd:3, len:10, data:normal io
+[root@rocky8 xb]# ./write
+write pid:7398, fd:3, len:10, data:normal io
+[root@rocky8 xb]# ll
+total 104
+-rw-r--r--. 1 root root    58 Sep 10 10:21 gdb_write.sh
+-rwxr-xr-x. 1 root root 81784 Sep 16 01:25 write
+-rw-r--r--. 1 root root  9719 Sep 10 10:21 write.c
+-rw-r--r--. 1 root root  1016 Sep 10 10:21 write_file.c
+-rwxr-xr-x. 1 root root   128 Sep 10 10:21 write.sh
+[root@rocky8 xb]# cd ..
+[root@rocky8 daos]# cp /opt/daos/etc/daos_server.yml daos_server_rocky8.yml 
+cp: overwrite 'daos_server_rocky8.yml'? y
+[root@rocky8 daos]# git pull
+Already up to date.
+[root@rocky8 daos]# cd xb/
+[root@rocky8 xb]# ./write
+write pid:8049, fd:3, len:10, data:normal io
+[root@rocky8 xb]# dmg pool list -v
+DEBUG 01:28:29.522806 interceptors.go:239: gRPC request: *mgmt.ListPoolsReq (sys:"daos_server-2.5.100")
+DEBUG 01:28:29.523654 interceptors.go:262: gRPC response for *mgmt.ListPoolsReq: *mgmt.ListPoolsResp5 1 pools: sxb:Ready (elapsed: 52.595µs)
+DEBUG 01:28:29.561542 interceptors.go:239: gRPC request: *mgmt.PoolQueryReq (sys:"daos_server-2.5.100" id:"7c66352c-630a-445c-966f-961c2c1ca2ff")
+DEBUG 01:28:29.625821 instance_drpc.go:83: dRPC to index 0 (rank 0): PoolQuery/62B/64.07ms
+DEBUG 01:28:29.626989 interceptors.go:262: gRPC response for *mgmt.PoolQueryReq: *mgmt.PoolQueryResp status:DER_SUCCESS(0): Success (uuid:"7c66352c-630a-445c-966f-961c2c1ca2ff" total_targets:1 active_targets:1 rebuild:{} tier_stats:{total:240001024 free:239793856 min:239793856 max:239793856 mean:239793856} tier_stats:{total:3760000000 free:3718049792 min:3718049792 max:3718049792 mean:3718049792 media_type:NVME} version:1 total_engines:1 pool_layout_ver:3 upgrade_layout_ver:3) (elapsed: 64.403212ms)
+Label UUID                                 State SvcReps SCM Size SCM Used SCM Imbalance NVME Size NVME Used NVME Imbalance Disabled UpgradeNeeded? Rebuild State 
+----- ----                                 ----- ------- -------- -------- ------------- --------- --------- -------------- -------- -------------- ------------- 
+sxb   7c66352c-630a-445c-966f-961c2c1ca2ff Ready 0       240 MB   207 kB   0%            3.8 GB    42 MB     0%             0/1      None           idle          
+
+[root@rocky8 xb]# 
+
+
+
+
+活动配置文件: active
+port: 10001
+transport_config:
+  allow_insecure: false
+  client_cert_dir: /etc/daos/certs/clients
+  ca_cert: /etc/daos/certs/daosCA.crt
+  cert: /etc/daos/certs/server.crt
+  key: /etc/daos/certs/server.key
+engines:
+- targets: 1
+  nr_xs_helpers: 0
+  first_core: 0
+  log_mask: DEBUG
+  log_file: /tmp/daos_engine.0.log
+  storage:
+  - class: ram
+    scm_mount: /mnt/daos
+    scm_size: 4
+  - class: nvme
+    bdev_list:
+    - "0000:00:08.0"
+  provider: ofi+sockets
+  fabric_iface: ens3
+  fabric_iface_port: 31416
+  env_vars:
+  - FI_SOCKETS_CONN_TIMEOUT=2000
+  - D_LOG_MASK=DEBUG
+  - DD_SUBSYS=all
+  - DD_MASK=all
+  - HG_LOG_LEVEL=debug
+  - OFI_DOMAIN=ens3
+  - FI_LOG_LEVEL=warn
+  - FI_SOCKETS_MAX_CONN_RETRY=1
+disable_vfio: false
+disable_vmd: false
+enable_hotplug: false
+nr_hugepages: 512
+system_ram_reserved: 1
+disable_hugepages: false
+control_log_mask: DEBUG
+control_log_file: /tmp/daos_server.log
+helper_log_file: /tmp/daos_server_helper.log
+core_dump_filter: 19
+name: daos_server
+socket_dir: /var/run/daos_server
+provider: ofi+sockets
+access_points:
+- 192.168.1.8:10001
+fault_cb: ""
+hyperthreads: false
+
+
