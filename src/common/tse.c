@@ -70,7 +70,7 @@ tse_sched_init(tse_sched_t *sched, tse_sched_comp_cb_t comp_cb,
 static inline uint32_t
 tse_task_buf_size(int size)
 {
-	return (size + 7) & ~0x7;
+	return (size + 7) & ~0x7; // 向上对齐(8字节): size = (size + alignment-1) & ~(alignment-1), “alignment-1”，只要它是一个 2 的幂的值，就会给你全1，直到 2 的幂以下的那个位。 ~ 反转所有位, 比如输入121, 输出128, 119 -> 120
 }
 
 /*
@@ -78,6 +78,7 @@ tse_task_buf_size(int size)
  * keeps giving an addition pointer to the big pre-allcoated buffer. previous
  * way doesn't work well for public use.
  * We should make this simpler now and more generic as the comment below.
+ * 给任务携带小参数, 指定参数大小, 获取指定task嵌入的参数, 返回参数地址, 先对输入大小按8字节向上对齐, 计算可用大小(预留内存总大小-栈顶大小), 嵌入大小不能超过可用大小(超过限制返回NULL), 修改嵌入参数大小为指定的大小, 将当前缓冲区地址转为void指针并返回
  */
 void *
 tse_task_buf_embedded(tse_task_t *task, int size)

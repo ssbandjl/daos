@@ -4785,7 +4785,7 @@ dc_task_schedule
   task_is_valid
   daos_event_launch
   tse_task_schedule
-    tse_task_schedule_with_delay 与 tse_task_schedule 相同，如果 instant 为 false，则期望任务不会在 delay 微秒内执行。
+    tse_task_schedule_with_delay 与 tse_task_schedule 相同，如果 instant 为 false，则期望任务不会在 delay 微秒内执行。-> tse_task_schedule_with_delay(cmt_task, backoff == 0 ? true : false, backoff);
 
 daos_event_comp_list 事件完成列表
 
@@ -5851,12 +5851,6 @@ ln -s $daospath/include            /usr/share/spdk/include
 
 /opt/daos/prereq/debug/spdk/share/spdk/scripts/setup.sh
 
-spdk setup.sh问题解决: src/control/server/init/setup_spdk.sh 脚本会去以下目录找spdk脚本
-mkdir -p /usr/share/spdk/scripts
-ln -sf $daospath/prereq/debug/spdk/share/spdk/scripts/setup.sh /usr/share/spdk/scripts
-ln -sf $daospath/prereq/debug/spdk/share/spdk/scripts/common.sh /usr/share/spdk/scripts
-
-
 
 func (p *Provider) mountRamdisk
 ramFsType = system.FsTypeTmpfs
@@ -6068,6 +6062,9 @@ high_addr 0xc0000000
 low_addr 0x8048000
 
 
+tse_task_buf_embedded 给task嵌入指定大小的参数, 返回参数地址, 先对输入大小按8字节向上对齐, 
+
+
 
 ------------------ vos --------------------------
 所有单元测试: run_all_tests(int keys), 化身日志, 
@@ -6160,5 +6157,31 @@ palloc_operation: palloc_operation——持久内存操作。 获取 NULL 指针
 
 
 nvme重新绑定: dmg nvme-rebind
+
+
+
+
+dsc_obj_open
+
+
+daos_cont_snap_oit_destroy -> oit_destroy_cb 销毁快照的对象 ID 表 (OIT)
+DAOS-12841 容器：提高 OIT 可扩展性 (#11834)
+当前容器快照对象 ID 表转储到 dkey 0 的对象，每个 OID 存储为 akey，
+因此，如果容器中存在大量 OID，快照创建可能很容易超时。 该补丁试图通过以下方式改善问题：
+
+1.使用多个dkeys/groups来存储OIT表，RDB用于存储OIT OID以防池映射更改。
+
+2.添加新的API daos_cont_snap_oit_dump()来转储容器快照的OID，daos_cont_create_snap_opt()仍然保留以避免破坏API
+
+Mohamad Chaarawi 的基准数据：
+RF0 RF1 RF2
+前：
+创建 13.188s 125.329s 139.647s
+扫描 227.464s 345.831s 358.318s
+
+后：
+创建 6.54051s 7.04686s 7.58293s
+扫描 243.641s 343.301s 363.669s
+
 
 

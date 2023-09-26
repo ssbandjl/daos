@@ -1,0 +1,22 @@
+协程中使用tse: 
+
+dsc_progress_start
+progress: dsc_progress(void *arg) -> 客户端 API 可能需要获取一些全局 pthread 锁，这可能会意外阻塞整个 xstream，我们需要修改客户端 API 以确保在服务器上调用全局 pthread 锁时不会使用它们
+  tse_sched_progress(&dx->dx_sched_dsc)
+  ABT_thread_yield() -> 调度一圈, 让出cpu
+
+
+DAOS-3106 iosrv：对 DSC 的小修复 (#974)
+DSC（服务器-调用-客户端 API）上的小修复和清理：
+- 使用“dsc_”前缀而不是“ds_”来区分 DSC API
+服务器 API；
+- 修复原始 dss_task_run() 的“最终”和“任务”泄漏，避免使用 sizeof(void *) 作为任务参数大小；
+- 使 struct dss_xstream iosrv 成为内部结构；
+- 添加 dsc_pool_tgt_exclude();
+- 将 iosrv/obj.c 重命名为 iosrv/srv_cli.c；
+- 修复tse回调寄存器函数的返回值；
+去做：
+- 修改客户端API以避免在服务器上调用时出现全局锁定；
+
+
+
