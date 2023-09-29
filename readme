@@ -3,6 +3,8 @@ daos开发文档: https://docs.daos.io/v2.5/dev/development/
 daos开发文档_容器增删改查: https://docs.daos.io/v2.5/user/container/, 用户文档: https://docs.daos.io/v2.5/user/workflow/
 公共组件: https://github.com/daos-stack/daos/tree/master/src/common
 c_raft实现: https://github.com/willemt/raft, 文档: raft.h, 
+vos(翻译): https://blog.csdn.net/Hahafly1234/article/details/119298746
+
 
 依赖缓存包: http://rz2fg6ogr.hn-bkt.clouddn.com/cache_tgz
 
