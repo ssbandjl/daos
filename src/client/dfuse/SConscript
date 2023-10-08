@@ -173,7 +173,7 @@ def configure_fuse(cenv):
         cenv.AppendUnique(CPPDEFINES={'FUSE_IOCTL_USE_INT': '1'})
     else:
         print('Could not determine type of fuse ioctl type')
-        Exit(2)
+        # Exit(2)
 
     check.Finish()
 

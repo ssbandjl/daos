@@ -6186,4 +6186,5 @@ RF0 RF1 RF2
 扫描 243.641s 343.301s 363.669s
 
 
-
+fuse
+configure_fuse

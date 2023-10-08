@@ -1189,7 +1189,7 @@ class _Component():
         prGreen(f"Checking targets for component '{self.name}'")
         # if self.name == 'argobots':
         #     return False
-        # self._print(f"Checking targets for component '{self.name}'")
+        self._print(f"Checking targets for component '{self.name}'")
 
         config = env.Configure()
         config_cb = self.key_words.get("config_cb", None)
