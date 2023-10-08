@@ -1,0 +1,49 @@
+以池为例:
+struct crt_proto_format pool_proto_fmt_v4 = {
+	.cpf_name  = "pool",
+	.cpf_ver   = 4,
+	.cpf_count = ARRAY_SIZE(pool_proto_rpc_fmt_v4),
+	.cpf_prf   = pool_proto_rpc_fmt_v4,
+	.cpf_base  = DAOS_RPC_OPCODE(0, DAOS_POOL_MODULE, 0)
+};
+
+struct crt_proto_format pool_proto_fmt_v5 = {
+	.cpf_name  = "pool",
+	.cpf_ver   = 5,
+	.cpf_count = ARRAY_SIZE(pool_proto_rpc_fmt_v5),
+	.cpf_prf   = pool_proto_rpc_fmt_v5,
+	.cpf_base  = DAOS_RPC_OPCODE(0, DAOS_POOL_MODULE, 0)
+};
+
+初始化池接口: dc_pool_init(void)
+daos_rpc_proto_query(pool_proto_fmt_v4.cpf_base, ver_array, 2, &dc_pool_proto_version)
+随机查询?
+rproto->ep.ep_rank = d_rand() % num_ranks;
+rproto->ep.ep_tag = 0;
+
+
+rc = crt_proto_query_with_ctx(&rproto->ep, base_opc, ver_array, count, query_cb, rproto, ctx);
+查询 tgt_ep 是否已使用用户提供的购物车上下文注册了带有版本的 base_opc
+CRT_OPC_PROTO_QUERY -> crt_hdlr_proto_query
+rpc_req_output->pq_ver = high_ver -> 优先返回高版本
+crt_proto_lookup(struct crt_opc_map *map, crt_opcode_t opc, int locked)
+
+
+
+
+
+
+
+
+
+1. 定义RPC多版本, 比如: pool_proto_fmt_v4, pool_proto_fmt_v5
+2. 服务端模块(自动查找模块, 指标)在模块中引用, 如: struct dss_module pool_module
+3. 客户端API会先查询引擎使用的RPC版本(优先返回高版本,如v5), 然后主动注册带有版本的RPC,如: daos_init(void) -> dc_pool_init, 决定注册v4或v5, daos_rpc_register(&pool_proto_fmt_v4, daos_rpc_register(&pool_proto_fmt_v5
+4. 引擎端主动注册一次RPC, server_init -> dss_module_init_all -> dss_module_init_one, daos_rpc_register(smod->sm_proto_fmt[i], smod->sm_cli_count[i]... 注册RPC CRT_PROTO_OPC
+5. 使用RPC版本, 以查池为例, 创建RPC时如果带了版本, 就使用携带的版本,否则使用默认版本, 参考: pool_req_create 中 dc_pool_proto_version ? dc_pool_proto_version : DAOS_POOL_VERSION , dc_pool_proto_version
+
+
+
+
+每个模块应该提供一个定义模块接口的 dss_module 结构。 分配的结构体的名称必须是库名称（不带“.so”扩展名），后缀为“module”。 加载模块库时会自动查找该符号，如果找不到则失败。例如，dmg模块报告“sm_name”为“daos_mgmt_srv”，实际库文件名是libdaos_mgmt_srv.so，它定义了一个名为daos_mgmt_srv_module的dss_module结构
+
