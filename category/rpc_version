@@ -29,7 +29,7 @@ rpc_req_output->pq_ver = high_ver -> 优先返回高版本
 crt_proto_lookup(struct crt_opc_map *map, crt_opcode_t opc, int locked)
 
 
-
+`
 
 
 
@@ -41,6 +41,11 @@ RPC多版本管理
 3. 客户端API会先查询引擎使用的RPC版本(优先返回高版本,如v5), 然后主动注册带有版本的RPC,如: daos_init(void) -> dc_pool_init, 决定注册v4或v5, daos_rpc_register(&pool_proto_fmt_v4, daos_rpc_register(&pool_proto_fmt_v5
 4. 引擎端主动注册一次RPC, server_init -> dss_module_init_all -> dss_module_init_one, daos_rpc_register(smod->sm_proto_fmt[i], smod->sm_cli_count[i]... 注册RPC CRT_PROTO_OPC
 5. 使用RPC版本, 以查池为例, 创建RPC时如果带了版本, 就使用携带的版本,否则使用默认版本, 参考: pool_req_create 中 dc_pool_proto_version ? dc_pool_proto_version : DAOS_POOL_VERSION , dc_pool_proto_version
+6. 最大只支持2个RPC版本, 参考:
+Number of RPC protocols this module supports - max 2
+struct crt_proto_format		*sm_proto_fmt[2]
+
+
 
 
 
