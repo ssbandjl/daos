@@ -1155,6 +1155,11 @@ class _Component():
 
         return
 
+    def _print(self, msg):
+        if GetOption('silent'):
+            return
+        print(msg)
+
     def has_missing_targets(self, env):
         """Check for expected build targets (e.g. libraries or headers)"""
         # pylint: disable=too-many-return-statements
@@ -1184,6 +1189,7 @@ class _Component():
         prGreen(f"Checking targets for component '{self.name}'")
         # if self.name == 'argobots':
         #     return False
+        # self._print(f"Checking targets for component '{self.name}'")
 
         config = env.Configure()
         config_cb = self.key_words.get("config_cb", None)
@@ -1276,7 +1282,6 @@ class _Component():
 
     def set_environment(self, env, needed_libs):
         """Modify the specified construction environment to build with the external component"""
-
         if self.skip_arch:
             return
 
