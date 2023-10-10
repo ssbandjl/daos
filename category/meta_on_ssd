@@ -1,0 +1,16 @@
+https://docs.daos.io/v2.4/admin/md-on-ssd/
+
+SSD 元数据第一阶段（技术预览）¶
+DAOS 版本 2.4 包括SSD 元数据（第 1 阶段）代码路径的技术预览 ，以支持没有英特尔傲腾持久内存的 DAOS 服务器。
+
+请参阅 DAOS Wiki 文章中关于 SSD 上的元数据设计 和 WAL 详细设计 的更多信息。
+
+有关此新代码路径的演示，包括使用和不使用 PMem 的 DAOS 服务器的初始性能比较，可以在ISC 2023 IXPUG 研讨会 的 演示文稿DAOS Beyond PMem中找到 。
+
+
+https://www.ixpug.org/events/isc23-ixpug-workshop
+
+https://daosio.atlassian.net/wiki/spaces/DC/pages/11196923911/Metadata+on+SSDs
+
+https://daosio.atlassian.net/wiki/spaces/DC/pages/11215339529/WAL+Detailed+Design
+

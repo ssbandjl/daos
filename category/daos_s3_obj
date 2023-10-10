@@ -1,0 +1,35 @@
+src/include/daos_s3.h, ds3_obj_read
+
+DAOS-12175 客户端：添加 libds3 库 (daos-stack#8889) 添加新的 libds3 库，在 libdfs 之上实现 S3 语义。 这实现了对 S3 存储桶（= 容器 = dfs 挂载）、对象（= DFS 文件）和 S3 用户元数据（用户 ID、名称、电子邮件、访问密钥和访问策略）的支持。 支持分段上传和版本控制。
+
+
+当前的实现存在以下限制：
+- DAOS 对象 API 不支持按顺序列出 dkey，因此它们将以随机顺序返回。 这在设计列表操作时是一个挑战，因为我们需要能够按顺序列出键。
+- 多部分对象的当前设计将部分上传到元数据存储桶，然后将它们复制到对象。 这可能会导致整个多部分操作的性能下降。 一个对象可以有多个部分的结构是首选
+- 当前的设计打开了许多对象句柄来访问 S3 对象。
+前端集成到 DAOS 存储抽象层下的 Rados Gateway 中，请参阅 https://github.com/ceph/ceph/blob/main/src/rgw/rgw_sal_daos.cc
+
+src/rgw/driver/daos/rgw_sal_daos.cc
+int DaosObject::read
+  ds3_obj_read
+int DaosObject::read(const DoutPrefixProvider* dpp, bufferlist& data,
+                     uint64_t offset, uint64_t& size) {
+  ldpp_dout(dpp, 20) << "DEBUG: read" << dendl;
+  int ret = ds3_obj_read(data.append_hole(size).c_str(), offset, &size,
+                         get_daos_bucket()->ds3b, ds3o, nullptr);
+  if (ret != 0) {
+    ldpp_dout(dpp, 0) << "ERROR: failed to read from daos object ("
+                      << get_bucket()->get_name() << ", " << get_key().get_oid()
+                      << "): ret=" << ret << dendl;
+  }
+  return ret;
+}
+
+
+
+
+
+
+
+
+

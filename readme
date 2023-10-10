@@ -2116,6 +2116,7 @@ crt_init_opt daos_crt_init_opt_get
         dump_envariables 打印环境变量
         start_rpcid 随机生成起始rpcid
         d_tm_add_metric 添加指标等
+        crt_gdata.cg_credit_ep_ctx = credits -> #define CRT_DEFAULT_CREDITS_PER_EP_CTX	(32)
     prov_data_init 设置提供者属性，初始化上下文双向链表
       D_INIT_LIST_HEAD cpg_crt_list 上下文列表
     crt_hg_init 设置hg日志流， 可强制设置为debug
@@ -6188,3 +6189,25 @@ RF0 RF1 RF2
 
 fuse
 configure_fuse
+
+回收: dmg pool create  -z 10T test2 -P space_rb:5 -P reclaim:disabled
+
+
+credits_available
+cart限流机制, 发送个数-回复个数>32(默认), 则放入等待队列, 否则放入飞行队列直接发出去, 然后等待队列有插队机制, 比如心跳包, 可以直接插在前面, 有一个标记为控制
+前一个请求发送完成后, 执行回调 ->crt_context_req_untrack -> 这个时候判断是否需要将等待队列中的请求移动到发送队列中
+
+
+
+event:
+static __thread bool		ev_thpriv_is_init; 静态线程ev
+daos_event_priv_get(daos_event_t **ev)
+  daos_event_init(&ev_thpriv, DAOS_HDL_INVAL, NULL) -> 初始化线程局部ev, 内部使用全局上下文和调度器
+    evx->evx_ctx = daos_eq_ctx;
+		evx->evx_sched = &daos_sched_g;
+DAOS-51 客户端：为异步操作添加基本基础设施
+- 将客户端 dtp 上下文移至事件队列，尽管每个人仍然有一个上下文
+- 添加事件完成回调
+- 修改dsm和dmg客户端RPC以支持同步和异步模式
+
+
