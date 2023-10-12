@@ -245,6 +245,15 @@ tse_task_complete(tse_task_t *task, int ret);
  *
  * \return	pointer to the buffer.
  **/
+/**
+ * 给任务携带小参数, 指定参数大小, 获取指定task嵌入的参数, 返回参数地址, 先对输入大小按8字节向上对齐, 计算可用大小(预留内存总大小-栈顶大小), 嵌入大小不能超过可用大小(超过限制返回NULL), 修改嵌入参数大小为指定的大小, 将当前缓冲区地址转为void指针并返回
+ *
+ *
+ * \param task [in] 指定的任务
+ * \param size [in] 需要携带参数的字节大小
+ *
+ * \return	成功返回参数指针, 失败返回NULL
+ **/
 void *
 tse_task_buf_embedded(tse_task_t *task, int size);
 

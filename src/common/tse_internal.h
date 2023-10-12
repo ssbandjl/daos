@@ -58,7 +58,7 @@ struct tse_task_private {
 	 * task parameter pointer, it can be assigned while creating task,
 	 * or explicitly call API tse_task_priv_set. User can just use
 	 * \a dtp_buf instead of this if parameter structure is enough to
-	 * fit in.
+	 * fit in. 任务参数指针，可以在创建任务时赋值，也可以显式调用API tse_task_priv_set。 如果参数结构足以适应，用户可以使用 dtp_buf 代替它
 	 */
 	void				*dtp_priv;
 	/**

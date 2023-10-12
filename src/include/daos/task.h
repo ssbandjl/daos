@@ -116,6 +116,23 @@ struct daos_task_args {
  *
  * \return	pointer to the pushed buffer in task stack.
  */
+/**
+ * 将参数, 推入任务堆栈空间。 该API仅在任务堆栈上保留空间，不涉及数据拷贝, 获取可用大小, 输入大小按8字节向上对齐, 将参数大小累加到栈顶指针, 计算新的参数地址(固定地址+总大小-栈顶大小)并返回. 如: 在更新任务中将任务参数压栈 obj_req_valid(task, args, DAOS_OBJ_RPC_UPDATE ...
+ *  
+ * --------------- dtp_buf_addr 低地址(高地址-低地址是总大小)
+ *
+ * 
+ * --------------- top_new, 返回这个位置的地址(下次从这个位置往下读size大小)
+ * size, 这中间放置新参数
+ * --------------- top_old
+ * 
+ * ---------------  高地址
+ * 
+ * \param task [in] 指定的任务
+ * \param size [in] 需要推入参数的字节大小
+ *
+ * \return	成功返回参数指针, 失败返回NULL
+ **/
 void *
 tse_task_stack_push(tse_task_t *task, uint32_t size);
 
@@ -128,6 +145,22 @@ tse_task_stack_push(tse_task_t *task, uint32_t size);
  *
  * \return	pointer to the popped buffer in task stack.
  */
+/**
+ * 弹出任务参数, 对齐并检测输入的大小, 计算参数地址, 比如在 obj_comp_cb 中拿回携带的任务参数
+ *
+ * --------------- dtp_buf_addr 低地址(高地址-低地址是总大小)
+ *
+ * 
+ * --------------- top_old, 返回这个位置的地址
+ * size, 这中间放置新参数
+ * --------------- top_new, top最终的大小在这个位置
+ * 
+ * --------------- 高地址
+ * \param task [in] 指定的任务
+ * \param size [in] 需要弹出参数的字节大小
+ *
+ * \return	成功返回参数指针, 失败返回NULL
+ **/
 void *
 tse_task_stack_pop(tse_task_t *task, uint32_t size);
 

@@ -1450,7 +1450,7 @@ daos_rpc_cb
               evx->evx_status = DAOS_EVS_COMPLETED -> 事件置为已完成状态
               daos_event_complete_cb(evx, rc)
                 d_list_for_each_entry_safe(ecl, tmp, &evx->evx_callback.evx_comp_list
-                ecl->op_comp_cb -> N
+                ecl->op_comp_cb -> 事件完成回调
             event_complete
               complete_locked
                 daos_event_complete_cb
@@ -2970,14 +2970,14 @@ dfuse_do_work
     tse_task_post_process
     tse_task_complete_callback
     task_comp_event
-    daos_event_complete(struct daos_event *ev, int rc) 事件完成, 移动到完成队列
+    daos_event_complete(struct daos_event *ev, int rc) 事件完成, 执行事件完成回调, 将事件移动到完成队列
       daos_event_complete_locked
         daos_evx2ev(evx)  字段间的转换 container_of | (struct daos_event_private *)&ev->ev_private = daos_ev2evx
         daos_event_complete_cb 事件完成回调
           d_list_for_each_entry_safe 遍历给定类型的列表以防止删除列表条目
             d_list_del_init(&ecl->op_comp_list)
-            err = ecl->op_comp_cb(ecl->op_comp_arg, daos_evx2ev(evx), rc) 执行回调 -> cb -> 
-
+            err = ecl->op_comp_cb(ecl->op_comp_arg, daos_evx2ev(evx), rc) 执行回调 -> cb -> 事件完成回调
+        d_list_move_tail(&evx->evx_link, &eq->eq_comp)
 
 
 
@@ -4575,7 +4575,7 @@ dc_obj_update_task(tse_task_t *task) DAOS_OPC_OBJ_UPDATE 写
         tse_task_stack_push
         shard_task_list_init(obj_auxi)
         obj_auxi->is_ec_obj = obj_is_ec(obj) -> 设置EC对象标志
-      tse_task_register_comp_cb(task, obj_comp_cb, NULL, 0) -> 为任务注册对象完成回调, 弹出任务, 重试, 错误处理等
+      tse_task_register_comp_cb(task, obj_comp_cb, NULL, 0) -> 为任务注册对象完成回调, 弹出任务参数, 重试, 错误处理等
       ----------------------
     obj_update_sgls_dup(obj_auxi, args) -> 用户可能提供 iov_len < iov_buf_len 的 sql，这可能会给内部处理带来一些麻烦，例如 crt_bulk_create/daos_iov_left() 总是使用 iov_buf_len。 对于这种情况，我们复制 sql 并使其 iov_buf_len = iov_len
     obj_auxi->dkey_hash = obj_dkey2hash(obj->cob_md.omd_id, args->dkey) -> 比如为1
@@ -5450,12 +5450,6 @@ eq_uts
 eq_test_1
 
 
-eq_ut_teardown
-
-
-daos_event_register_comp_cb 注册事件回调
-
-
 性能测试: daos_perf, https://daosio.atlassian.net/wiki/spaces/DC/pages/2145650559/daos+perf+in+VOS+mode+sm
 daos_perf -T vos -P 120G -d 1 -a 200 -r 500 -s 1M -C 0 -z (-t)
 D_LOG_MASK=ERR
@@ -6211,3 +6205,16 @@ DAOS-51 客户端：为异步操作添加基本基础设施
 - 修改dsm和dmg客户端RPC以支持同步和异步模式
 
 
+
+
+wal分层配置: ref: https://docs.daos.io/v2.4/admin/deployment/
+默认情况下，DAOS 服务器会自动将角色分配给 bdev 层，因此仅当该分配与您的用例不匹配时才需要 bdev_roles 指令。
+当“dcpm”用于第一层时，应省略此列表或仅指定“data”。 仅支持单个 NVMe 层。当使用 class == "ram" 时，NVMe 层角色可以是 "wal"（用于跟踪本地事务所做的更改的预写日志）、"meta" 中的一个或多个 （用于持久元数据和小对象存储），或“数据”（较大对象的内容）。 只有“数据”角色可以分配给多个层。 如果未指定角色，则服务器将分配它们。 否则，所有角色都必须分配到一个层
+
+
+
+obj_comp_cb(tse_task_t *task, void *data)
+  obj_auxi = tse_task_stack_pop(task, sizeof(*obj_auxi)); -> 弹出任务参数
+  obj_auxi->io_retry = 0;
+  rc = obj_comp_cb_internal(obj_auxi);
+  obj_io_set_new_shard_task(obj_auxi) -> 删除当前的分片任务（附加到 obj_auxi->shard_task_head），并设置 obj_auxi->new_shard_tasks 标志，因此当重试该 obj IO 任务时，它将重新创建新的分片任务。 此辅助函数可以在重试 IO 之前使用，并且重试 IO 可能具有不同的目标或参数

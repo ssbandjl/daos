@@ -2,7 +2,6 @@ TSE要点:
 参数大小840字节+互斥锁
 
 
-
 /**
  * 给任务携带小参数, 指定参数大小, 获取指定task嵌入的参数, 返回参数地址, 先对输入大小按8字节向上对齐, 计算可用大小(预留内存总大小-栈顶大小), 嵌入大小不能超过可用大小(超过限制返回NULL), 修改嵌入参数大小为指定的大小, 将当前缓冲区地址转为void指针并返回
  *
@@ -13,10 +12,6 @@ TSE要点:
  * \return	成功返回参数指针, 失败返回NULL
  **/
 void * tse_task_buf_embedded(tse_task_t *task, int size);
-
-
-
-
 
 /**
  * 使用新的任务函数重置任务。 该任务必须已经完成或尚未开始，并且必须具有 > 0 的有效引用计数（未释放）。 这允许用户重用具有不同主体函数的任务，而不必为不同的操作重新创建任务
@@ -31,13 +26,8 @@ void * tse_task_buf_embedded(tse_task_t *task, int size);
 int tse_task_reset(tse_task_t *task, tse_task_func_t task_func, void *priv);
 
 
-
-
-
-
-
 /**
- * 将参数, 推入任务堆栈空间。 该API仅在任务堆栈上保留空间，不涉及数据拷贝, 获取可用大小, 输入大小按8字节向上对齐, 将参数大小累加到栈顶指针, 计算新的参数地址(固定地址+总大小-栈顶大小)并返回.
+ * 将参数, 推入任务堆栈空间。 该API仅在任务堆栈上保留空间，不涉及数据拷贝, 获取可用大小, 输入大小按8字节向上对齐, 将参数大小累加到栈顶指针, 计算新的参数地址(固定地址+总大小-栈顶大小)并返回. 如: 在更新任务中将任务参数压栈 obj_req_valid(task, args, DAOS_OBJ_RPC_UPDATE ...
  *  
  * --------------- dtp_buf_addr 低地址(高地址-低地址是总大小)
  *
@@ -56,13 +46,8 @@ int tse_task_reset(tse_task_t *task, tse_task_func_t task_func, void *priv);
 void * tse_task_stack_push(tse_task_t *task, uint32_t size);
 
 
-
-
-
-
-
 /**
- * 弹出任务参数, 对齐并检测输入的大小, 计算参数地址
+ * 弹出任务参数, 对齐并检测输入的大小, 计算参数地址, 比如在 obj_comp_cb 中拿回携带的任务参数
  *
  * --------------- dtp_buf_addr 低地址(高地址-低地址是总大小)
  *

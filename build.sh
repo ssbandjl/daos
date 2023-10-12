@@ -1,3 +1,7 @@
+# src/control/server/storage/scm.go
+#// DefaultSysMemRsvd    = humanize.GiByte * 16  // per-system
+#	DefaultSysMemRsvd    = humanize.GiByte * 1   // per-system 适配调试环境, 内存资源较少的情况
+
 # scons --jobs 1 install  PREFIX=/opt/daos TARGET_TYPE=debug
 # rm -rf /root/project/stor/daos/main/daos/build/external/debug/argobots
 # 删除缓存: rm -rf build .sconf_temp .sconsign.dblite
