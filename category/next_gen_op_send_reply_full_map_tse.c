@@ -511,7 +511,7 @@ int daos_eq_destroy(daos_eq_t *eq, int flags);
  * 从EQ中取回完成的事件
  *
  * \param[in] eqh	EQ handle
- * \param[in] wait_running 仅当有正在运行的事件时才等待。 有些事件可能已初始化但未运行。 这选择是仅等待正在运行的事件还是所有正在运行的事件
+ * \param[in] wait_running EQ上有正在运行的事件时才等待(EQ运行队列中有任务)。 有些事件可能已初始化但未运行。 该参数决定仅等待正在运行的事件还是所有的事件
  * \param[in] timeout 等待多少毫秒(MS)
  *
  * \param[in] nevents	事件数组的大小, 返回的事件数小于或等于该数组大小

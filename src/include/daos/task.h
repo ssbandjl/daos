@@ -16,7 +16,7 @@
 #include <daos/common.h>
 #include <daos_task.h>
 
-/* size of daos_task_args should within limitation of TSE_TASK_ARG_LEN */
+/* size of daos_task_args should within limitation of TSE_TASK_ARG_LEN 任务参数的大小应在以下限制内 */
 struct daos_task_args {
 	uint32_t			ta_magic;
 	uint32_t			ta_opc;
