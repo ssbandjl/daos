@@ -97,7 +97,7 @@
       "type": "cppdbg",
       "request": "attach",
       "program": "/opt/daos/bin/daos_engine",
-      "processId": "2738",
+      "processId": "22239",
       "MIMode": "gdb",
       "miDebuggerPath": "/bin/gdb",
       "setupCommands": [
@@ -133,6 +133,35 @@
           {
               "description": "Set Disassembly Flavor to Intel",
               "text": "-gdb-set disassembly-flavor intel", // GDB 将使用 Intel 反汇编样式
+              "ignoreFailures": true
+          }
+      ]
+    },
+    {
+      "name": "daos_test_ec",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "/opt/daos/bin/daos_test",
+      "stopAtEntry": false,
+      "cwd": "/opt/daos/bin/",
+      "environment": [
+        {"name":"POOL_SCM_SIZE", "value":"1"},
+        {"name":"POOL_NVME_SIZE", "value": "4"},
+        {"name":"EC_NUM_RANKS", "value": "6"}
+      ],
+      "args": ["-I"],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/bin/gdb",
+      "setupCommands": [
+          {
+              "description": "Enable pretty-printing for gdb",
+              "text": "-enable-pretty-printing",
+              "ignoreFailures": true
+          },
+          {
+              "description": "Set Disassembly Flavor to Intel",
+              "text": "-gdb-set disassembly-flavor intel",
               "ignoreFailures": true
           }
       ]

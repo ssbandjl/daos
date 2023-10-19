@@ -1,0 +1,235 @@
+=================
+DAOS EC IO test..
+=================
+[==========] Running 29 test(s).
+setup: creating pool, SCM size=1 GB, NVMe size=4 GB
+setup: created pool 520e84c8-a389-40b0-8f02-922ea0747724
+setup: connecting to pool 520e84c8-a389-40b0-8f02-922ea0747724
+connected to pool, ntarget=1
+setup: creating container with label daos_test_0
+setup: container d7f52d3c-14af-4284-a04b-0c06424fad67 created
+setup: opening container d7f52d3c-14af-4284-a04b-0c06424fad67
+[ RUN      ] EC0: ec dkey list and punch test
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC0: ec dkey list and punch test
+[ RUN      ] EC1: ec akey list and punch test
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC1: ec akey list and punch test
+[ RUN      ] EC2: ec rec list and punch test
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC2: ec rec list and punch test
+[ RUN      ] EC3: ec partial update then aggregation
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC3: ec partial update then aggregation
+[ RUN      ] EC4: ec cross cell partial update then aggregation
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC4: ec cross cell partial update then aggregation
+[ RUN      ] EC5: ec full and partial update then aggregation
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC5: ec full and partial update then aggregation
+[ RUN      ] EC6: ec partial and full update then aggregation
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC6: ec partial and full update then aggregation
+[ RUN      ] EC7: ec file size check on parity
+Created DFS Container 2c41e65d-b87d-444f-a9b3-ae3b7816755b
+object ERR  src/object/obj_class.c:297 daos_oclass_fit_max() grp size (6) (65535) is larger than domain nr (1)
+dfs  ERR  src/client/dfs/dfs.c:528 oid_gen() file hint = 0, oclass = 587202561
+dfs  ERR  src/client/dfs/dfs.c:531 oid_gen() daos_obj_generate_oid() failed DER_INVAL(-1003): 'Invalid parameters'
+[  ERROR   ] --- 0x16 != 0
+[   LINE   ] --- src/tests/suite/daos_obj_ec.c:750: error: Failure!
+[  FAILED  ] EC7: ec file size check on parity
+[ RUN      ] EC8: ec file size check on non-parity
+Created DFS Container 17d7df10-c7cd-4f5b-8bdc-2d20d404359d
+object ERR  src/object/obj_class.c:297 daos_oclass_fit_max() grp size (6) (65535) is larger than domain nr (1)
+dfs  ERR  src/client/dfs/dfs.c:528 oid_gen() file hint = 0, oclass = 587202561
+dfs  ERR  src/client/dfs/dfs.c:531 oid_gen() daos_obj_generate_oid() failed DER_INVAL(-1003): 'Invalid parameters'
+[  ERROR   ] --- 0x16 != 0
+[   LINE   ] --- src/tests/suite/daos_obj_ec.c:750: error: Failure!
+[  FAILED  ] EC8: ec file size check on non-parity
+[ RUN      ] EC9: ec aggregation failed
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC9: ec aggregation failed
+[ RUN      ] EC10: ec aggregation peer update failed
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC10: ec aggregation peer update failed
+[ RUN      ] EC11: ec single-value array mixed IO
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC11: ec single-value array mixed IO
+[ RUN      ] EC12: ec full stripe snapshot
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC12: ec full stripe snapshot
+[ RUN      ] EC13: ec partial stripe snapshot
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC13: ec partial stripe snapshot
+[ RUN      ] EC14: ec partial stripe cross boundary snapshot
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC14: ec partial stripe cross boundary snapshot
+[ RUN      ] EC15: ec punch and check_size
+Created DFS Container 64d4ac8f-8981-4002-8b8e-ff37bf32c64b
+object ERR  src/object/obj_class.c:297 daos_oclass_fit_max() grp size (6) (65535) is larger than domain nr (1)
+dfs  ERR  src/client/dfs/dfs.c:528 oid_gen() file hint = 0, oclass = 587202561
+dfs  ERR  src/client/dfs/dfs.c:531 oid_gen() daos_obj_generate_oid() failed DER_INVAL(-1003): 'Invalid parameters'
+[  ERROR   ] --- 0x16 != 0
+[   LINE   ] --- src/tests/suite/daos_obj_ec.c:1191: error: Failure!
+[  FAILED  ] EC15: ec punch and check_size
+[ RUN      ] EC16: ec single-value overwrite
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC16: ec single-value overwrite
+[ RUN      ] EC17: ec single-value different size fetch
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC17: ec single-value different size fetch
+[ RUN      ] EC18: ec conditional fetch
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC18: ec conditional fetch
+[ RUN      ] EC19: ec few partial stripe update
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC19: ec few partial stripe update
+[ RUN      ] EC20: ec recx list from parity
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC20: ec recx list from parity
+[ RUN      ] EC21: ec update two akeys and parity shards failed
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC21: ec update two akeys and parity shards failed
+[ RUN      ] EC22: ec data recovery
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC22: ec data recovery
+[ RUN      ] EC23: ec multi-singv overwrite
+Not enough targets(need 4), skipping (1/0)
+[       OK ] EC23: ec multi-singv overwrite
+[ RUN      ] EC24: ec multi-array update
+Not enough targets(need 4), skipping (1/0)
+[       OK ] EC24: ec multi-array update
+[ RUN      ] EC25: ec dkey enumerate with failure shard
+Not enough targets(need 3), skipping (1/0)
+[       OK ] EC25: ec dkey enumerate with failure shard
+[ RUN      ] EC26: ec single nvme io failed
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC26: ec single nvme io failed
+[ RUN      ] EC27: ec double nvme io failed
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC27: ec double nvme io failed
+[ RUN      ] EC28: ec three nvme io failed
+Not enough targets(need 6), skipping (1/0)
+[       OK ] EC28: ec three nvme io failed
+teardown: container d7f52d3c-14af-4284-a04b-0c06424fad67 destroyed
+pool ERR  src/pool/cli.c:815 dc_pool_disconnect() cannot disconnect pool 520e84c8, container not closed, DER_BUSY(-1012): 'Device or resource busy'
+daos_pool_disconnect failed, rc: -1012
+teardown: destroyed pool 520e84c8-a389-40b0-8f02-922ea0747724
+[==========] 29 test(s) run.
+[  PASSED  ] 26 test(s).
+[  FAILED  ] 3 test(s), listed below:
+[  FAILED  ] EC7: ec file size check on parity
+[  FAILED  ] EC8: ec file size check on non-parity
+[  FAILED  ] EC15: ec punch and check_size
+
+ 3 FAILED TEST(S)
+
+============ Summary src/tests/suite/daos_test.c
+ERROR, 3 TEST(S) FAILED
+
+
+
+setup: creating pool, SCM size=4 GB, NVMe size=16 GB
+daos ERR  src/common/tests_dmg_helpers.c:366 daos_dmg_json_pipe() dmg error: pool create failed: server: code = 606 description = "pool request contains invalid ranks: 1,2,3,4,5"
+daos ERR  src/common/tests_dmg_helpers.c:682 dmg_pool_create() dmg failed
+dmg_pool_create failed, rc: -1025
+Failed to create pool with 6 ranks: DER_MISC(-1025): 'Miscellaneous error'
+[ RUN      ] EC0: ec dkey list and punch test
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC0: ec dkey list and punch test
+[ RUN      ] EC1: ec akey list and punch test
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC1: ec akey list and punch test
+[ RUN      ] EC2: ec rec list and punch test
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC2: ec rec list and punch test
+[ RUN      ] EC3: ec partial update then aggregation
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC3: ec partial update then aggregation
+[ RUN      ] EC4: ec cross cell partial update then aggregation
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC4: ec cross cell partial update then aggregation
+[ RUN      ] EC5: ec full and partial update then aggregation
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC5: ec full and partial update then aggregation
+[ RUN      ] EC6: ec partial and full update then aggregation
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC6: ec partial and full update then aggregation
+[ RUN      ] EC7: ec file size check on parity
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC7: ec file size check on parity
+[ RUN      ] EC8: ec file size check on non-parity
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC8: ec file size check on non-parity
+[ RUN      ] EC9: ec aggregation failed
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC9: ec aggregation failed
+[ RUN      ] EC10: ec aggregation peer update failed
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC10: ec aggregation peer update failed
+[ RUN      ] EC11: ec single-value array mixed IO
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC11: ec single-value array mixed IO
+[ RUN      ] EC12: ec full stripe snapshot
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC12: ec full stripe snapshot
+[ RUN      ] EC13: ec partial stripe snapshot
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC13: ec partial stripe snapshot
+[ RUN      ] EC14: ec partial stripe cross boundary snapshot
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC14: ec partial stripe cross boundary snapshot
+[ RUN      ] EC15: ec punch and check_size
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC15: ec punch and check_size
+[ RUN      ] EC16: ec single-value overwrite
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC16: ec single-value overwrite
+[ RUN      ] EC17: ec single-value different size fetch
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC17: ec single-value different size fetch
+[ RUN      ] EC18: ec conditional fetch
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC18: ec conditional fetch
+[ RUN      ] EC19: ec few partial stripe update
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC19: ec few partial stripe update
+[ RUN      ] EC20: ec recx list from parity
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC20: ec recx list from parity
+[ RUN      ] EC21: ec update two akeys and parity shards failed
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC21: ec update two akeys and parity shards failed
+[ RUN      ] EC22: ec data recovery
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC22: ec data recovery
+[ RUN      ] EC23: ec multi-singv overwrite
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC23: ec multi-singv overwrite
+[ RUN      ] EC24: ec multi-array update
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC24: ec multi-array update
+[ RUN      ] EC25: ec dkey enumerate with failure shard
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC25: ec dkey enumerate with failure shard
+[ RUN      ] EC26: ec single nvme io failed
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC26: ec single nvme io failed
+[ RUN      ] EC27: ec double nvme io failed
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC27: ec double nvme io failed
+[ RUN      ] EC28: ec three nvme io failed
+Could not run test: Test failed with exception: Segmentation fault(11)Test setup failed
+[  ERROR   ] EC28: ec three nvme io failed
+state not set, likely due to group-setup issue
+[==========] 29 test(s) run.
+[  PASSED  ] 0 test(s).
+crt  ERR  src/cart/crt_init.c:915 crt_finalize() cannot finalize, current ctx_num(1).
+crt  ERR  src/cart/crt_init.c:973 crt_finalize() failed, rc: DER_BUSY(-1012): 'Device or resource busy'
+client ERR  src/client/api/event.c:138 daos_eq_lib_fini() failed to shutdown crt: DER_BUSY(-1012): 'Device or resource busy'
+client ERR  src/client/api/init.c:308 daos_fini() failed to finalize eq: DER_BUSY(-1012): 'Device or resource busy'
+daos_fini() failed with -1012
+
+============ Summary src/tests/suite/daos_test.c
+ERROR, 29 TEST(S) FAILED
+

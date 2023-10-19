@@ -681,6 +681,14 @@ test_runable(test_arg_t *arg, unsigned int required_nodes)
 	int	i;
 	int	runable = 1;
 
+	char  *env;
+	// 通过环境变量控制单元测试允许执行
+	env = getenv("TEST_RUN");
+	if (env) {
+		return runable;
+	}
+
+
 	if (arg == NULL) {
 		print_message("state not set, likely due to group-setup"
 			      " issue\n");

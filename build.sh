@@ -9,6 +9,7 @@
 
 #centos7:
 # scl enable devtoolset-9 bash
+echo "scl enable devtoolset-9 bash"
 scons-3.6 --jobs 32 install PREFIX=/opt/daos BUILD_TYPE=debug TARGET_TYPE=debug --build-deps=yes   
 
 

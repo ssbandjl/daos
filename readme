@@ -415,6 +415,20 @@ dc_cont_create
     daos_obj_generate_oid_by_rf
 
 
+
+ec算法: 数据块k, 校验块p, 冗余组g
+/* EC(k+p), groups=g */
+/* EC(8+2) classes */
+OC_EC_DEF(8, 2, 8),
+
+/** EC 8+1 object classes */
+OC_EC_8P1G1  = OBJ_CLASS_DEF(OR_RS_8P1, 1ULL),
+OC_EC_8P1G2  = OBJ_CLASS_DEF(OR_RS_8P1, 2ULL),
+OC_EC_8P1G4  = OBJ_CLASS_DEF(OR_RS_8P1, 4ULL),
+OC_EC_8P1G6  = OBJ_CLASS_DEF(OR_RS_8P1, 6ULL),
+
+OC_EC_8P2G6  = OBJ_CLASS_DEF(OR_RS_8P2, 6ULL),
+
 ---------- ec ----------
 
 
@@ -4496,7 +4510,7 @@ write -> dfuse_cb_write 回调写 src/client/dfuse/fuse3, 将用户数据拷贝�
   DFUSE_TRA_DEBUG 调试
   fuse_buf_copy(&ibuf, bufv, 0)
   dfuse_cache_evict
-  d_slab_acquire 以高效的方式分配数据
+  d_slab_acquire 以高效的方式分配数据, 内部分配的是dfuse_event(上面的ev是结构不是指针, 直接就一起分配出来了)
   fuse_buf_copy libfuse
   daos_event_init 线程事件初始化
     evx->evx_status	= DAOS_EVS_READY
@@ -4579,7 +4593,7 @@ dc_obj_update_task(tse_task_t *task) DAOS_OPC_OBJ_UPDATE 写
       ----------------------
     obj_update_sgls_dup(obj_auxi, args) -> 用户可能提供 iov_len < iov_buf_len 的 sql，这可能会给内部处理带来一些麻烦，例如 crt_bulk_create/daos_iov_left() 总是使用 iov_buf_len。 对于这种情况，我们复制 sql 并使其 iov_buf_len = iov_len
     obj_auxi->dkey_hash = obj_dkey2hash(obj->cob_md.omd_id, args->dkey) -> 比如为1
-    if (obj_is_ec(obj)) -> 如果是EC对象, 则重新组装对象写请求
+    if (obj_is_ec(obj)) -> 如果是EC对象(对象类属性上的封装方法为 DAOS_RES_EC ), 则重新组装对象写请求
       obj_rw_req_reassemb(obj, args, NULL, obj_auxi) -> EC对象需要, 重新组装对象读写请求
         struct obj_reasb_req	*reasb_req = &obj_auxi->reasb_req -> EC请求, 重新组装 obj 请求。 用户输入的 iod/sgl 可能需要在发送到服务器之前在客户端重新组装，例如：合并相邻的recx，或者对无序的recx进行排序并生成新的sgl与之匹配； 对于EC obj，将iod/recxs拆分到每个目标，生成新的sgl与之匹配，创建oiod/siod以指定每个shard/tgt的IO req
         if (!obj_auxi->req_reasbed)
@@ -5316,7 +5330,7 @@ _bdev_daos_submit_request
 dfs test:
 src/tests/simple_dfs.c -> main
 
-
+通过环境变量修改单元测试池大小
 export POOL_SCM_SIZE=1
 export POOL_NVME_SIZE=4
 cd /opt/daos/bin; ./dfs_test -s     # unit_test -> gdb --args ./dfs_test -u
@@ -5341,6 +5355,7 @@ run_specified_tests(tests, rank, size, NULL, 0) -> pus
           test_setup_next_step
             daos_eq_create
         test_setup_pool_create
+          rank_list = d_rank_list_alloc(arg->pool_node_size) -> rank数量
           dmg_pool_create
             daos_dmg_json_pipe
               cmd_str = cmd_string(cmd_base, args, argcount) ->    dmg -j -i -d --log-file=/tmp/suite_dmg.log pool create --user=root --group=root --scm-size=4294967296b --nvme-size=17179869184b test_OH1F19 --nsvc=1
@@ -6218,3 +6233,183 @@ obj_comp_cb(tse_task_t *task, void *data)
   obj_auxi->io_retry = 0;
   rc = obj_comp_cb_internal(obj_auxi);
   obj_io_set_new_shard_task(obj_auxi) -> 删除当前的分片任务（附加到 obj_auxi->shard_task_head），并设置 obj_auxi->new_shard_tasks 标志，因此当重试该 obj IO 任务时，它将重新创建新的分片任务。 此辅助函数可以在重试 IO 之前使用，并且重试 IO 可能具有不同的目标或参数
+
+
+DAOS-6911 bio：批量句柄缓存 (#5593)，为了减少繁重的 MR 操作，BIO 缓存通过 DMA 缓冲区块创建的批量句柄。 缓存的批量句柄按批量大小进行分类，一个 DMA 缓冲区块填充有相同大小的批量句柄，如果某些大小的批量句柄不够，它将尝试通过增加 DMA 缓冲区来填充空闲块，或逐出未使用的块 当 DMA 缓冲区大小达到上限时，批量缓存目前仅用于 NVMe I/O。 （不适用于 RDMA 到 SCM），要绕过批量缓存，请在“DAOS_IO_BYPASS”的旁路环境中指定“srv_bulk_cache”
+
+
+ec:
+src/object/cli_ec.c
+src/object/srv_ec.c
+src/tests/suite/daos_obj_ec.c
+src/object/srv_ec_aggregate.c
+src/tests/ftest/fault_injection/ec.yaml
+src/tests/ftest/fault_injection/ec.py
+static const struct CMUnitTest ec_tests[] EC单元测试
+daos_test -I|--ec_io
+
+daos_test -h
+src/tests/suite/daos_test.c
+main(int argc, char **argv)
+  run_daos_ec_io_test
+
+
+
+
+
+单元测试:
+[root@localhost daos]# daos_test -h
+Using compatible version
+
+DAOS TESTS
+=============================
+Tests: Use one of these arg(s) for specific test
+daos_test -m|--mgmt
+daos_test -p|--pool
+daos_test -c|--cont
+daos_test -C|--capa
+daos_test -U|--dedup
+daos_test -z|--checksum
+daos_test -Z|--agg_ec
+daos_test -t|--base_dtx
+daos_test -T|--dist_dtx
+daos_test -i|--io
+daos_test -I|--ec_io
+daos_test -x|--epoch_io
+daos_test -A|--obj_array
+daos_test -D|--array
+daos_test -K|--daos_kv
+daos_test -d|--degraded
+daos_test -e|--epoch
+daos_test -o|--erecov
+daos_test -V|--verify
+daos_test -R|--mdr
+daos_test -O|--oid_alloc
+daos_test -r|--rebuild
+daos_test -v|--rebuild_simple
+daos_test -S|--rebuild_ec
+daos_test -X|--degrade_ec
+daos_test -b|--drain_simple
+daos_test -B|--extend_simple
+daos_test -N|--nvme_recovery
+daos_test -P|--daos_pipeline
+daos_test -G|--upgrade
+daos_test -a|--all
+Default <daos_tests> runs all tests
+=============
+Options: Use one of these arg(s) to modify the tests that are run
+daos_test -g|--group GROUP
+daos_test -s|--svcn NSVCREPLICAS
+daos_test -E|--exclude TESTS
+daos_test -f|--filter TESTS
+daos_test -h|--help
+daos_test -u|--subtests
+daos_test -n|--dmg_config
+daos_test --csum_type CSUM_TYPE
+daos_test --csum_cs CHUNKSIZE
+daos_test --csum_sv
+
+=============================
+
+============ Summary src/tests/suite/daos_test.c
+OK - NO TEST FAILURES
+
+launch.json
+"environment": [
+  {"name":"POOL_SCM_SIZE", "value":"1"},
+  {"name":"POOL_NVME_SIZE", "value": "4"},
+  {"name":"EC_NUM_RANKS", "value": "1"}
+],
+export POOL_SCM_SIZE=1
+export POOL_NVME_SIZE=4
+export EC_NUM_RANKS=1
+run_daos_ec_io_test(rank, size, sub_tests, sub_tests_size)
+ec_setup -> ec_setup(void  **state)
+  int		num_ranks = 6; -> 默认ranks为6个
+  save_group_state
+  test_setup(state, SETUP_CONT_CONNECT, true DEFAULT_POOL_SIZE -> 默认pool 4G
+    test_setup_next_step(state, pool, NULL, &co_props)
+      case SETUP_EQ
+      arg->setup_state = SETUP_POOL_CREATE
+      return test_setup_pool_create(state, pool
+
+ec_tests
+test_teardown
+
+ec_full_stripe_snapshot
+  daos_pool_set_prop(arg->pool.pool_uuid, "reclaim", "time");
+  stripe_size = ec_data_nr_get(oid) * (daos_size_t)EC_CELL_SIZE; -> 条带大小
+  ec_verify_parity_data
+
+
+
+ec_dkey_list_punch
+  if (!test_runable(arg, 6))
+
+creating pool
+
+创池无效的rank
+FaultPoolInvalidRanks
+
+
+2.5后用tcp代替socket:
+# provider: ofi+sockets
+provider: ofi+tcp
+
+
+
+char  *env;
+// 通过环境变量控制单元测试允许执行
+env = getenv("TEST_RUN");
+if (env) {
+  return runable;
+}
+
+
+
+对象高低位:
+typedef struct {
+	/** least significant (low) bits of object ID */
+	uint64_t	lo;
+	/** most significant (high) bits of object ID */
+	uint64_t	hi;
+} daos_obj_id_t;
+
+
+
+通过ord和oid找到类型
+static inline daos_oclass_id_t
+daos_obj_id2class(daos_obj_id_t oid)
+{
+	enum daos_obj_redun ord;
+	uint32_t nr_grps;
+
+	ord = daos_obj_id2ord(oid);
+	nr_grps = (oid.hi & OID_FMT_META_MASK) >> OID_FMT_META_SHIFT;
+
+	return (ord << OC_REDUN_SHIFT) | nr_grps;
+}
+
+
+enum daos_obj_redun {
+	OC_UNKNOWN = 0,
+
+	/**
+	 * No data protection, aka "single replica".
+	 */
+	OR_RP_1 = 1,
+
+	/**
+	 * Static N-way replicated object (OC_RP_N).
+	 * The number of redundancy group is hardcoded in the object metadata.
+	 */
+	OR_RP_2 = 8,
+	OR_RP_3,
+	OR_RP_4,
+	OR_RP_5,
+	OR_RP_6,
+	OR_RP_8,
+
+
+  
+

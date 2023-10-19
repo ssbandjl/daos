@@ -95,7 +95,7 @@ ec_dkey_list_punch(void **state)
 	int		num_dkey_create = 10000;
 	char		*dkeys[10000];
 	int		i;
-
+	
 	if (!test_runable(arg, 6))
 		return;
 
@@ -2052,6 +2052,13 @@ ec_setup(void  **state)
 	int		rc;
 	unsigned int	orig_dt_cell_size;
 	int		num_ranks = 6;
+	char		*env;
+
+	// rank数量从环境变量中获取
+	env = getenv("EC_NUM_RANKS");
+	if (env) {
+		num_ranks = atoi(env);
+	}
 
 	orig_dt_cell_size = dt_cell_size;
 	dt_cell_size = ec_cell_size;
