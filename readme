@@ -6333,7 +6333,7 @@ ec_setup -> ec_setup(void  **state)
       arg->setup_state = SETUP_POOL_CREATE
       return test_setup_pool_create(state, pool
 
-ec_tests
+ec_tests 通过一些标记位才控制ec特性, 比如: DAOS_OBJ_SKIP_PARITY, 并利用cart的故障注入功能
 test_teardown
 
 ec_full_stripe_snapshot
@@ -6341,6 +6341,10 @@ ec_full_stripe_snapshot
   stripe_size = ec_data_nr_get(oid) * (daos_size_t)EC_CELL_SIZE; -> 条带大小
   ec_verify_parity_data
 
+
+trigger_and_wait_ec_aggreation -> 触发并等待ec聚合
+
+full_update_size -> 满条带
 
 
 ec_dkey_list_punch
@@ -6411,5 +6415,29 @@ enum daos_obj_redun {
 	OR_RP_8,
 
 
-  
+
+
+加入集群失败, 
+case *mgmtpb.JoinResp:
+  fmt.Fprintf(&bld, "%T rank:%d (state:%s, local:%t) map:%d", m, m.Rank, m.State, m.LocalJoin, m.MapVersion)
+据观察，MS领导者可能会将版本2的系统映射{rank 1，rank 2}传递给本地rank 0，他可能会错误地认为自己已被排除在系统之外（实际上它甚至还没有第一次加入系统） 类似地，如果某个等级加入了系统地图版本V，并且以某种方式收到了不包括其自身的系统地图版本V-1，则它也可能会错误地认为自己已被排除在系统之外。 为了解决这两种情况，我们通过JoinResp将最小组版本（Rank加入系统的系统映射版本）从MS(主服务)传递到该Rank上的crt PG(主要组)，以便Rank将拒绝任何传入低于最低组版本的 PG 版本。 这也实现了 crt_swim_cli_cb 中的待办事项
+
+
+聚合(聚合是非满条带聚合满条带，下一代全部都是满条带了), 客户端设置给所有服务端的参数, DAOS_FORCE_EC_AGG
+enum {
+	DMG_KEY_FAIL_LOC	 = 0,
+	DMG_KEY_FAIL_VALUE,
+	DMG_KEY_FAIL_NUM,
+	DMG_KEY_NUM,
+};
+DAOS-3749 聚合：仅在没有 I/O 时聚合 (#1488)
+- 仅在默认情况下没有对象 RPC 时才运行聚合，这是池的默认属性，但可以更改它，以便将来在聚合性能调整后聚合可以正常优先级运行
+- 每 4 秒检查一次聚合属性更改，而不是 90 秒
+- 删除DMG禁用聚合命令
+- 代码清理
+添加 obj_io_context 来存储 RPC 所需的数据结构 将相关函数一起移动 将 DMG 控制操作码的前缀从 DSS 重命名为 DMG
+
+
+
+agg_process_stripe -> 处理先前的条带。 当迭代器移动到后续的第一个范围时调用
 

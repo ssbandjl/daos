@@ -1,0 +1,109 @@
+引擎启动:
+server_init -> daos_debug_init -> dss_engine_metrics_init -> drpc_init -> register_dbtree_classes -> dss_topo_init -> abt_init -> dss_module_init interface初始化 -> crt_init_opt 网络初始化-> dss_module_init_all -> vos,rdb,rsvc,security,mgmt,dtx,pool,cont,obj,rebuild 模块初始化 -> dss_srv_init 服务初始化
+
+...
+dss_module_init_all(&dss_mod_facs) -> 初始化所有模块, vos(vos_mod_init), ...
+dss_srv_init() 初始化服务(服务初始化)
+  dss_xstreams_init() -> xs初始化(协程池)
+    dss_start_xs_id(tags, xs_id) -> 按tag和xs_id启动xs, 启动系统服务, 主IO服务, 负载等多个XS
+      dss_start_one_xstream(obj->cpuset, tag, xs_id) -> 服务端启动单个XS
+        dss_sched_init(dx); -> 创建XS调度器
+        daos_abt_thread_create(dx->dx_sp, dss_free_stack_cb, dx->dx_pools[DSS_POOL_NET_POLL], dss_srv_handler, dx, attr, &dx->dx_progress) -> 启动轮询(驱动ULT)线程
+  ...
+  drpc_listener_init 启动drpc监听
+  ...
+
+
+...  
+dss_srv_handler
+  if (dx->dx_comm)
+    rc = crt_context_create(&dmi->dmi_ctx) -> 创建私有的传输上下文
+    rc = crt_context_register_rpc_task(dmi->dmi_ctx, dss_rpc_hdlr, dss_iv_resp_hdlr, dx); -> 为RPC任务注册两个公共回调(rpc控制器和iv回复)
+      cc_rpc_cb = dss_rpc_hdlr -> 公共RPC回调(被 progress 后由 crt_rpc_handler_common 触发执行)
+      cc_iv_resp_cb = dss_iv_resp_hdlr  -> iv RPC回调
+    crt_context_idx(dmi->dmi_ctx, &dmi->dmi_ctx_id) -> 获取cart上下文索引
+    tse_sched_init(&dx->dx_sched_dsc, NULL, dmi->dmi_ctx) -> 为支持服务端调用客户端的API, 初始化调度器
+    for (;;) -> 死循环
+      if (dx->dx_comm)
+        crt_progress(dmi->dmi_ctx, dx->dx_timeout) -> 轮询/驱动网络回调
+        ABT_thread_yield() -> 每次循环让出cpu一次
+
+...
+rpc公共回调, 调用栈1
+dss_rpc_hdlr
+  sched_req_enqueue 调度请求入队
+    should_enqueue_req?(dx->dx_main_xs) 主线程才入队(如VOS)
+      req_get(对端 req_put) -> req_enqueue 请求入队 -> d_list_add_tail(&req->sr_link, &sri->sri_req_list)
+      ...
+
+调度器初始化后就开始处理队列(process_all)
+dss_sched_init
+  sched_run
+    sched_start_cycle(data, pools)
+      process_all
+        policy_ops[sched_policy].process_io(dx) 处理io
+          policy_fifo_process 先进先出
+            process_req_list
+              req_kickoff
+                req_kickoff_internal(dx, &req->sr_attr, req->sr_func,req->sr_arg)  sr_func -> crt_handle_rpc 不入队列，直接处理回调
+                  sched_create_thread(dx, func func -> crt_handle_rpc
+                    ABT_thread_create(abt_pool, func, arg, t_attr, thread)
+                      crt_handle_rpc
+
+process_all -> policy_ops[sched_policy].process_io(dx) -> .process_io = policy_fifo_process -> 
+  process_req_list 
+    d_list_for_each_entry_safe(req, tmp, list, sr_link) -> 遍历队列另一端, 并处理请求
+      process_req -> req_kickoff(dx, req) 开始处理请求 -> crt_handle_rpc
+
+
+调用栈2
+dss_rpc_hdlr(crt_context_t *ctx, void *hdlr_arg, void (*real_rpc_hdlr)(void *), void *arg)
+  opc_get_mod_id(rpc->cr_opc) 获取模块id 偏移+掩码 daos_modeul_id
+  SCHED_REQ_ANONYM 匿名 sra=调度请求属性
+  struct dss_module	*module = dss_module_get(mod_id);
+  module->sm_mod_ops->dms_get_req_attr 获取属性
+  sched_req_enqueue 入队  real_rpc_hdlr = crt_handle_rpc req->sr_func
+    should_enqueue_req SCHED_REQ_ANONYM 匿名不入队列
+    req_enqueue
+      d_list_add_tail(&req->sr_link, &sri->sri_req_list)
+
+
+
+crt_rpc_handler_common
+    HG_Get_info
+    HG_Context_get_data
+    crt_hg_unpack_header
+    crt_opc_lookup
+    crt_hg_header_copy
+    crt_rpc_priv_init
+      crp_completed = 0
+    crt_rpc_common_hdlr 不是集合rpc
+        crt_grp_priv_get_primary_rank
+        crt_rpc_cb_customized 自定义回调, 并且非心跳rpc, crt_opc_is_swim, 那么就执行自定义回调
+        crt_ctx->cc_rpc_cb(..., crt_handle_rpc) cart的rpc控制器
+        cc_rpc_cb = dss_rpc_hdlr -> sched_create_thread(dx, func -> ABT_thread_create -> crt_handle_rpc
+        ... 入队，出队
+        crt_handle_rpc
+            rpc_priv->crp_opc_info->coi_rpc_cb(rpc_pub) 执行回调,如 obj_req_create DAOS_OBJ_RPC_TGT_UPDATE 对应的 ds_obj_tgt_update_handler
+
+
+
+crt_context_create -> 创建上下文的时候已经注册好了rpc公共回调(crt_rpc_handler_common), 等待被 progress 触发执行
+  crt_context_init
+  crt_hg_ctx_init
+      crt_hg_class_init
+          HG_Init_opt
+            HG_Init_opt
+              NA_Initialize_opt 网络抽象类初始化 class: ofi Protocal: verbs;ofi_rxm Hostname: mlx5_bond_1/ip:50177
+                na_private_class->na_class.ops = na_class_table[plugin_index] 抽象网络表 na_ofi_class_ops_g
+                na_class.ops->initialize 初始化
+                na_class_ops NA_PLUGIN_OPS(ofi) 插件实现
+                fi_getinfo
+                ofi_check
+          crt_hg_get_addr
+          crt_hg_reg_rpcid
+              crt_hg_reg CRT_HG_RPCID | CRT_HG_ONEWAY_RPCID 单程 -> 注册公共回调
+                  crt_proc_in_common
+                  crt_proc_out_common
+                    rpc_priv = container_of(data, struct crt_rpc_priv, crp_pub.cr_output) -> reply 回复数据
+                  crt_rpc_handler_common <- hg_proc_info->rpc_cb <- hg_core_rpc_cb <- hg_core_rpc_info->rpc_cb <- hg_core_process
