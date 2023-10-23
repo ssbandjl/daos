@@ -1,4 +1,11 @@
-DAOS引擎是如何收到客户端RPC并处理的? 如何将协程XS, ULT, Cart(网络), RPC, HG, Libfabric, RDMA, 完成队列以及各种回调结合起来, 形成精密运转的"机器"
+DAOS引擎是如何收到客户端RPC并处理的?
+
+也就是, 如何将协程XS, ULT, Cart(网络), RPC, HG, Libfabric, RDMA, 完成队列以及各种回调结合起来, 形成精密运转的"机器", 来支持DAOS引擎接收客户端RPC功能
+
+如下所示:
+daos_client(RPC请求) -------> daos_engine(RPC接收和处理)
+daos_engine(RPC请求/接收) -------> daos_engine(RPC请求/接收)
+
 1. 引擎启动, 在初始化服务端(server_init)中, 初始化所有的模块(dss_module_init_all), 接着初始化引擎主服务(dss_srv_init)
 2. 在主服务中,按tgt和id启动每个协程(xs, 系统服务, 主IO服务, 负载等多个XS)(dss_start_one_xstream)
 3. 在协程中初始化调度器(dss_sched_init), 启动轮询处理(dss_srv_handler)
@@ -7,6 +14,8 @@ DAOS引擎是如何收到客户端RPC并处理的? 如何将协程XS, ULT, Cart(
 6. 在总控中, 启动大循环(for (;;))轮询网络完成事件(cart_progress), 每次循环让出一次cpu
 7. 引擎收到客户端RPC请求, 通过cart_progress触发公共回调, 在公共回调中, 先排队(req_enqueue), 然后由协程调度器遍历出RPC请求(process_all, crt_handle_rpc)
 8. 处理RPC请求对应的控制器函数(coi_rpc_cb, 业务回调, 如: ds_obj_tgt_update_handler)
+
+
 
 引擎启动:
 server_init -> daos_debug_init -> dss_engine_metrics_init -> drpc_init -> register_dbtree_classes -> dss_topo_init -> abt_init -> dss_module_init interface初始化 -> crt_init_opt 网络初始化-> dss_module_init_all -> vos,rdb,rsvc,security,mgmt,dtx,pool,cont,obj,rebuild 模块初始化 -> dss_srv_init 服务初始化
@@ -117,3 +126,5 @@ crt_context_create -> 创建上下文的时候已经注册好了rpc公共回调(
                   crt_proc_out_common
                     rpc_priv = container_of(data, struct crt_rpc_priv, crp_pub.cr_output) -> reply 回复数据
                   crt_rpc_handler_common <- hg_proc_info->rpc_cb <- hg_core_rpc_cb <- hg_core_rpc_info->rpc_cb <- hg_core_process
+
+参考链接: https://github.com/ssbandjl/daos/blob/master/category/ult_cart_progress_recv_call_back
