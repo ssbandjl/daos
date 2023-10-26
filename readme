@@ -6461,6 +6461,16 @@ crt_gdata.cg_iv_inline_limit = ops->cio_max_expected_size - 1024; 20K-1K = 19K
 
 
 
+网络上下文内存池流程总结
+1. 在创建网络上下文(crt_context_create)的时候, 初始化内存池(crt_hg_pool_init)
+2. 初始化自旋锁(D_SPIN_INIT), 池链表(D_INIT_LIST_HEAD), 设置池元素最大个数(512)和预分配个数(16)并启用内存池(crt_hg_pool_enable)
+3. 按预分配个数, 准备上下文(HG_Create), 插入池队列尾部(d_list_add_tail)
+4. 发送RPC时, 从池中获取上下文(crt_hg_pool_get), 从池队列头部弹出一个元素并返回(d_list_pop_entry)
+5. 获取后判空, 如果池子为空, 则扩容, 即创建上下文(HG_Create)
+6. RPC用完后, 通过减引用计数(RPC_DECREF(RPC))中去销毁cart请求(crt_req_destroy)
+7. 重置请求上的内存(HG_Free_output), 终结清空RPC(crt_rpc_priv_fini(rpc_priv))
+8. 如果是单个RPC(!crp_coll), 且不是服务端的接收RPC请求(!crp_srv), 且RPC是需要回复(!coi_no_reply), 则将该上下文放回内存池(crt_hg_pool_put, d_list_add_tail)
+9. 返回内存池时, 判断是否池满, 池满则直接销毁上下文(D_FREE(hdl))
 
 
 HG上下文
