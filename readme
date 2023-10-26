@@ -587,23 +587,8 @@ RPC_STATE_INITED ->
 
 
 
-
-
-crt_hg_req_create -> 控制器复用:HG_Reset -> 不复用:HG_Create -> 
-
-
-
 crt_hg_req_send -> HG_Forward(rpc_priv->crp_hg_hdl, crt_hg_req_send_cb 由HG转发(同时设置完成回调) -> 
 
-
-
-
-
-
-复用控制器
-rpc_priv->crp_hdl_reuse
-
-coi_no_reply:1 /* one-way */ 单程(无需响应,默认)
 
 
 test_msg_size -> crt_req_create -> 
@@ -2051,7 +2036,17 @@ crt_req_send(req, shard_update_req_cb, remote_arg)  complete_cb = shard_update_r
     crt_req_send_internal
         crt_req_ep_lc_lookup
             crt_req_send_immediately
-                crt_hg_req_create
+                crt_hg_req_create -> 创建请求
+                    if (!rpc_priv->crp_opc_info->coi_no_reply) -> 双边(需要回复/响应)
+                    rpcid = CRT_HG_RPCID
+                    rpc_priv->crp_hdl_reuse = crt_hg_pool_get(hg_ctx) -> 复用HG内存控制器(从内存池获取), 自旋锁, 弹出并返回, 计数器减1
+                        D_SPIN_LOCK(&hg_pool->chp_lock)
+                        hdl = d_list_pop_entry(&hg_pool->chp_list
+                        hg_pool->chp_num--
+                        return hdl
+                    else
+                    rpcid = CRT_HG_ONEWAY_RPCID coi_no_reply:1 /* one-way */ 单程(无需响应,默认)
+                    if (rpc_priv->crp_hdl_reuse == NULL) -> 如果内存池为空,则新建HG控制器
                     HG_Create
                       hg_core_create
                         hg_core_alloc_na 分配操作id
@@ -6463,4 +6458,55 @@ uint32_t	cio_max_unexpected_size;
 /** Size of (un)expected Mercury buffers */ 默认预期和非预期大小是20K, bulk阈值
 #define DAOS_RPC_SIZE  (20480) /* 20KiB */
 crt_gdata.cg_iv_inline_limit = ops->cio_max_expected_size - 1024; 20K-1K = 19K
+
+
+
+
+
+HG上下文
+/** HG context */
+struct crt_hg_context {
+	/* Flag indicating whether hg class is shared; true for SEP mode */
+	bool			 chc_shared_hg_class;
+	hg_class_t		*chc_hgcla; /* HG class */
+	hg_context_t		*chc_hgctx; /* HG context */
+	hg_class_t		*chc_bulkcla; /* bulk class */
+	hg_context_t		*chc_bulkctx; /* bulk context */
+	struct crt_hg_pool	 chc_hg_pool; /* HG handle pool */   HG控制器内存池
+	int			 chc_provider; /* provider */
+};
+
+内存池操作:
+static inline int crt_hg_pool_init(struct crt_hg_context *hg_ctx)
+crt_hg_pool_enable -> 启用 HG 句柄池，可以更改/调整 max_num 和 prepost_num。 这允许池被启用/重新启用，并且可以在运行时根据工作负载自动调整或通过 cart_ctl 手动调整, 最大512, 预先准备16个
+    HG_Create
+crt_hg_pool_disable
+    HG_Destroy
+crt_hg_pool_fini
+crt_hg_pool_get
+crt_hg_pool_put <- crt_hg_req_destroy <- crt_req_destroy
+    if (hg_pool->chp_enabled && hg_pool->chp_num < hg_pool->chp_max_num) -> 插入或释放, 放回池子的时候, 如果池满,则释放HG内存控制器, 与get的时候呼应
+    
+
+
+/** the shared HG RPC ID used for all CRT opc */
+#define CRT_HG_RPCID		(0xDA036868)
+#define CRT_HG_ONEWAY_RPCID	(0xDA036869)
+
+/** MAX number of HG handles in pool */
+#define CRT_HG_POOL_MAX_NUM	(512)
+/** number of prepost HG handles when enable pool */
+#define CRT_HG_POOL_PREPOST_NUM	(16)
+
+通过判断引用计数为1时销毁cart请求
+/* Avoid the use of RPC_TRACE here as after the decref then RPC may no longer be valid */
+#define RPC_DECREF(RPC)                                                                            \
+	do {                                                                                       \
+		int __ref;                                                                         \
+		__ref = atomic_fetch_sub(&(RPC)->crp_refcount, 1);                                 \
+		D_ASSERTF(__ref != 0, "%p decref from zero\n", (RPC));                             \
+		D_DEBUG(DB_NET, "%p: decref to %u", (RPC), __ref - 1);                             \
+		if (__ref == 1)                                                                    \
+			crt_req_destroy(RPC);                                                      \
+	} while (0)
 
