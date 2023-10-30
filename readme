@@ -3364,7 +3364,7 @@ dss_xstreams_init
       dss_sched_init
         ABT_sched_def		sched_def
         .init	= sched_init,
-        .run	= sched_run,
+        .run	= sched_run, -> run 函数被argobot调用
         sched_info_init(dx)
           info->si_cur_ts = daos_getmtime_coarse() 毫秒
           d_hash_table_create si_pool_hash 创建hash表 大小为2的4次方=16
@@ -3374,8 +3374,8 @@ dss_xstreams_init
             d_list_add_tail(&req->sr_link, &info->si_idle_list) 插入链表 
         sched_create_pools(dx); 创建3个池 从预定义类型创建新池。 ABT_pool_create_basic() 创建一个新池，由池类型 kind、访问类型 access 和自动标志 automatic 给出，并通过 newpool 返回其句柄。 kind 指定 newpool 的实现。 有关预定义池的详细信息，请参阅#ABT_pool_kind。 access 提示创建的池的使用。 Argobots 可以为具有更受限制的访问类型的池选择优化的实现（#ABT_POOL_ACCESS_PRIV 是最严格的访问类型）。 有关详细信息，请参阅#ABT_pool_access。 如果 automatic 为 ABT_FALSE，则 newpool 不会自动释放，因此 newpool 在使用后必须由 ABT_pool_free() 释放，除非 newpool 与主执行流的主调度程序相关联。
           ABT_pool_create_basic(ABT_POOL_FIFO, ABT_POOL_ACCESS_MPSC 创建的池可能只被一个执行流弹出
-          ABT_sched_config_create
-          ABT_sched_create 
+          ABT_sched_config_create(&config, event_freq, 512, dx_ptr, dx, ABT_sched_config_var_end)
+          ABT_sched_create(&sched_def, DSS_POOL_CNT, dx->dx_pools, config, &dx->dx_sched) -> 启动调度器(poll) -> sched_run
           使用调度程序定义创建新的调度程序。ABT_sched_create() 创建一个新的调度器，由定义 def 和调度器配置 config 定义，并通过 newsched 返回它的句柄。def 必须定义所有非可选函数。 有关详细信息，请参阅 ABT_sched_def。newsched 与 pools 数组关联，它有 num_pools 个 ABT_pool 句柄。 如果池的第 i 个元素是 ABT_POOL_NULL，则新创建具有默认池配置的默认 FIFO 池并用作第 i 个池。
       ABT_xstream_create_with_rank 创建具有特定等级的新执行流。 ABT_xstream_create_with_rank() 使用调度程序 sched 创建一个新的执行流，并通过 newxstream 返回其句柄。 如果 sched 为 ABT_SCHED_NULL，则使用具有基本 FIFO 队列和默认调度程序配置的默认调度程序。
       ABT_thread_attr_create
@@ -6519,4 +6519,45 @@ crt_hg_pool_put <- crt_hg_req_destroy <- crt_req_destroy
 		if (__ref == 1)                                                                    \
 			crt_req_destroy(RPC);                                                      \
 	} while (0)
+
+
+
+故障注入:
+struct d_fault_attr_t *d_fault_attr_mem;
+允许在每个线程的基础上启用/禁用故障。 这为在不同线程上提交和完成的异步操作上运行更好的故障注入测试铺平了道路。 重新格式化故障注入代码并删除头文件。
+
+
+
+DAOS引擎是如何收到客户端RPC并处理的?原创
+修改于 2023-10-21 21:54:02
+1660
+编辑
+删除
+DAOS引擎是如何收到客户端RPC并处理的?
+也就是, 如何将协程XS, ULT, Cart(网络), RPC, HG, Libfabric, RDMA, 完成队列以及各种回调结合起来, 形成精密运转的"机器", 来支持DAOS引擎接收客户端RPC功能
+
+如下所示:
+
+daos_client(RPC请求) -------> daos_engine(RPC接收和处理)
+
+daos_engine(RPC请求/接收) -------> daos_engine(RPC请求/接收)
+
+答案
+1. 引擎启动, 在初始化服务端(server_init)中, 初始化所有的模块(dss_module_init_all), 接着初始化引擎主服务(dss_srv_init)
+
+2. 在主服务中,按tgt和id启动每个协程(xs, 系统服务, 主IO服务, 负载等多个XS)(dss_start_one_xstream)
+
+3. 在协程中初始化调度器(dss_sched_init), 启动轮询处理(dss_srv_handler)
+
+4. 执行协程任务(服务端控制器,总控 dss_srv_handler)
+
+5. 在总控中, 注册RPC公共回调(dss_rpc_hdlr)
+
+6. 在总控中, 启动大循环(for (;;))轮询网络完成事件(cart_progress), 每次循环让出一次cpu
+
+7. 引擎收到客户端RPC请求, 通过cart_progress触发公共回调, 在公共回调中, 先排队(req_enqueue), 然后由协程调度器遍历出RPC请求(process_all, crt_handle_rpc)
+
+8. 处理RPC请求对应的控制器函数(coi_rpc_cb, 业务回调, 如: ds_obj_tgt_update_handler)
+https://cloud.tencent.com/developer/article/2348703
+
 
