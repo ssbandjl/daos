@@ -6561,3 +6561,25 @@ daos_engine(RPC请求/接收) -------> daos_engine(RPC请求/接收)
 https://cloud.tencent.com/developer/article/2348703
 
 
+
+
+sgl测试: src/tests/suite/daos_obj_array.c
+
+static void dts_buf_render(char *buf, unsigned int buf_len)
+{
+	int	nr = 'z' - 'a' + 1;
+	int	i;
+
+	for (i = 0; i < buf_len - 1; i++) {
+		int randv = rand() % (2 * nr);
+
+		if (randv < nr)
+			buf[i] = 'a' + randv;
+		else
+			buf[i] = 'A' + (randv - nr);
+	}
+	buf[i] = '\0';
+}
+
+
+
