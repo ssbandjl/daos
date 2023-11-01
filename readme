@@ -38,6 +38,8 @@ PREFIX=/opt/daos -> Install file: "build/release/gcc/src/control/daos" as "/opt/
 
 vscode filter:
 *.c, *.h, readme, *sh, *.py, *.go
+build, cache, libfabric, mercury, category
+
 
 
 cart流程:
@@ -1021,7 +1023,7 @@ dfs_write
 
 ---------- dfuse ----------
 
-DAOS用户态文件系统, 写流程
+DAOS用户态文件系统, 写流程, 输入参数为请求,用户数据, 位置
 master -> src/client/dfuse/ops/write.c -> dfuse_cb_write(fuse_req_t req, fuse_ino_t ino, struct fuse_bufvec *bufv, off_t position, struct fuse_file_info *fi)
 struct dfuse_projection_info *fs_handle = fuse_req_userdata(req)
 eqt_idx = atomic_fetch_add_relaxed(&fs_handle->di_eqt_idx, 1) -> 原子递增,每次返回+1前的值, 比如: eqt_idx=7
@@ -1032,12 +1034,18 @@ ev->de_complete_cb = dfuse_cb_write_complete
 oh->doh_ie->ie_stat.st_size = len + position -> 比如写10字节
 此时SGL上已经有用户数据
 dfs_write(oh->doh_dfs, oh->doh_obj, &ev->de_sgl, position, &ev->de_ev) -> dfs_write(dfs_t *dfs, dfs_obj_t *obj, d_sg_list_t *sgl, daos_off_t off, daos_event_t *ev) -> 初始化IO描述(iod, daos_array_iod_t, IO范围), 将EV继续透传
-  daos_array_write(obj->oh, DAOS_TX_NONE, &iod, sgl, ev) -> daos_array_write(daos_handle_t oh, daos_handle_t th, daos_array_iod_t *iod, d_sg_list_t *sgl, daos_event_t *ev)
-    dc_task_create(dc_array_write, NULL, ev, &task) -> 初始化task, 关联EV和task, 此时调度器为空, 但是EV不为空
-      sched = daos_ev2sched(ev) -> 从EV上拿到调度器
-      tse_task_create(func, sched, NULL, &task) -> 创建任务
-    args = dc_task_get_args(task) -> 从task参数联合体上得到参数, 并将SGL和IO描述设置到参数上
-    return dc_task_schedule(task, true)
+    iod.arr_nr = 1
+    rg.rg_len = buf_size
+    rg.rg_idx = off
+    iod.arr_rgs = &rg -> 通过IO描述, 将SGL -> DAOS连续记录的范围
+    daos_array_write(obj->oh, DAOS_TX_NONE, &iod, sgl, ev) -> daos_array_write(daos_handle_t oh, daos_handle_t th, daos_array_iod_t *iod, d_sg_list_t *sgl, daos_event_t *ev)
+        dc_task_create(dc_array_write, NULL, ev, &task) -> 初始化task, 关联EV和task, 此时调度器为空, 但是EV不为空
+        args->iod	= iod
+        args->sgl	= sgl
+        sched = daos_ev2sched(ev) -> 从EV上拿到调度器
+        tse_task_create(func, sched, NULL, &task) -> 创建任务
+        args = dc_task_get_args(task) -> 从task参数联合体上得到参数, 并将SGL和IO描述设置到参数上
+        return dc_task_schedule(task, true)
 sem_post(&eqt->de_sem) -> 唤醒EQ
 d_slab_restock(eqt->de_write_slab) -> 重用slab
 
@@ -1201,9 +1209,10 @@ write -> dfuse_cb_write 回调写 src/client/dfuse/fuse3
 
 dc_array_write
   daos_task_get_args task和args可互转
-  dc_array_io -> opc = DAOS_OPC_ARRAY_WRITE 操作码是写数组  读:DAOS_OPC_ARRAY_READ
+  dc_array_io(daos_handle_t array_oh, daos_handle_t th, daos_array_iod_t *rg_iod, d_sg_list_t *user_sgl, daos_opc_t op_type, tse_task_t *task) -> opc = DAOS_OPC_ARRAY_WRITE 操作码是写数组  读:DAOS_OPC_ARRAY_READ
     array_hdl2ptr
-    io_extent_same
+    io_extent_same(rg_iod, user_sgl, array->cell_size, &tot_num_records)
+        return (rgs_len * cell_size == sgl_len)
     D_INIT_LIST_HEAD(&io_task_list)
     daos_task_create(DAOS_OPC_ARRAY_GET_SIZE 短读任务 DAOS_OPC_ARRAY_READ, 写不走此逻辑
     while (u < rg_iod->arr_nr) 遍历每个范围，但同时组合属于同一 dkey 的连续范围。 如果用户给出的范围不增加偏移量，则它们可能不会合并，除非分隔范围也属于同一个 dkey
@@ -1222,7 +1231,7 @@ dc_array_write
       tse_task_register_deps 注册在计划任务之前需要完成的依赖任务。 依赖任务无法进行, 如果一个任务依赖于其他任务，只有依赖的任务完成了，才可以将任务添加到调度器列表中
       tse_task_list_add(io_task, &io_task_list) -> d_list_add_tail(&dtp->dtp_task_list, head); 添加IO任务到链表
     tse_task_register_comp_cb(task, free_io_params_cb, &head, sizeof(head)) -> 为任务注册完成回调, 用于释放IO参数
-    if (op_type == DAOS_OPC_ARRAY_READ && array->byte_array) 短读
+    if (op_type == DAOS_OPC_ARRAY_READ && array->byte_array) 短读, 对于字节数组的读取，创建一个 get_size 任务以进行短读取处理，该任务将依赖于下一个循环中创建的所有 dkey IO 任务。 仅当可以进行短读取时才会安排获取大小操作（此检查在该任务的准备回调中完成）
       tse_task_register_deps(task, 1, &stask) 注册依赖任务
       tse_task_list_add(stask, &io_task_list) 加到io任务列表
     tse_task_list_sched(&io_task_list, true) -> 遍历临时任务列表, 立即调度执行
@@ -4546,6 +4555,9 @@ dc_array_write
       d_iov_set(&iod->iod_name, &params->akey_val, 1);
       compute_dkey 再次计算dkey
       create_sgl 创建分散聚集列表
+      daos_obj_fetch_t *io_arg
+      io_arg = daos_task_get_args(io_task)
+      io_arg->sgls	= sgl -> 通过task参数传递用户数据
       daos_task_create(DAOS_OPC_OBJ_FETCH 读: DAOS_OPC_ARRAY_READ 按索引号 -> dc_obj_fetch_task
       daos_task_create(DAOS_OPC_OBJ_UPDATE 写 或 DAOS_OPC_ARRAY_PUNCH truncate dc_funcs[opc].task_func 客户端方法数组
       daos_task_get_args
@@ -4589,20 +4601,60 @@ dc_obj_update_task(tse_task_t *task) DAOS_OPC_OBJ_UPDATE 写
     obj_update_sgls_dup(obj_auxi, args) -> 用户可能提供 iov_len < iov_buf_len 的 sql，这可能会给内部处理带来一些麻烦，例如 crt_bulk_create/daos_iov_left() 总是使用 iov_buf_len。 对于这种情况，我们复制 sql 并使其 iov_buf_len = iov_len
     obj_auxi->dkey_hash = obj_dkey2hash(obj->cob_md.omd_id, args->dkey) -> 比如为1
     if (obj_is_ec(obj)) -> 如果是EC对象(对象类属性上的封装方法为 DAOS_RES_EC ), 则重新组装对象写请求
-      obj_rw_req_reassemb(obj, args, NULL, obj_auxi) -> EC对象需要, 重新组装对象读写请求
+      obj_rw_req_reassemb(obj, args, NULL, obj_auxi) -> 配置了EC的对象需要重新组装, 对象的读写请求
         struct obj_reasb_req	*reasb_req = &obj_auxi->reasb_req -> EC请求, 重新组装 obj 请求。 用户输入的 iod/sgl 可能需要在发送到服务器之前在客户端重新组装，例如：合并相邻的recx，或者对无序的recx进行排序并生成新的sgl与之匹配； 对于EC obj，将iod/recxs拆分到每个目标，生成新的sgl与之匹配，创建oiod/siod以指定每个shard/tgt的IO req
         if (!obj_auxi->req_reasbed)
           obj_reasb_req_init(&obj_auxi->reasb_req, obj, args->iods, args->nr) -> 创建reasb_req并设置iod的值，从输入iod中重用缓冲区，iod_type / iod_size分配为输入iod，iod_kcsum / iod_nr / iod_recx / iod_csums / iod_eprs数组将设置为0 / NULL
           daos_recx_t -> 记录是任意长度的原子 blob，它总是作为一个整体来获取/更新。 记录的大小可能会随着时间的推移而改变。 记录由以下复合键唯一标识： - 分布键（又名 dkey）表示位于同一存储目标上的一组数组。 dkey 具有任意大小。 - 属性键（又名 akey）区分各个数组。 同样，akey 具有任意大小。 - 数组中的索引区分各个记录。 索引是一个范围从零到无穷大的整数。 一系列索引标识称为范围的连续记录集。 范围内的所有记录必须具有相同的大小。 记录范围是数组内相同大小的连续记录范围。 rx_idx 是该范围的第一个数组索引，rx_nr 是该范围覆盖的记录数
-        obj_ec_req_reasb(obj, args->iods, obj_auxi->dkey_hash,
-			      args->sgls, reasb_req, args->nr,
-			      obj_auxi->opc == DAOS_OBJ_RPC_UPDATE);
-          obj_ec_singv_req_reasb
-          obj_ec_recx_scan
-          obj_ec_recx_reasb
-          obj_ec_encode
-            obj_ec_recx_encode -> 对全条带recx_array中的数据进行编码，结果奇偶校验存储在struct obj_ec_recx_array::oer_pbufs中
-              obj_ec_stripe_encode -> 编码一个完整的条带，结果奇偶校验缓冲区将被填满
+            reasb_req->orr_oca = obj_get_oca(obj)
+            size_iod = roundup(sizeof(daos_iod_t) * iod_nr, 8)
+            ...    
+        obj_ec_req_reasb(obj, args->iods, obj_auxi->dkey_hash, args->sgls, reasb_req, args->nr, obj_auxi->opc == DAOS_OBJ_RPC_UPDATE);
+            for (i = 0; i < iod_nr; i++)
+                obj_ec_singv_req_reasb
+                    ec_recx_array->oer_k = oca->u.ec.e_k
+                    ec_recx_array->oer_p = oca->u.ec.e_p
+                    if (obj_ec_singv_one_tgt(iod->iod_size, sgl, oca))
+                        obj_ec_fail_info_parity_get
+                        obj_ec_singv_small_idx
+                        obj_ec_set_parity_bitmaps
+                        obj_ec_parity_tgt_nr
+                    obj_ec_singv_cell_bytes
+                    obj_io_desc_init
+                    codec = codec_get(reasb_req, obj->cob_md.omd_id) -> isal支持
+                        reasb_req->orr_codec = obj_ec_codec_get(daos_obj_id2class(oid))
+                            daos_array_find(ecc_array, oc_ec_codec_nr, oc_id, &ecc_sort_ops)
+                            daos_array_find(ecc_array, oc_ec_codec_nr, oc_id, &ecc_redun_sort_ops)
+                    obj_ec_singv_encode(codec, oca, iod, sgl, ec_recx_array) -> DAOS-7539 EC：自定义 EC 单元大小 (#5832)，用户可以通过池或容器属性指定 EC 单元大小，DAOS_PROP_PO_EC_CELL_SZ，设置池的默认 EC 单元大小，DAOS_PROP_CO_EC_CELL_SZ，设置容器的默认 EC 单元大小，如果是 EC 为池和容器都设置了单元格大小，然后容器的值会覆盖池的值。 此补丁将 EC 单元大小从属性应用到客户端 EC 堆栈、服务器 I/O 处理程序、数据迁移服务和 EC 聚合服务。 - EC单元大小应为4K的倍数且小于1MB，默认单元大小仍为1MB，后续应更改修补
+                        obj_ec_pbufs_init(recxs, c_bytes)
+                        obj_ec_recx_encode(codec, oca, iod, sgl, recxs) -> 编码满条带
+                            for (i = 0; i < recx_nr; i++)
+                                obj_ec_stripe_encode(iod, sgl, iov_idx, iov_off, codec, oca, cell_bytes, parity_buf)
+                                    ec_encode_data(cell_bytes, k, p, codec->ec_gftbls, data, parity_bufs) -> ec编码, isa-l 中 ec_init_tables() 的用途: https://blog.csdn.net/choumin/article/details/126898021
+                    d_sgl_init(r_sgl, sgl->sg_nr + obj_ec_parity_tgt_nr(oca)) -> 重组sgl
+                    d_iov_set(&r_sgl->sg_iovs[iov_nr + idx]
+                    obj_reasb_req_dump(reasb_req, sgl, oca, 0, iod_idx) -> 打印EC调试信息
+                obj_ec_recx_scan
+                    obj_ec_recx_cell_nr
+                    ec_partial_tgt_recx_nrs
+                    ec_all_tgt_recx_nrs
+                    obj_ec_recov_tgt_recx_nrs
+                    obj_ec_recxs_init
+                    obj_io_desc_init
+                    obj_ec_riod_init
+                    obj_ec_seg_sorter_init
+                    obj_ec_pbufs_init
+                obj_ec_recx_reasb -> 为EC重组iod/sgl/recx, 输入iod, sgl, recx_array, 输出riod, rsgl, oiod
+                    recx_with_full_stripe
+                    ec_recov_recx_seg_add
+                    ec_data_recx_add
+                    ec_data_seg_add
+                    ec_parity_recx_add
+                    ec_parity_seg_add
+                    obj_ec_seg_pack
+            obj_ec_encode
+                obj_ec_recx_encode -> 对全条带recx_array中的数据进行编码，结果奇偶校验存储在struct obj_ec_recx_array::oer_pbufs中
+                obj_ec_stripe_encode -> 编码一个完整的条带，结果奇偶校验缓冲区将被填满
     obj_update_shards_get
     obj_shards_2_fwtgts -> 根据分片查找转发的目标
       req_tgts->ort_shard_tgts = req_tgts->ort_tgts_inline -> 分片目标数组，包含 (ort_grp_nr * ort_grp_size) 个目标。 如果#targets <= OBJ_TGT_INLINE_NR 那么它指向ort_tgts_inline。 在数组中，[0, ort_grp_size - 1] 表示第一组，[ort_grp_size, ort_grp_size * 2 - 1] 表示第二组，依此类推。 如果 (ort_srv_disp == 1)，则在每个组中，第一个目标是领导分片，后面的 (ort_grp_size - 1) 目标是前向非领导分片。 现在只有一种情况 (ort_grp_nr > 1) 用于对象打孔，所有其他情况均为 (ort_grp_nr == 1)
@@ -6581,5 +6633,175 @@ static void dts_buf_render(char *buf, unsigned int buf_len)
 	buf[i] = '\0';
 }
 
+
+获取buf长度, 遍历并累加每段buf的长度
+size_t                 len        = fuse_buf_size(bufv);
+size_t fuse_buf_size(const struct fuse_bufvec *bufv)
+{
+	size_t i;
+	size_t size = 0;
+
+	for (i = 0; i < bufv->count; i++) {
+		if (bufv->buf[i].size == SIZE_MAX)
+			size = SIZE_MAX;
+		else
+			size += bufv->buf[i].size;
+	}
+
+	return size;
+}
+
+
+从一个向量io(参数2)拷贝到另一个向量io(参数1)
+rc = fuse_buf_copy(&ibuf, bufv, 0)
+ssize_t fuse_buf_copy(struct fuse_bufvec *dstv, struct fuse_bufvec *srcv, enum fuse_buf_copy_flags flags)
+    const struct fuse_buf *src = fuse_bufvec_current(srcv)
+        return &bufv->buf[bufv->idx];
+    fuse_buf_copy_one(dst, dstv->off, src, srcv->off, len, flags)
+        memcpy(dstmem, srcmem, len) 或
+        memmove(dstmem, srcmem, len)
+        或 fuse_buf_splice
+        ...
+    if (!fuse_bufvec_advance(srcv, res) || !fuse_bufvec_advance(dstv, res))
+
+
+
+写数组的结构体:
+typedef struct {
+	/** Array open handle. */
+	daos_handle_t		oh;
+	/** Transaction open handle. */
+	daos_handle_t		th;
+	/** Array IO descriptos. */
+	daos_array_iod_t	*iod;
+	/** memory descriptors. */
+	d_sg_list_t		*sgl;
+} daos_array_io_t;
+
+
+对象读写参数:
+/** Object fetch/update args */
+typedef struct {
+	/** Transaction open handle. */
+	daos_handle_t		th;
+	/** Object open handle */
+	daos_handle_t		oh;
+	/** API flags. */
+	uint64_t		flags;
+	/** Distribution Key. */
+	daos_key_t		*dkey;
+	/** Number of elements in \a iods and \a sgls. */
+	uint32_t		nr;
+	/** Internal flags. */
+	uint32_t		extra_flags;
+	/** IO descriptor describing IO layout in the object. */
+	daos_iod_t		*iods;
+	/** Scatter / gather list for a memory descriptor. */
+	d_sg_list_t		*sgls;
+	/** IO Map - only valid for fetch. */
+	daos_iom_t		*ioms;
+	/** extra arguments, for example obj_ec_fail_info for DIOF_EC_RECOV */
+	void			*extra_arg;
+	/** Pre-allocated buffer to pack checksums into (Optional, intended for
+	 * internal use only
+	 */
+	d_iov_t			*csum_iov;
+} daos_obj_rw_t;
+
+
+
+
+sgl操作:
+obj_update_sgls_dup
+d_sgl_init
+d_sgl_buf_copy -> src/include/gurt/common.h
+
+
+常用数学计算, 向上取整等:
+#define setbit(a,i)     ((a)[(i)/NBBY] |= 1<<((i)%NBBY))
+#define clrbit(a,i)     ((a)[(i)/NBBY] &= ~(1<<((i)%NBBY)))
+#define isset(a,i)      ((a)[(i)/NBBY] & (1<<((i)%NBBY)))
+#define isclr(a,i)      (((a)[(i)/NBBY] & (1<<((i)%NBBY))) == 0)
+
+/* Macros for counting and rounding.  */
+#ifndef howmany
+# define howmany(x, y)  (((x) + ((y) - 1)) / (y))
+#endif
+#ifdef __GNUC__
+# define roundup(x, y)  (__builtin_constant_p (y) && powerof2 (y)             \
+                         ? (((x) + (y) - 1) & ~((y) - 1))                     \
+                         : ((((x) + ((y) - 1)) / (y)) * (y)))
+#else
+# define roundup(x, y)  ((((x) + ((y) - 1)) / (y)) * (y))
+#endif
+#define powerof2(x)     ((((x) - 1) & (x)) == 0)
+
+/* Macros for min/max.  */
+#define MIN(a,b) (((a)<(b))?(a):(b))
+#define MAX(a,b) (((a)>(b))?(a):(b))
+
+
+#endif  /* sys/param.h */
+
+
+
+对象类属性
+/** Object class attributes */
+struct daos_oclass_attr {
+	/** reserved: object placement schema, used by placement algorithm */
+	enum daos_obj_schema		 ca_schema;
+	/** Resilience method, replication or erasure code */
+	enum daos_obj_resil		 ca_resil;
+	/** reserved */
+	unsigned int			 ca_resil_degree;
+	/** Initial # redundancy group, unnecessary for some schemas */
+	unsigned int			 ca_grp_nr;
+	/** replication or erasure coding attributes based on #ca_resil */
+	union {
+		/** Replication attributes */
+		struct daos_rp_attr {
+			/** Protocol of replicating, reserved */
+			unsigned int	 r_proto;
+			/** Number of replicas */
+			unsigned int	 r_num;
+		} rp;
+
+		/** Erasure coding attributes 纠删码配置 */
+		struct daos_ec_attr {
+			/** number of data cells (k) */
+			unsigned short	 e_k;
+			/** number of parity cells (p) */
+			unsigned short	 e_p;
+			/** length of each block of data (cell) */
+			unsigned int	 e_len;
+		} ec;
+	} u;
+	/** TODO: add more attributes */
+};
+
+
+
+EC相关的宏:
+/** Query the number of records in EC full stripe */
+#define obj_ec_stripe_rec_nr(oca)					\
+	((oca)->u.ec.e_k * (oca)->u.ec.e_len)
+/** Query the number of records in one EC cell/target */
+#define obj_ec_cell_rec_nr(oca)						\
+	((oca)->u.ec.e_len)
+/** Query the number of targets of EC obj class */
+#define obj_ec_tgt_nr(oca)						\
+	((oca)->u.ec.e_k + (oca)->u.ec.e_p)
+/** Query the number of data targets of EC obj class */
+#define obj_ec_data_tgt_nr(oca)						\
+	((oca)->u.ec.e_k)
+/** Query the number of parity targets of EC obj class */
+#define obj_ec_parity_tgt_nr(oca)					\
+	((oca)->u.ec.e_p)
+/** Query the number of bytes in EC cell */
+#define obj_ec_cell_bytes(iod, oca)					\
+	(((oca)->u.ec.e_len) * ((iod)->iod_size))
+/** Query the tgt idx of data cell for daos recx idx */
+#define obj_ec_tgt_of_recx_idx(idx, stripe_rec_nr, e_len)		\
+	(((idx) % (stripe_rec_nr)) / (e_len))
 
 
