@@ -4,6 +4,7 @@ daos开发文档_容器增删改查: https://docs.daos.io/v2.5/user/container/, 
 公共组件: https://github.com/daos-stack/daos/tree/master/src/common
 c_raft实现: https://github.com/willemt/raft, 文档: raft.h, 
 vos(翻译): https://blog.csdn.net/Hahafly1234/article/details/119298746
+io全路径: https://cloud.tencent.com/developer/article/2322705
 
 
 依赖缓存包: http://rz2fg6ogr.hn-bkt.clouddn.com/cache_tgz
@@ -25,6 +26,9 @@ daos客户端支持s3(ds3): https://github.com/daos-stack/daos/commit/f848300590
 
 git clone --recurse xxx
 git submodule update --init --recursive
+
+
+
 
 
 docker
@@ -1987,42 +1991,103 @@ ds_obj_tgt_update_handler
 --------------------------
 XXX：对于非单独DTX，领导者和非领导者将并行地进行各自的局部修改。 如果非领导者的速度太快，以至于非领导者可能已经开始处理下一个 RPC，但领导者还没有真正开始当前的修改，例如在批量数据传输阶段被阻止。 在这种情况下，有可能当non-leader处理下一个请求时，它命中了本地刚刚准备好的DTX，那么non-leader就会向leader检查这样的DTX状态。 但此时，Leader 上的 DTX 条目不存在，这会误导非 Leader 错过中止此类 DTX。 为了避免这种糟糕的情况，领导者需要在将当前请求分派给非领导者之前在 DRAM 中构建其 DTX 条目。 另一方面，即使对于单独的DTX，由于服务器端负载过重，PRC也可能被延迟处理。 如果是大数据传输的更新RPC，那么客户端有可能认为更新RPC超时，在原来的RPC批量数据传输期间重新发送RPC，这会导致CPU消耗，然后服务器上的重发逻辑将找不到相关的 DTX 条目，因为原始 RPC 的 DTX 尚未“准备好”。 在这种情况下，更新请求将在服务器上双重执行。 应该避免这种情况。 因此，在批量数据传输之前预分配 DTX 条目是必要的
 obj_local_rw
-  obj_get_iods_offs
-  obj_local_rw_internal
-    csum_verify_keys
-    obj_singv_ec_rw_filter
-    vos_update_begin
-      vos_check_akeys
-      vos_ioc_create
-      vos_space_hold
-      dkey_update_begin
-    bio_iod_prep CRT_BULK_RW
-      iod_map_iovs(biod, arg)
-    bio_iod_copy(biod, orw->orw_sgls.ca_arrays, iods_nr)
-    vos_dedup_verify
-    obj_verify_bio_csum
-    bio_iod_post_async(biod, rc)
-    obj_bulk_transfer
-    bio_iod_post
-      写入时将数据从缓冲区转移到介质
-      dma_rw
-        nvme_rw
-          xs_ctxt = biod->bd_ctxt->bic_xs_ctxt
-          ...
-          drain_inflight_ios(xs_ctxt, bxb)
-            spdk_thread_poll(ctxt->bxc_thread, 0, 0)
-          if (biod->bd_type == BIO_IOD_TYPE_UPDATE)
-            spdk_blob_io_write(blob, channel, payload,
-              page2io_unit(biod->bd_ctxt, pg_idx, BIO_DMA_PAGE_SZ),
-              page2io_unit(biod->bd_ctxt, rw_cnt, BIO_DMA_PAGE_SZ),
-              rw_completion, biod); -> 完成回调 rw_completion
-                blob_request_submit_op
-                    blob_request_submit_op_single
-                    bs_batch_write_dev
-                        blob_bdev->bs_dev.write
-                        bdev_blob_write
-                        spdk_bdev_write_blocks
-          spdk_blob_io_read
+    obj_get_iods_offs(orw->orw_oid, &orw->orw_iod_array, &ioc->ioc_oca, orw->orw_dkey_hash, ioc->ioc_layout_ver, &iods, &offs, &skips, &csums, &csum_info, &nr)
+        obj_get_iods_offs_by_oid(uoid, iod_array, oca, dkey_hash, layout_ver, iods, offs,skips, iod_array->oia_iod_csums == NULL ? NULL : p_csums, nr) -> 通过 orw_oid.id_shard 提取本地 iods/offs/csums
+            memcpy(&(*iods)[idx], iod_parent, sizeof(daos_iod_t))
+            ...
+    obj_local_rw_internal -> 本地对象内部读写函数
+        uint64_t			 sched_seq = sched_cur_seq() -> 获取当前调度器, DAOS-8492 对象：在 DTX 期间检查重新发送的 RPC 和 CPU 让出 (#6761) 在某些情况下，当前的 ULT 可能会在 DTX 过程中被阻塞并让出，例如某些 NVMe 操作（分配、数据复制）。 并且相关的RPC可能会由另一个ULT重新发送和处理。 在这种情况下，当被阻塞的ULT再次被调度时，需要检查重新发送的RPC，以正确处理重新发送的RPC的DTX在其原始RPC之前提交的情况。
+        daos_iod_t			*iods_dup = NULL; /* for EC deg fetch */ -> DAOS-5554 dtx：异步批量提交分布式事务 (#3838) 最初，对于跨多个冗余组的分布式事务，我们将在所有参与者“准备好”时同步提交它。 这种同步提交可能会给相关的分布式事务带来延迟。 该补丁调整了提交行为，与单机修改的情况类似，“可提交”的DTX将缓存在领导者上，并在稍后通过专用ULT批量提交。 预计某些事务可能在相同的 DAOS 目标上有一些参与者，那么批量提交可以节省一些 DTX 提交 RPC。 在这种异步批量提交模式下，领导者上的 DTX 状态可能是“可提交”，但非领导者上的 DTX 状态是“准备好”。 如果某个读请求在非leader（VOS中）上命中了这些“准备好的”DTX，那么相关的调用者（对象）将获得-DER_INPROGRESS以及相关的DTX信息（ID，leader），然后调用者将查询相关的DTX领导者 是否可提交。 如果是，则回复非领导者，然后提交这样的DRX以避免其他人进一步检查。 为此目的引入“DTX_REFRESH”RPC。 另一个主要变化是 DTX 重新同步来处理丢失某些整个冗余组的分布式事务。 在这种情况下，DTX重新同步逻辑无法决定是否提交或中止相关事务，因为其中之一可能错误地导致数据丢失或破坏事务语义。 然后它会将 DTX 条目全局标记为“已损坏”。 这将通过返回 -DER_DATA_LOSS 阻止后续针对此类 DTX 的读取操作。 另一方面，“损坏的”DTX 仅影响其修改的部分，但不会影响共享相同目标（对象/键）的其他部分。 附加到“损坏的”DTX 的目标不会被 vos 聚合清除，但可能会被新的更新/冲击刷新。 将来我们需要特殊的工具来处理（恢复或清理）那些“损坏的”DTX 条目。 该补丁还修复了当前混乱的 DTX 可用性检查“重建”意图。 我们对所有重建和迁移相关逻辑使用新的“DAOS_INTENT_MIGRATION”。 VOS 中的 DTX 逻辑需要对具有此类意图的操作进行一些特殊处理，例如，当命中“损坏的”DTX 条目时返回“ALB_UNAVAILABLE”而不是“-DER_DATA_LOSS”。
+        bool				 get_parity_list = false; -> DAOS-7879 EC：通过聚合优化 EC 降级获取 (#5967) 由于聚合在不同节点上异步运行，聚合和 EC 降级获取之间的主要竞争条件 - 1. VOS 可能会合并相邻的分机（现在合并到较低的纪元）2. 当较低的历元扩展被较高的历元扩展完全覆盖时，VOS 可能会删除较低的历元扩展。 3. EC 聚合将新的奇偶校验扩展异步更新到不同的奇偶校验节点 该异步操作可能会导致获取的数据恢复处理降级 - 影子纪元对应的奇偶校验/数据扩展可能不可读，然后导致恢复中的静默数据损坏。 此补丁改进了 EC 降级获取的处理 - 1. 对于 EC 降级获取中的步骤 1，如果从快照获取且“snapshot_epoch < vos_agg_eph_boundary”奇偶校验服务器将 snapshot_epoch 回复为恢复纪元，则客户端将携带 (ORF_EC_RECOV_SNAP | ORF_EC_RECOV) 用于数据恢复，否则奇偶校验 服务器回复 max {parity_ext_epoch, vos_agg_eph_boundary} 作为 recovery_epoch。 2. 对于 EC 降级提取中的步骤 2 对于某些情况，需要在内部从头开始重新启动 deg 提取 - 服务器端检查 - 如果没有 ORF_EC_RECOV_SNAP 且当前 vos_agg_eph_boundary > recovery_epoch； 客户端检查 - 如果回复来自不同奇偶校验分片的 parity_epoch 不匹配。 修复 agg_process_stripe() 中的错误，该错误在检查奇偶校验扩展时未设置正确的历元范围。
+        uint32_t			tgt_off = 0 -> DAOS-10768 对象：添加对象布局升级 (#10498) 将 OBJ_VERSION 添加到池和容器属性以用于升级目的。 添加 object_layout.c 以将所有对象布局相关函数放在那里。 将layout_version 添加到放置并将对象布局版本添加到OID。 添加 RB_LAYOUT_UPGRADE cmd 来重建进程。 重建扫描过程的一些清理。 如果重建目标是本地的，则不需要通过 RPC 发送对象列表。 添加升级测试 添加FORCE升级和升级测试以验证升级过程。
+        csum_verify_keys
+        准备IO描述 -> DAOS-2444 obj：添加基本的 EC obj 获取处理 (#1093) 1) 添加基于同步更新提交的基本 EC obj 获取处理 2) 为 EC obj 重用 ORF_DTX_SYNC 标志 3) 修复了 epoch io 测试工具中的一个错误 4) 以及次要的 换成TSE。 这个补丁主要是为了让它工作（现在完整的条带更新/获取可以通过测试），但一些相关细节需要通过后续补丁来完善。
+        if (obj_rpc_is_update(rpc)) -> 如果是写, DAOS-3196 对象：对象服务器的代码清理 (#1318) - 使用 DF_KEY/DP_KEY 作为关键调试消息 - 统一服务器端对象函数的函数名称。 删除私有函数的 ds_ 前缀。 添加 obj_ 作为私有函数的前缀。 重命名一些函数，因为它们的名称令人困惑 - 统一调试消息格式 - 小代码清理
+            obj_singv_ec_rw_filter -> 过滤并准备单值 EC 更新/获取, DAOS-11423 对象：删除 obj_ec_rw_req_split (#10024) 从 obj_rw_obj_handler() 中删除 obj_ec_rw_req_split，并且只为多个 IOD 情况分配内存和副本
+                obj_ec_singv_one_tgt(gsize, NULL, oca)
+                obj_ec_singv_local_sz(gsize, oca, tgt_off, &loc, for_update) -> 查询本地记录大小和均匀分布的singv所需的填充
+                    对于更新，奇偶校验缓冲区紧跟在数据缓冲区之后，以避免插入额外的 sgl 段（用于最后一个数据分片的填充）。 对于提取，从奇偶校验分片中提取仅用于 EC 恢复，在这种情况下，它会分配足够的缓冲区 (obj_ec_singv_stripe_buf_size) 并简化数据恢复（避免最后一个数据分片带有填充字节的情况下的数据移动）奇偶校验数据在提取缓冲区中的偏移量与cell_size大小边界对齐
+                obj_singv_ec_add_recov -> 将recov记录添加到recov_lists（用于singv降级提取）
+                    daos_recx_ep_add(recov_list, &recx_ep)
+            bulk_op = CRT_BULK_GET
+            vos_update_begin
+        else -> 读请求
+            vos_check_akeys
+            vos_ioc_create
+            vos_space_hold
+            dkey_update_begin
+        bio_iod_prep CRT_BULK_RW
+        iod_map_iovs(biod, arg)
+        bio_iod_copy(biod, orw->orw_sgls.ca_arrays, iods_nr)
+        vos_dedup_verify
+        obj_verify_bio_csum
+        bio_iod_post_async(biod, rc)
+        if (rma) -> DAOS-1476 对象：服务器端副本（不要重用客户端 IO 堆栈）更改更新/打孔处理以支持服务器管理模式，在分派 I/O 请求时不要在服务器端遍历客户端 IO 堆栈。 现在支持客户端/服务器托管副本的两种模式，通过 ENV“DAOS_IO_SRV_DISPATCH”进行区分。 默认情况下启用，可以将其设置为“0”以禁用它。 将“-c”选项添加到 daos_perf 以选择对象类。 现在可以选择 R2S、R3S、R4S 进行 2 路/3 路/4 路副本，用于全栈测试和回显测试。 将 DAOS_OC_ECHO_RW 重命名为 DAOS_OC_ECHO_TINY_RW，并添加 DAOS_OC_ECHO_R2S_RW、DAOS_OC_ECHO_R3S_RW、DAOS_OC_ECHO_R4S_RW。
+            bulk_bind = orw->orw_flags & ORF_BULK_BIND -> DAOS-1441 对象：更新/打孔 RPC 协议更改 (#217) 客户端将生成 DTX 标识符并通过更新/打孔 RPC 将其发送到领导副本。 在领导者一侧，它会将更新/打孔 RPC 分派给具有因共享或冲突而需要提交的 DTX 阵列的其他副本。 对于客户端来说，它使用与服务器端相同的算法来选举领导者。 对于修改 RPC，客户端仅将其发送给领导者。 对于其他只读 RPC，它可以像没有 DTX 情况一样发送到任何副本。 但如果非leader副本不确定相关目标数据记录的可见性，它会向客户端回复“-DER_INPROGRESS”，然后客户端需要重试与leader的RPC。 相关逻辑将在后续补丁中实现。
+            obj_bulk_transfer(rpc, bulk_op, bulk_bind, orw->orw_bulks.ca_arrays, offs, skips, ioh, NULL, iods_nr, NULL, ioc->ioc_coh)
+                bulk_nr = orw->orw_bulks.ca_count
+                ABT_eventual_create(sizeof(*status), &p_arg->eventual)
+                for (i = 0; i < sgl_nr; i++)
+                    bulk_transfer_sgl(ioh, rpc, remote_bulks[i + skip_nr], remote_offs ? remote_offs[i] : 0, bulk_op, bulk_bind, sgl, i, p_arg)
+                        crt_bulk_get_len(remote_bulk, &remote_size)
+                        if (daos_io_bypass & IOBP_SRV_BULK) -> DAOS-6911 bio：批量句柄缓存 (#5593) 为了减少繁重的 MR 操作，BIO 缓存通过 DMA 缓冲区块创建的批量句柄。 缓存的批量句柄按批量大小进行分类，一个 DMA 缓冲区块填充有相同大小的批量句柄，如果某些大小的批量句柄不够，它将尝试通过增加 DMA 缓冲区来填充空闲块，或逐出未使用的块 当 DMA 缓冲区大小达到上限时批量块。 到目前为止，批量缓存仅用于 NVMe I/O。 （不适用于 RDMA 到 SCM），要绕过批量缓存，请在“DAOS_IO_BYPASS”的旁路环境中指定“ srv_bulk_cache ”
+                            obj_bulk_bypass(sgl, bulk_op) -> 通过memcpy模拟批量传输，所有数据实际上都被丢弃了
+                                memcpy(dummy_buf, buf, nob)
+                        local_bulk = vos_iod_bulk_at(ioh, sgl_idx, iov_idx, &local_off)
+                        crt_bulk_create(rpc->cr_ctx, &sgl_sent, bulk_perm, &local_bulk)                                                    
+                        bulk_desc.bd_rpc	= rpc; -> 填充bulk描述信息
+                        bulk_desc.bd_bulk_op	= bulk_op;
+                        bulk_desc.bd_remote_hdl	= remote_bulk;
+                        bulk_desc.bd_local_hdl	= local_bulk;
+                        bulk_desc.bd_len	= length;
+                        bulk_desc.bd_remote_off	= remote_off;
+                        bulk_desc.bd_local_off	= local_off;
+                        if (bulk_bind)
+                            crt_bulk_bind_transfer(&bulk_desc,cached_bulk ? cached_bulk_cp : bulk_cp, p_arg, &bulk_opid) -> 使用远程批量句柄绑定地址而不是 RPC 的原始地址开始批量传输。 它可以用于批量句柄的原始地址与RPC请求不同的情况，例如DAOS用于服务器端I/O调度的批量句柄转发。
+                                crt_hg_bulk_transfer(bulk_desc, complete_cb, arg, opid, true)
+                                    HG_Bulk_bind_transfer
+                        else
+                            crt_bulk_transfer(&bulk_desc, cached_bulk ? cached_bulk_cp : bulk_cp, p_arg, &bulk_opid)
+                                crt_hg_bulk_transfer(bulk_desc, complete_cb, arg, opid, false)
+                                    crt_bulk_desc_dup(bulk_desc_dup, bulk_desc)
+
+                        让出cpu, 让cart推进, 有机会完成一些飞行中的批量传输
+                        if (bulk_iovs >= MAX_BULK_IOVS)
+                            ABT_thread_yield()
+                ABT_eventual_set(p_arg->eventual, &rc, sizeof(rc))
+                ABT_eventual_wait(p_arg->eventual, (void **)&status)
+                obj_update_latency(opc_get(rpc->cr_opc), BULK_LATENCY, daos_get_ntime() - time, arg.bulk_size) -> 计算延迟, 耗时统计
+                RDMA完成后，销毁服务器数据
+            bio_iod_flush(biod)
+            bio_iod_copy(biod, orw->orw_sgls.ca_arrays, iods_nr)
+        bio_iod_post
+        写入时将数据从缓冲区转移到介质
+        dma_rw
+            nvme_rw
+            xs_ctxt = biod->bd_ctxt->bic_xs_ctxt
+            ...
+            drain_inflight_ios(xs_ctxt, bxb)
+                spdk_thread_poll(ctxt->bxc_thread, 0, 0)
+            if (biod->bd_type == BIO_IOD_TYPE_UPDATE)
+                spdk_blob_io_write(blob, channel, payload,
+                page2io_unit(biod->bd_ctxt, pg_idx, BIO_DMA_PAGE_SZ),
+                page2io_unit(biod->bd_ctxt, rw_cnt, BIO_DMA_PAGE_SZ),
+                rw_completion, biod); -> 完成回调 rw_completion
+                    blob_request_submit_op
+                        blob_request_submit_op_single
+                        bs_batch_write_dev
+                            blob_bdev->bs_dev.write
+                            bdev_blob_write
+                            spdk_bdev_write_blocks
+            spdk_blob_io_read
+    if (dth != NULL && obj_dtx_need_refresh(dth, rc))
+        rc = dtx_refresh(dth, ioc->ioc_coc)
+            dtx_refresh_internal(cont, &dth->dth_share_tbd_count,
+                vos_dtx_load_mbs(cont->sc_hdl, &dsp->dsp_xid, &dsp->dsp_mbs)
+                rc = dtx_leader_get(pool, dsp->dsp_mbs, &target)
+            vos_dtx_validation(dth)
+                dbtree_lookup(cont->vc_dtx_active_hdl, &kiov, &riov)
+
 
 
 
@@ -3095,6 +3160,8 @@ dtx_abort
         ABT_thread_yield -> 如果计算尚未完成，则交给调度程序, 临时让出cpu
   vos_dtx_abort
   dtx_rpc_post
+    dtx_req_wait(&dca->dca_dra)
+
 
 
 
@@ -3364,7 +3431,7 @@ vos_db_init
     db_upsert
 
 
-dss_xstreams_init
+dss_xstreams_init -> 初始化DAOS服务端xstream(初始化协程调度器及执行ULT调度)
   dss_start_xs_id 0,1..., 计算偏移, 如: xs_id = dss_sys_xs_nr + dss_tgt_nr + i;
     hwloc_bitmap_first 计算位图中的第一个索引（最低有效位）
     dss_start_one_xstream(obj->cpuset, xs_id) 用计算的cpu集启动, 内部绑核
@@ -3431,16 +3498,17 @@ vos_tls_init 初始化vos本地线程存储
   d_tm_add_metric
 
 dss_nvme_poll_ult
-  dss_get_module_info
-  dss_current_xstream
-  bio_nvme_poll -> poll nvme完成事件
+    dss_get_module_info
+    struct dss_xstream	*dx = dss_current_xstream()
+        return dss_get_module_info()->dmi_xstream
+    bio_nvme_poll -> poll nvme完成事件
     spdk_thread_poll
     is_bbs_owner
     bio_bs_monitor
     is_init_xstream
     scan_bio_bdevs
     bio_led_event_monitor
-  ABT_thread_yield
+    ABT_thread_yield
 
 
 
@@ -4696,13 +4764,17 @@ ds_obj_rw_handler(crt_rpc_t *rpc) -> 服务端对象读写处理器(DAOS_OBJ_RPC
   obj_ioc_begin 访问VOS前的各种检查
   obj_rpc_is_fetch
   process_epoch
+    *epoch = d_hlc_get()
   obj_rpc_is_fetch
+  obj_gen_dtx_mbs(orw->orw_flags, &tgt_cnt, &tgts, &mbs) -> 对于基于单个 RDG 的 DTX，在给定不包含原始领导者信息的调度目标信息的情况下，解析来自客户端的 DTX 参与者信息
   rc = dtx_begin 返回超时?
     dtx_handle_init
       dtx_shares_init(dth) 初始化以下链表, 提交,中断,活动,检查
       dtx_epoch_bound
       vos_dtx_rsrvd_init(dth)
   obj_local_rw 本地读写
+  ...
+  rc = dtx_leader_exec_ops(dlh, obj_tgt_update, NULL, 0, &exec_arg)
 
 
 创建任务, daos_task_create
@@ -6249,7 +6321,7 @@ configure_fuse
 回收: dmg pool create  -z 10T test2 -P space_rb:5 -P reclaim:disabled
 
 
-credits_available
+credits_available flow_ctrol 流控fc, 
 cart限流机制, 发送个数-回复个数>32(默认), 则放入等待队列, 否则放入飞行队列直接发出去, 然后等待队列有插队机制, 比如心跳包, 可以直接插在前面, 有一个标记为控制
 前一个请求发送完成后, 执行回调 ->crt_context_req_untrack -> 这个时候判断是否需要将等待队列中的请求移动到发送队列中
 
@@ -6381,7 +6453,7 @@ ec_setup -> ec_setup(void  **state)
       return test_setup_pool_create(state, pool
 
 ec_tests 通过一些标记位才控制ec特性, 比如: DAOS_OBJ_SKIP_PARITY, 并利用cart的故障注入功能
-test_teardown
+test_teardown -> 销毁容器, 池, eq等
 
 ec_full_stripe_snapshot
   daos_pool_set_prop(arg->pool.pool_uuid, "reclaim", "time");
@@ -6513,7 +6585,7 @@ crt_gdata.cg_iv_inline_limit = ops->cio_max_expected_size - 1024; 20K-1K = 19K
 
 
 
-网络上下文内存池流程总结
+DAOS网络上下文内存池流程总结
 1. 在创建网络上下文(crt_context_create)的时候, 初始化内存池(crt_hg_pool_init)
 2. 初始化自旋锁(D_SPIN_INIT), 池链表(D_INIT_LIST_HEAD), 设置池元素最大个数(512)和预分配个数(16)并启用内存池(crt_hg_pool_enable)
 3. 按预分配个数, 准备上下文(HG_Create), 插入池队列尾部(d_list_add_tail)
@@ -6804,4 +6876,120 @@ EC相关的宏:
 #define obj_ec_tgt_of_recx_idx(idx, stripe_rec_nr, e_len)		\
 	(((idx) % (stripe_rec_nr)) / (e_len))
 
+
+ec聚合单元测试, DAOS EC aggregation tests
+run_daos_aggregation_ec_test(rank, size, sub_tests, sub_tests_size)
+	rc += run_daos_sub_tests("DAOS_EC_Aggregation", ec_agg_tests,ARRAY_SIZE(ec_agg_tests), sub_tests, sub_tests_size, ec_setup, test_teardown);
+
+
+
+任务函数映射表: const struct daos_task_api dc_funcs[] 
+struct daos_task_api {
+	tse_task_func_t		task_func;
+	daos_size_t		arg_size;
+};
+
+
+/**
+ * An I/O descriptor is a list of extents (effectively records associated with
+ * contiguous array indices) to update/fetch in a particular array identified by
+ * its akey.
+ I/O 描述符是一个范围列表（有效地与连续数组索引关联的记录），用于更新/获取由其 akey 标识的特定数组
+ */
+typedef struct {
+	/** akey for this iod */
+	daos_key_t		iod_name;
+	/**
+	 * Type of the value in an iod can be either a single type that is
+	 * always overwritten when updated, or it can be an array of EQUAL sized
+	 * records where the record is updated atomically. Note that an akey can
+	 * only support one type of value which is set on the first update. If
+	 * user attempts to mix types in the same akey, the behavior is
+	 * undefined, even after the object, key, or value is punched. If
+	 * \a iod_type == DAOS_IOD_SINGLE, then iod_nr has to be 1, and
+	 * \a iod_size would be the size of the single atomic value. The idx is
+	 * ignored and the rx_nr is also required to be 1. 
+     iod 中值的类型可以是更新时始终被覆盖的单一类型，也可以是大小相等的记录数组，其中记录以原子方式更新。 请注意，akey 只能支持在第一次更新时设置的一种类型的值。 如果用户尝试在同一个键中混合类型，则即使在对象、键或值被打孔之后，行为也是未定义的。 如果\a iod_type == DAOS_IOD_SINGLE，则iod_nr必须为1，并且\a iod_size将是单个原子值的大小。 idx被忽略，rx_nr也需要为1
+	 */
+	daos_iod_type_t		iod_type;
+	/** Size of the single value or the record size of the array */
+	daos_size_t		iod_size;
+	/** Per akey conditional. If DAOS_COND_PER_AKEY not set, this is
+	 *  ignored.
+	 */
+	uint64_t		iod_flags;
+	/**
+	 * Number of entries in the #iod_recxs for arrays,
+	 * should be 1 if single value.
+	 */
+	uint32_t		iod_nr;
+	/**
+	 * Array of extents, where each extent defines the index of the first
+	 * record in the extent and the number of records to access. If the
+	 * type of the iod is single, this is ignored. 范围数组，其中每个范围定义该范围中第一个记录的索引以及要访问的记录数。 如果iod的类型是single，则忽略
+	 */
+	daos_recx_t		*iod_recxs;
+} daos_iod_t;
+
+
+
+
+RPC标识
+enum obj_rpc_flags {
+	ORF_BULK_BIND		= (1 << 0),
+	/** It is a resent RPC. */
+	ORF_RESEND		= (1 << 1),
+	/** Commit DTX synchronously. */
+	ORF_DTX_SYNC		= (1 << 2),
+	/** Reports prior fetch CSUM mismatch */
+	ORF_CSUM_REPORT		= (1 << 3),
+	/**
+	 * Erasure coding flag, to avoid server recheck from oca,
+	 * now only used for single value EC handling.
+	 */
+	ORF_EC			= (1 << 4),
+	/** Include the map on fetch (daos_iom_t) */
+	ORF_CREATE_MAP		= (1 << 5),
+	/** The epoch (e.g., orw_epoch for OBJ_RW) is uncertain. */
+	ORF_EPOCH_UNCERTAIN	= (1 << 6),
+	/** Erasure coding degraded fetch flag */
+	ORF_EC_DEGRADED		= (1 << 7),
+	/**
+	 * ENUM without an epoch range. oei_epr.epr_lo is epoch_first;
+	 * oei_epr.epr_hi is epoch.
+	 */
+	ORF_ENUM_WITHOUT_EPR	= (1 << 8),
+	/* CPD RPC leader */
+	ORF_CPD_LEADER		= (1 << 9),
+	/* Bulk data transfer for CPD RPC. */
+	ORF_CPD_BULK		= (1 << 10),
+	/* Contain EC split req, only used on CPD leader locally. Obsolete - DAOS-10348. */
+	ORF_HAS_EC_SPLIT	= (1 << 11),
+	/* Checking the existence of the object/key. */
+	ORF_CHECK_EXISTENCE	= (1 << 12),
+	/** Include the map details on fetch (daos_iom_t::iom_recxs) */
+	ORF_CREATE_MAP_DETAIL	= (1 << 13),
+	/* For data migration. */
+	ORF_FOR_MIGRATION	= (1 << 14),
+	/* Force DTX refresh if hit non-committed DTX on non-leader. Out-of-date DAOS-7878. */
+	ORF_DTX_REFRESH		= (1 << 15),
+	/* for EC aggregate (to bypass read perm check related with RF) */
+	ORF_FOR_EC_AGG		= (1 << 16),
+	/* for EC data recovery */
+	ORF_EC_RECOV		= (1 << 17),
+	/* EC data recovery from snapshot */
+	ORF_EC_RECOV_SNAP	= (1 << 18),
+	/* EC data recovery from parity */
+	ORF_EC_RECOV_FROM_PARITY = (1 << 19),
+	/* The forward targets array contains leader information. */
+	ORF_CONTAIN_LEADER	= (1 << 20),
+	/*Ascending Order - 0, descending order - 1*/
+	ORF_DESCENDING_ORDER	= (1 << 21),
+	/* The IO include reintegrating target */
+	ORF_REINTEGRATING_IO	= (1 << 22),
+	/* The IO include rebuilding target */
+	ORF_REBUILDING_IO	= (1 << 23),
+	/* 'sgls' is NULL, for update sub-request of CPD RPC. */
+	ORF_EMPTY_SGL		= (1 << 24),
+};
 
