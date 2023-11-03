@@ -600,7 +600,15 @@ crt_hg_req_send -> HG_Forward(rpc_priv->crp_hg_hdl, crt_hg_req_send_cb 由HG转�
 test_msg_size -> crt_req_create -> 
 
 crt_req_create(crt_ctx, endpt, CRT_OPC_SELF_TEST_START
-CRT_OPC_SELF_TEST_STATUS_REQ -> crt_bulk_transfer -> crt_hg_bulk_transfer -> HG_Bulk_transfer_id, HG_Bulk_transfer -> hg_bulk_transfer -> hg_bulk_transfer_na -> hg_bulk_na_put -> NA_Put -> put -> na_ofi.c -> na_ofi_put -> na_ofi_rma fi_writemsg -> writemsg -> vrb_msg_ep_rma_writemsg -> wr.opcode = IBV_WR_RDMA_WRITE -> vrb_send_iov -> vrb_post_send -> ibv_post_send
+CRT_OPC_SELF_TEST_STATUS_REQ
+    crt_bulk_transfer -> 
+        crt_hg_bulk_transfer -> 
+            HG_Bulk_transfer_id, HG_Bulk_transfer -> 
+                hg_bulk_transfer -> 
+                    hg_bulk_transfer_na -> 
+                        hg_bulk_na_put -> 
+                            NA_Put -> put -> na_ofi.c -> na_ofi_put -> 
+                                na_ofi_rma fi_writemsg -> writemsg -> vrb_msg_ep_rma_writemsg -> wr.opcode = IBV_WR_RDMA_WRITE -> vrb_send_iov -> vrb_post_send -> ibv_post_send
 
 
 
@@ -2312,7 +2320,7 @@ dss_sched_init
               req_kickoff
                 req_kickoff_internal(dx, &req->sr_attr, req->sr_func,req->sr_arg)  sr_func -> crt_handle_rpc 不入队列，直接处理回调
                   sched_create_thread(dx, func func -> crt_handle_rpc
-                    ABT_thread_create(abt_pool, func, arg, t_attr, thread)
+                    ABT_thread_create(abt_pool, func, arg, t_attr, thread) -> 启动func(ult)
                       crt_handle_rpc
 
 
@@ -3505,6 +3513,7 @@ dss_nvme_poll_ult
     spdk_thread_poll
     is_bbs_owner
     bio_bs_monitor
+        bio_bs_state_transit
     is_init_xstream
     scan_bio_bdevs
     bio_led_event_monitor
@@ -3649,7 +3658,7 @@ init(void) .sm_init	= init
         daos_acl_create
           flatten_aces 扁平化
   ds_pool_rsvc_class_register DS_RSVC_CLASS_POOL 注册副本服务
-  bio_register_ract_ops 设置nvme操作表, 故障回调, 重新加入的回调, io错误的回调
+  bio_register_ract_ops(&nvme_reaction_ops) 设置nvme操作表, 故障回调, 重新加入的回调, io错误的回调
 
 
 cont 初始化容器服务
@@ -6455,13 +6464,45 @@ ec_setup -> ec_setup(void  **state)
 ec_tests 通过一些标记位才控制ec特性, 比如: DAOS_OBJ_SKIP_PARITY, 并利用cart的故障注入功能
 test_teardown -> 销毁容器, 池, eq等
 
-ec_full_stripe_snapshot
-  daos_pool_set_prop(arg->pool.pool_uuid, "reclaim", "time");
-  stripe_size = ec_data_nr_get(oid) * (daos_size_t)EC_CELL_SIZE; -> 条带大小
-  ec_verify_parity_data
+ec_full_stripe_snapshot -> ec满条带快照测试, DAOS-7978 测试：为 EC 对象测试添加快照 (#6130) 1. 添加快照 EC 对象测试。 2. 不需要断言无效的fail_loc，因为客户端可以发送任何fail_loc来由服务器设置。 现在就忽略坏的fail_loc吧。 3.在新的对象删除功能支持后，删除一些过时的和临时的EC聚合代码。 4. 在副本上添加额外的副本检查。
+    daos_pool_set_prop(arg->pool.pool_uuid, "reclaim", "time"); -> 池回收策略（reclaim） DAOS 是一个版本化的对象存储，它用纪元号标记每个 I/O。 该版本控制机制是多版本并发控制和快照支持的基线。 随着时间的推移，需要回收未使用的版本，以释放存储空间并简化元数据索引。 这个过程称为聚合。 reclaim 属性定义了使用什么策略来回收未使用的版本。 支持三个选项： * “lazy”：仅当没有 IO 活动或 SCM 可用空间受到压力时才触发聚合（默认策略） * “time”：无论 IO 活动如何，都定期触发聚合。 *“disabled”：从不触发聚合。 即使删除数据，系统最终也会耗尽空间。
+    oid = daos_test_oid_gen(arg->coh, ec_obj_class, 0, 0, arg->myrank)
+    ioreq_init(&req, arg->coh, oid, DAOS_IOD_ARRAY, arg)
+    stripe_size = ec_data_nr_get(oid) * (daos_size_t)EC_CELL_SIZE; -> 条带大小
+    for (i = 0; i < SNAP_CNT; i++)
+        memset(data, 'a' + i, stripe_size)
+        insert_recxs("d_key", "a_key", 1, DAOS_TX_NONE, &recx, 1, data, stripe_size, &req)
+            insert_recxs_nowait(dkey, akey, iod_size, th, recxs, nr, data,
+            insert_wait(req)
+                insert_test(req, DAOS_EQ_WAIT)
+                    daos_event_test(&req->ev, timeout, &ev_flag)
+        daos_cont_create_snap(arg->coh, &snap_epoch[i], NULL, NULL) -> daos_cont_create_snap_opt DAOS_SNAP_OPT_CR
+            dc_task_create(dc_cont_create_snap, NULL, ev, &task)
+            ...
+    for (i = 0; i < SNAP_CNT; i++)
+        daos_tx_open_snap(arg->coh, snap_epoch[i], &th_open, NULL)
+        ec_verify_parity_data(&req, "d_key", "a_key", 0, stripe_size, verify_data, th_open, false)
+            lookup_recxs(dkey, akey, 1, th, &recx, 1, data, size, req)
+                ioreq_dkey_set(req, dkey)
+                ioreq_io_akey_set(req, &akey, 1)
+                ioreq_iod_recxs_set(req, 0, iod_size, recxs, nr)
+                lookup_internal(&req->dkey, 1, req->sgl, req->iod, th, req, false)
+        trigger_and_wait_ec_aggreation(arg, &oid, 1, "d_key", "a_key", 0, stripe_size, DAOS_FORCE_EC_AGG) -> 触发并等待ec聚合
+            for (i = 0; i < oids_nr; i++)
+                ec_agg_check_replica_on_parity
+            daos_debug_set_params(arg->group, -1, DMG_KEY_FAIL_LOC, 0, 0, NULL)
+                 dc_task_create(dc_debug_set_params, NULL, ev, &task)
+                    dc_mgmt_sys_attach(args->grp, &cp_arg.sys)
+                    opc = DAOS_RPC_OPCODE(MGMT_PARAMS_SET, DAOS_MGMT_MODULE, DAOS_MGMT_VERSION) -> 设置系统参数 -> ds_mgmt_params_set_hdlr
+                        dss_parameters_set(ps_in->ps_key_id, ps_in->ps_value)
+                        topo = crt_tree_topo(CRT_TREE_KNOMIAL, 32)
+                        MGMT_TGT_PARAMS_SET -> ds_mgmt_tgt_params_set_hdlr
+                        crt_corpc_req_create(dss_get_module_info()->dmi_ctx, NULL, NULL, opc, NULL, NULL, 0, topo, &tc_req) -> 创建集体RPC请求                                                                     
+                        rc = dss_rpc_send(tc_req)
+        daos_cont_destroy_snap(arg->coh, epr, NULL)
+    ioreq_fini(&req)          
 
 
-trigger_and_wait_ec_aggreation -> 触发并等待ec聚合
 
 full_update_size -> 满条带
 
@@ -6542,7 +6583,7 @@ case *mgmtpb.JoinResp:
 据观察，MS领导者可能会将版本2的系统映射{rank 1，rank 2}传递给本地rank 0，他可能会错误地认为自己已被排除在系统之外（实际上它甚至还没有第一次加入系统） 类似地，如果某个等级加入了系统地图版本V，并且以某种方式收到了不包括其自身的系统地图版本V-1，则它也可能会错误地认为自己已被排除在系统之外。 为了解决这两种情况，我们通过JoinResp将最小组版本（Rank加入系统的系统映射版本）从MS(主服务)传递到该Rank上的crt PG(主要组)，以便Rank将拒绝任何传入低于最低组版本的 PG 版本。 这也实现了 crt_swim_cli_cb 中的待办事项
 
 
-聚合(聚合是非满条带聚合满条带，下一代全部都是满条带了), 客户端设置给所有服务端的参数, DAOS_FORCE_EC_AGG
+ec聚合(聚合是非满条带聚合满条带，下一代全部都是满条带了), 客户端设置给所有服务端的参数, DAOS_FORCE_EC_AGG
 enum {
 	DMG_KEY_FAIL_LOC	 = 0,
 	DMG_KEY_FAIL_VALUE,
@@ -6992,4 +7033,149 @@ enum obj_rpc_flags {
 	/* 'sgls' is NULL, for update sub-request of CPD RPC. */
 	ORF_EMPTY_SGL		= (1 << 24),
 };
+
+
+
+ult: 调度运行, 协程, argobots
+int ABT_init
+ABTU_ret_err static int xstream_create
+ABTU_ret_err int ABTI_ythread_create_main_sched
+    static void thread_main_sched_func(void *arg)
+        p_sched->run(ABTI_sched_get_handle(p_sched))
+
+
+ds_pool_update_handler
+
+pool_svc_update_map
+
+
+rebuild_ults
+rebuild_task_ult
+rebuild_task_complete_schedule
+ds_rebuild_schedule
+...
+
+rebuild_scan_broadcast
+ds_pool_bcast_create(dss_get_module_info()->dmi_ctx, pool, DAOS_REBUILD_MODULE, REBUILD_OBJECTS_SCAN, DAOS_REBUILD_VERSION, &rpc, NULL, excluded);
+REBUILD_OBJECTS_SCAN
+rebuild_tgt_scan_handler
+rebuild_scan_leader
+dss_thread_collective(rebuild_scanner, rpt, DSS_ULT_DEEP_STACK)
+rebuild_objects_send_ult
+rebuild_cont_iter_cb
+rebuild_tgt_iter_cb
+rebuild_obj_send_cb
+ds_object_migrate_send
+DAOS_OBJ_RPC_MIGRATE
+ds_obj_migrate_handler
+ds_migrate_object
+dss_ult_create(migrate_ult, tls, DSS_XS_SELF, 0, MIGRATE_STACK_SIZE, NULL)
+dbtree_iterate(root->root_hdl, DAOS_INTENT_MIGRATION,false, migrate_obj_iter_cb, &arg)
+migrate_one_object
+dss_ult_create(migrate_obj_ult, obj_arg, DSS_XS_VOS, ult_tgt_idx, MIGRATE_STACK_SIZE, NULL)
+migrate_get_cont_child
+ds_cont_child_open_create
+cont_child_create_start
+cont_child_start
+    ...
+    cont_start_agg(cont_child) -> DAOS-7254 聚合：将 EC 聚合与 VOS 聚合分开 (#5667) 将 EC agg 和 VOS 聚合分离为两个 ULT，以便避免 iv fetch，dsc_pool/container 为每个回调打开，并确保 EC 聚合可以在以下情况下触发 快照被删除。 添加 DAOS_EC_AGG 环境以禁用 EC 聚合以进行测试
+        sched_req_attr_init(&attr, SCHED_REQ_GC, &cont->sc_pool->spc_uuid)
+        cont->sc_ec_agg_req = sched_create_ult(&attr, cont_ec_agg_ult, cont, DSS_DEEP_STACK_SZ) -> 在调用方 xstream 上创建 ULT 并返回关联的 sched_request。 调用者负责通过 sched_req_put() 释放 sched_request
+            req = req_get(dx, attr, NULL, NULL, ult, true)
+            dss_ult_create(func, arg, DSS_XS_SELF, 0, stack_size, &ult) -> cont_ec_agg_ult -> ds_obj_ec_aggregate(void *arg)
+                ec_agg_param_init(cont, &param)
+                cont_aggregate_interval(cont, cont_ec_aggregate_cb, &param)
+                    cont_aggregate_runnable(cont, req, param->ap_vos_agg) -> DAOS-9651 vos：聚合和 GC 利用 (#8284) 根据空间压力和系统活动来利用聚合和 GC ULT： - 当系统空闲时，EC/VOS 聚合和 GC 将以紧密模式运行，这会降低产量（ 这可以减少从收益返回时迭代时的重新探测）； 当系统繁忙时，它们将以松弛模式运行，这确实会更频繁地产生（可以避免 io 性能波动）。 - 一旦 EC/VOS 聚合或 GC ULT 从良率返回，它将检查系统是否繁忙，并决定在紧缩模式或松弛模式下运行，直到下一个良率。 更多积分将用于严格模式，更少积分将用于宽松模式。 - 当 EC/VOS 聚合和 GC ULT 在松弛模式下运行并且没有空间压力时，它们将在每次屈服时进行额外的睡眠。 - 细化了 VOS 聚合积分，以区分普通迭代和删除、合并操作。 - src/container/srv_target.c 中的少量代码清理
+                    cont_child_aggregate(cont, cb, param)
+                        flags |= VOS_AGG_FL_FORCE_SCAN
+                        epoch_min = get_hae(cont, param->ap_vos_agg)
+                        adjust_upper_bound(cont, param->ap_vos_agg, &epoch_max)
+                        agg_cb(cont, &epoch_range, flags, param) -> cont_ec_aggregate_cb -> 迭代整个 VOS。 调用嵌套迭代器以递归遍历树对于满足条件的所有对象：对象是 EC，并且该目标是领导者
+                            
+                ec_agg_param_fini(cont, &agg_param)
+
+
+ds_obj_ec_aggregate
+
+
+ds_cont_local_open
+
+
+rebuild_obj_ult
+
+
+
+池更新:
+X(POOL_EXCLUDE,							\
+    0, &CQF_pool_exclude,					\
+    ds_pool_update_handler, NULL)				\
+X(POOL_DRAIN,							\
+    0, &CQF_pool_drain,					\
+    ds_pool_update_handler, NULL)				\
+X(POOL_EXTEND,							\
+    0, &CQF_pool_extend,					\
+    ds_pool_extend_handler, NULL)				\
+X(POOL_EVICT,							\
+    0, &CQF_pool_evict,					\
+    ds_pool_evict_handler, NULL)				\
+X(POOL_REINT,							\
+    0, &CQF_pool_add,					\
+    ds_pool_update_handler, NULL)				\
+X(POOL_ADD_IN,							\
+    0, &CQF_pool_add_in,					\
+    ds_pool_update_handler, NULL)				\
+X(POOL_EXCLUDE_OUT,						\
+    0, &CQF_pool_exclude_out,				\
+    ds_pool_update_handler, NULL)				
+
+
+ds_pool_target_update_state
+
+
+
+static struct dss_drpc_handler mgmt_drpc_handlers[] = {
+	{
+		.module_id = DRPC_MODULE_MGMT,
+		.handler = process_drpc_request
+	},
+	{
+		.module_id = 0,
+		.handler = NULL
+	}
+};
+process_drpc_request
+ds_mgmt_drpc_dev_set_faulty
+ds_mgmt_dev_set_faulty
+bio_faulty_state_set
+bio_dev_set_faulty
+bio_dev_set_faulty_internal
+
+bio_bs_state_transit
+on_normal(struct bio_blobstore *bbs)
+
+struct bio_reaction_ops nvme_reaction_ops = {
+	.faulty_reaction	= nvme_faulty_reaction,
+	.reint_reaction		= nvme_reint_reaction,
+	.ioerr_reaction		= nvme_bio_error,
+};
+
+
+nvme_reint_reaction
+    nvme_reaction
+        update_pool_targets
+
+
+
+static struct daos_llink_ops pool_cache_ops = {
+	.lop_alloc_ref	= pool_alloc_ref,
+	.lop_free_ref	= pool_free_ref,
+	.lop_cmp_keys	= pool_cmp_keys,
+	.lop_rec_hash	= pool_rec_hash,
+};
+
+
+
+struct ds_cont_child -> 每线程容器（内存）对象，存储每个线程、每个容器的信息，例如 vos 容器句柄。 注意： sc_uuid和sc_pool_uuid在内存中必须是连续的，用作tls dt_cont_cache中的256位密钥
+
+d_getenv_bool("DAOS_EC_AGG_DISABLE", &ec_agg_disabled) -> 可关闭EC聚合
 
