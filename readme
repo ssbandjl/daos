@@ -435,6 +435,15 @@ OC_EC_8P1G6  = OBJ_CLASS_DEF(OR_RS_8P1, 6ULL),
 
 OC_EC_8P2G6  = OBJ_CLASS_DEF(OR_RS_8P2, 6ULL),
 
+
+ec相关的宏:
+#define daos_sgl_move(sgl, iov_idx, iov_off, move_dist) -> 将 sgl 从 iov_idx/iov_off 向前移动，距离为 move_dist, 调用者需要检查边界
+#define daos_sgl_next_iov(iov_idx, iov_off)
+#define daos_iov_left(sgl, iov_idx, iov_off)
+
+#define roundup(x, y)		((((x) + ((y) - 1)) / (y)) * (y))
+
+
 ---------- ec ----------
 
 
