@@ -1,6 +1,10 @@
-要点:
-1. daos的bulk用法, 我理解是把一段不连续的内存封装为sgl, 调用bulk_create分段注册好, 参考: crt_bulk_create(crt_ctx, &sgl, perm, bulk)
-2. 
+DAOS大块数据传输(RDMA单边读/写)流程要点:
+1. 以设置/获取池属性为例(dmg pool list -v)
+2. 发送端把一段不连续的内存封装为sgl, 调用bulk_create分段注册好(crt_bulk_create(ctx, &sgl, CRT_BULK_RW, bulk))
+3. 封装RPC发送给服务端(引擎), 参考(daos_rpc_send) 
+4. 引擎收到RPC后, 根据数据长度, 准备大块内存接收客户端的数据(crt_bulk_get_len, crt_bulk_create)
+5. 执行大块数据传输(crt_bulk_transfer), 用RDMA的单边读语义, 将数据拉取(DMA)到引擎指定的数据块
+6. 释放资源
 
 
 

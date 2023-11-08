@@ -437,12 +437,15 @@ OC_EC_8P2G6  = OBJ_CLASS_DEF(OR_RS_8P2, 6ULL),
 
 
 ec相关的宏:
-#define daos_sgl_move(sgl, iov_idx, iov_off, move_dist) -> 将 sgl 从 iov_idx/iov_off 向前移动，距离为 move_dist, 调用者需要检查边界
+#define daos_sgl_move(sgl, iov_idx, iov_off, move_dist) -> 将 sgl 从 iov_idx/iov_off 向前移动，距离为 move_dist, 调用者需要检查边界, 返回索引和偏移
 #define daos_sgl_next_iov(iov_idx, iov_off)
 #define daos_iov_left(sgl, iov_idx, iov_off)
 
 #define roundup(x, y)		((((x) + ((y) - 1)) / (y)) * (y))
 
+sgl操作, daos_sgl_
+sgl_move_forward(d_sg_list_t *sgl, struct daos_sgl_idx *sgl_idx, uint64_t bytes) -> 将字节添加到 sql 索引偏移量。 如果新的偏移量大于或等于索引的 iov len，则将索引移动到 sql 中的下一个 iov
+sgl_indexed_byte
 
 ---------- ec ----------
 
@@ -1982,6 +1985,8 @@ crt_rpc_handler_common
         ... 入队，出队
         crt_handle_rpc
             rpc_priv->crp_opc_info->coi_rpc_cb(rpc_pub) 执行回调,如 obj_req_create DAOS_OBJ_RPC_TGT_UPDATE 对应的 ds_obj_tgt_update_handler
+    crt_corpc_common_hdlr -> 集合RPC请求
+        
 
 
 更新目标， 落盘
@@ -3466,10 +3471,11 @@ dss_xstreams_init -> 初始化DAOS服务端xstream(初始化协程调度器及�
             D_INIT_LIST_HEAD(&req->sr_link)
             d_list_add_tail(&req->sr_link, &info->si_idle_list) 插入链表 
         sched_create_pools(dx); 创建3个池 从预定义类型创建新池。 ABT_pool_create_basic() 创建一个新池，由池类型 kind、访问类型 access 和自动标志 automatic 给出，并通过 newpool 返回其句柄。 kind 指定 newpool 的实现。 有关预定义池的详细信息，请参阅#ABT_pool_kind。 access 提示创建的池的使用。 Argobots 可以为具有更受限制的访问类型的池选择优化的实现（#ABT_POOL_ACCESS_PRIV 是最严格的访问类型）。 有关详细信息，请参阅#ABT_pool_access。 如果 automatic 为 ABT_FALSE，则 newpool 不会自动释放，因此 newpool 在使用后必须由 ABT_pool_free() 释放，除非 newpool 与主执行流的主调度程序相关联。
-          ABT_pool_create_basic(ABT_POOL_FIFO, ABT_POOL_ACCESS_MPSC 创建的池可能只被一个执行流弹出
-          ABT_sched_config_create(&config, event_freq, 512, dx_ptr, dx, ABT_sched_config_var_end)
-          ABT_sched_create(&sched_def, DSS_POOL_CNT, dx->dx_pools, config, &dx->dx_sched) -> 启动调度器(poll) -> sched_run
-          使用调度程序定义创建新的调度程序。ABT_sched_create() 创建一个新的调度器，由定义 def 和调度器配置 config 定义，并通过 newsched 返回它的句柄。def 必须定义所有非可选函数。 有关详细信息，请参阅 ABT_sched_def。newsched 与 pools 数组关联，它有 num_pools 个 ABT_pool 句柄。 如果池的第 i 个元素是 ABT_POOL_NULL，则新创建具有默认池配置的默认 FIFO 池并用作第 i 个池。
+          for (i = 0; i < DSS_POOL_CNT; i++) -> 创建3个协程池
+          ABT_pool_create_basic(ABT_POOL_FIFO, ABT_POOL_ACCESS_MPSC -> 创建的池可能只被一个执行流弹出, 先进先出FIFO
+        ABT_sched_config_create(&config, event_freq, 512, dx_ptr, dx, ABT_sched_config_var_end)
+        ABT_sched_create(&sched_def, DSS_POOL_CNT, dx->dx_pools, config, &dx->dx_sched) -> 启动调度器(poll) -> sched_run
+        使用调度程序定义创建新的调度程序。ABT_sched_create() 创建一个新的调度器，由定义 def 和调度器配置 config 定义，并通过 newsched 返回它的句柄。def 必须定义所有非可选函数。 有关详细信息，请参阅 ABT_sched_def。newsched 与 pools 数组关联，它有 num_pools 个 ABT_pool 句柄。 如果池的第 i 个元素是 ABT_POOL_NULL，则新创建具有默认池配置的默认 FIFO 池并用作第 i 个池。
       ABT_xstream_create_with_rank 创建具有特定等级的新执行流。 ABT_xstream_create_with_rank() 使用调度程序 sched 创建一个新的执行流，并通过 newxstream 返回其句柄。 如果 sched 为 ABT_SCHED_NULL，则使用具有基本 FIFO 队列和默认调度程序配置的默认调度程序。
       ABT_thread_attr_create
       ABT_thread_attr_set_stacksize 在 ULT 属性中设置堆栈大小。 ABT_thread_attr_set_stacksize() 设置 ULT 属性 attr 中的堆栈大小 stacksize（以字节为单位）。 如果堆栈内存已由 ABT_thread_attr_set_stack() 设置，此例程将更新堆栈大小，同时将堆栈内存保留在 attr 中。
@@ -4858,19 +4864,21 @@ dfuse_start
 
 
 dc_obj_shard_rw 客户端对象分片读写(读写对象分片)
-  dc_cont2uuid(shard->do_co, &cont_hdl_uuid, &cont_uuid) -> 设置容器uuid
-  obj_shard_ptr2pool(shard) 根据分片获取池
-  tgt_ep.ep_grp = pool->dp_sys->sy_group
-  tgt_ep.ep_tag = shard->do_target_idx
-  tgt_ep.ep_rank = shard->do_target_rank -> 设置cart端点(目标组,tag,rank)
-  obj_req_create opc = DAOS_OBJ_RPC_UPDATE -> ds_obj_rw_handler
+    crt_rpc_t		*req = NULL -> 声明cart请求/RPC请求
+    struct obj_rw_in	*orw -> 对象读写RPC输入参数
+    dc_cont2uuid(shard->do_co, &cont_hdl_uuid, &cont_uuid) -> 设置容器uuid
+    obj_shard_ptr2pool(shard) 根据分片获取池
+    tgt_ep.ep_grp = pool->dp_sys->sy_group
+    tgt_ep.ep_tag = shard->do_target_idx
+    tgt_ep.ep_rank = shard->do_target_rank -> 设置cart端点(目标组,tag,rank)
+    obj_req_create(daos_task2ctx(task), &tgt_ep, opc, &req) -> 用task对应的网络上下文创建RPC请求(调度器上为空时使用全局网络上下文(static crt_context_t daos_eq_ctx)) -> opc = DAOS_OBJ_RPC_UPDATE -> ds_obj_rw_handler
     crt_req_create(crt_ctx, tgt_ep, opcode, req)
-  uuid_copy
-  daos_dti_copy 拷贝dtx_id
-  orw... > 填充容器读写结构体
-  跳过ec逻辑
-  tse_task_register_comp_cb(task, dc_rw_cb -> 注册容器读写任务回调
-  daos_rpc_send
+    uuid_copy
+    daos_dti_copy 拷贝dtx_id
+    orw... > 填充容器读写结构体
+    跳过ec逻辑
+    tse_task_register_comp_cb(task, dc_rw_cb -> 注册容器读写任务回调
+    daos_rpc_send
     crt_req_send(rpc, daos_rpc_cb, task) -> engine收到后处理 -> ds_obj_rw_handler -> tse_task_complete 发送完成回调流程:hg -> crt_hg_req_send_cb -> crp_complete_cb -> -> daos_rpc_cb -> dc_rw_cb
 
 超时检测和业务回调是在不同的线程中并发执行
@@ -7210,3 +7218,182 @@ struct ds_cont_child -> 每线程容器（内存）对象，存储每个线程�
 
 d_getenv_bool("DAOS_EC_AGG_DISABLE", &ec_agg_disabled) -> 可关闭EC聚合
 
+
+rpc输入输出参数, 用于编码/解码rpc数据:
+struct obj_rw_in { 
+    struct dtx_id orw_dti; 
+    daos_unit_oid_t orw_oid; 
+    uuid_t orw_pool_uuid; 
+    uuid_t orw_co_hdl; 
+    uuid_t orw_co_uuid; 
+    uint64_t orw_epoch; 
+    uint64_t orw_epoch_first; 
+    uint64_t orw_api_flags; 
+    uint64_t orw_dkey_hash; 
+    uint32_t orw_map_ver; 
+    uint32_t orw_nr; 
+    uint32_t orw_start_shard; 
+    uint32_t orw_flags; 
+    daos_key_t orw_dkey; 
+    struct dcs_csum_info *orw_dkey_csum;
+    struct obj_iod_array orw_iod_array;
+    struct { 
+        uint64_t ca_count;
+        struct dtx_id *ca_arrays;
+    } orw_dti_cos;
+    struct { 
+        uint64_t ca_count;
+        d_sg_list_t *ca_arrays;
+    } orw_sgls;
+    struct { 
+        uint64_t ca_count;
+        crt_bulk_t *ca_arrays;
+    } orw_bulks;
+    struct { 
+        uint64_t ca_count;
+        struct daos_shard_tgt *ca_arrays;
+    } orw_shard_tgts;
+    uint32_t orw_tgt_idx;
+    uint32_t orw_tgt_max;
+};
+
+struct obj_rw_out { 
+    int32_t orw_ret;
+    uint32_t orw_map_version;
+    uint64_t orw_epoch;
+    struct { 
+        uint64_t ca_count;
+        daos_size_t *ca_arrays;
+    } orw_iod_sizes;
+    struct { 
+        uint64_t ca_count;
+        daos_size_t *ca_arrays;
+    } orw_data_sizes;
+    struct { 
+        uint64_t ca_count;
+        d_sg_list_t *ca_arrays;
+    } orw_sgls;
+    struct { 
+        uint64_t ca_count;
+        uint32_t *ca_arrays;
+    } orw_nrs;
+    struct { 
+        uint64_t ca_count;
+        struct dcs_iod_csums *ca_arrays;
+    } orw_iod_csums;
+    struct { 
+        uint64_t ca_count;
+        struct daos_recx_ep_list *ca_arrays;
+    } orw_rels;
+    struct { 
+        uint64_t ca_count;
+        daos_iom_t *ca_arrays;
+    } orw_maps;
+};
+
+_Pragma("pack(push, 1)") struct obj_rw_in_packed { 
+    struct dtx_id orw_dti;
+    daos_unit_oid_t orw_oid;
+    uuid_t orw_pool_uuid;
+    uuid_t orw_co_hdl;
+    uuid_t orw_co_uuid;
+    uint64_t orw_epoch;
+    uint64_t orw_epoch_first;
+    uint64_t orw_api_flags;
+    uint64_t orw_dkey_hash;
+    uint32_t orw_map_ver;
+    uint32_t orw_nr;
+    uint32_t orw_start_shard;
+    uint32_t orw_flags;
+    daos_key_t orw_dkey;
+    struct dcs_csum_info *orw_dkey_csum;
+    struct obj_iod_array orw_iod_array;
+    struct { 
+        uint64_t ca_count;
+        struct dtx_id *ca_arrays;
+    } orw_dti_cos;
+    struct { 
+        uint64_t ca_count;
+        d_sg_list_t *ca_arrays;
+    } orw_sgls;
+    struct { 
+        uint64_t ca_count;
+        crt_bulk_t *ca_arrays;
+    } orw_bulks;
+    struct { 
+        uint64_t ca_count;
+        struct daos_shard_tgt *ca_arrays;
+    } orw_shard_tgts;
+    uint32_t orw_tgt_idx;
+    uint32_t orw_tgt_max;
+};
+
+struct obj_rw_out_packed { 
+    int32_t orw_ret;
+    uint32_t orw_map_version;
+    uint64_t orw_epoch;
+    struct { 
+        uint64_t ca_count;
+        daos_size_t *ca_arrays;
+    } orw_iod_sizes;
+    struct { 
+        uint64_t ca_count;
+        daos_size_t *ca_arrays;
+    } orw_data_sizes;
+    struct { 
+        uint64_t ca_count;
+        d_sg_list_t *ca_arrays;
+    } orw_sgls;
+    struct { 
+        uint64_t ca_count;
+        uint32_t *ca_arrays;
+    } orw_nrs;
+    struct { 
+        uint64_t ca_count;
+        struct dcs_iod_csums *ca_arrays;
+    } orw_iod_csums;
+    struct { 
+        uint64_t ca_count;
+        struct daos_recx_ep_list *ca_arrays;
+    } orw_rels;
+    struct { 
+        uint64_t ca_count;
+        daos_iom_t *ca_arrays;
+    } orw_maps;
+};
+_Pragma("pack(pop)") _Static_assert(__builtin_offsetof(struct obj_rw_out_packed, orw_maps) == __builtin_offsetof(struct obj_rw_out, orw_maps), "obj_rw" " output struct has a hole");
+_Static_assert(__builtin_offsetof(struct obj_rw_in_packed, orw_tgt_max) == __builtin_offsetof(struct obj_rw_in, orw_tgt_max), "obj_rw" " input struct has a hole");
+extern struct crt_req_format CQF_obj_rw;
+
+
+
+bulk描述:(crt_bulk_t -> )
+/* HG bulk handle */
+struct hg_bulk {
+    struct hg_bulk_desc desc;                /* Bulk descriptor   */
+    struct hg_bulk_na_mem_desc na_mem_descs; /* NA memory handles */
+#ifdef NA_HAS_SM
+    struct hg_bulk_na_mem_desc na_sm_mem_descs; /* NA SM memory handles */
+#endif
+    hg_core_class_t *core_class; /* HG core class */
+    na_class_t *na_class;        /* NA class */
+#ifdef NA_HAS_SM
+    na_class_t *na_sm_class; /* NA SM class */
+#endif
+    struct hg_bulk_attr attrs;   /* Memory attributes */
+    hg_core_addr_t addr;         /* Addr (valid if bound to handle) */
+    void *serialize_ptr;         /* Cached serialization buffer */
+    hg_size_t serialize_size;    /* Cached serialization size */
+    hg_atomic_int32_t ref_count; /* Reference count */
+    hg_uint8_t context_id;       /* Context ID (valid if bound to handle) */
+    hg_bool_t registered;        /* Handle was registered */
+};
+
+
+3个协程池
+enum {
+	DSS_POOL_NET_POLL	= 0,
+	DSS_POOL_NVME_POLL,
+	DSS_POOL_GENERIC,
+	DSS_POOL_CNT,
+};
