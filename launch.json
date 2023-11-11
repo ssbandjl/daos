@@ -76,7 +76,7 @@
       "type": "cppdbg",
       "request": "attach",
       "program": "/opt/daos/bin/dfuse",
-      "processId": "2647",
+      "processId": "1000",
       "MIMode": "gdb",
       "miDebuggerPath": "/bin/gdb",
       "setupCommands": [

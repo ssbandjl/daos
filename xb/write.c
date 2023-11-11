@@ -24,12 +24,21 @@ int main(void)
 {
     int fd,size,len;
     int ret = 0;
+    int i = 0;
 
     /*1. 普通io模式 */
-    char * normal_write_buf = "normal io\n";
+    // char * normal_write_buf = "normal io\n";
+    char * normal_write_buf = NULL;
+    int buf_size = 1024 * 1024 * 10;
+    normal_write_buf = (char *)malloc(buf_size);
+    for (i = 0; i < buf_size; i++){
+        memset(normal_write_buf + i, '0' + (i % 50), 1);
+    }
+    // memset(normal_write_buf, 'A', buf_size);
+    // memset(normal_write_buf, 1, buf_size);
     char * file_name = "/tmp/sxb/file2";
     len = strlen(normal_write_buf);
-    char normal_read_buf[100] = {0};
+    // char normal_read_buf[100] = {0};
 
     /* mark start */
     pid_t pid  = getpid();
@@ -44,7 +53,7 @@ int main(void)
         perror("write:");
         exit(1);
     }  
-    printf("write pid:%d, fd:%d, len:%d, data:%s", pid, fd, len, normal_write_buf);
+    printf("write pid:%d, fd:%d, len:%d, data:%s\n", pid, fd, len, normal_write_buf);
     #endif
     
 
