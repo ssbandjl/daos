@@ -634,6 +634,14 @@ cart_ctl
 export D_LOG_MASK=DEBUG
 export DD_MASK=all
 export DD_SUBSYS=all
+
+daos_server.yml
+env_vars:
+    - CRT_TIMEOUT=30
+    - D_LOG_MASK=DEBUG
+    - DD_MASK=all
+    - DD_SUBSYS=all
+
 cart_ctl enable_fi -g daos_server -u
 Build cart_ctl -> cart_ctl.c -> main -> parse_args -> crtu_test_init -> dc_agent_init -> ctl_init -> d_log_fini
 
@@ -796,18 +804,8 @@ crt_hg_reg -> crt_rpc_common_hdlr
 req_kickoff_internal -> 
 
 
-
-
 sched_run -> sched_start_cycle -> process_all -> d_hash_table_traverse(info->si_pool_hash, process_pool_cb, dx) 遍历一个哈希表，对每一项调用遍历回调函数。 一旦回调返回非零就中断 -> sri_req_cnt -> 
 crt_context_register_rpc_task -> dss_rpc_hdlr rpc控制器 -> sched_req_enqueue 请求入队 -> sri_req_cnt
-
-
-
-daos_obj_update
-
-
-对象更新
-obj_tgt_update -> ds_obj_remote_update -> DAOS_OBJ_RPC_TGT_UPDATE -> crt_req_send(req, shard_update_req_cb, remote_arg) 发送RPC -> 
 
 
 
@@ -1986,7 +1984,7 @@ crt_rpc_handler_common
         crt_handle_rpc
             rpc_priv->crp_opc_info->coi_rpc_cb(rpc_pub) 执行回调,如 obj_req_create DAOS_OBJ_RPC_TGT_UPDATE 对应的 ds_obj_tgt_update_handler
     crt_corpc_common_hdlr -> 集合RPC请求
-        
+
 
 
 更新目标， 落盘
@@ -2022,7 +2020,7 @@ obj_local_rw
         daos_iod_t			*iods_dup = NULL; /* for EC deg fetch */ -> DAOS-5554 dtx：异步批量提交分布式事务 (#3838) 最初，对于跨多个冗余组的分布式事务，我们将在所有参与者“准备好”时同步提交它。 这种同步提交可能会给相关的分布式事务带来延迟。 该补丁调整了提交行为，与单机修改的情况类似，“可提交”的DTX将缓存在领导者上，并在稍后通过专用ULT批量提交。 预计某些事务可能在相同的 DAOS 目标上有一些参与者，那么批量提交可以节省一些 DTX 提交 RPC。 在这种异步批量提交模式下，领导者上的 DTX 状态可能是“可提交”，但非领导者上的 DTX 状态是“准备好”。 如果某个读请求在非leader（VOS中）上命中了这些“准备好的”DTX，那么相关的调用者（对象）将获得-DER_INPROGRESS以及相关的DTX信息（ID，leader），然后调用者将查询相关的DTX领导者 是否可提交。 如果是，则回复非领导者，然后提交这样的DRX以避免其他人进一步检查。 为此目的引入“DTX_REFRESH”RPC。 另一个主要变化是 DTX 重新同步来处理丢失某些整个冗余组的分布式事务。 在这种情况下，DTX重新同步逻辑无法决定是否提交或中止相关事务，因为其中之一可能错误地导致数据丢失或破坏事务语义。 然后它会将 DTX 条目全局标记为“已损坏”。 这将通过返回 -DER_DATA_LOSS 阻止后续针对此类 DTX 的读取操作。 另一方面，“损坏的”DTX 仅影响其修改的部分，但不会影响共享相同目标（对象/键）的其他部分。 附加到“损坏的”DTX 的目标不会被 vos 聚合清除，但可能会被新的更新/冲击刷新。 将来我们需要特殊的工具来处理（恢复或清理）那些“损坏的”DTX 条目。 该补丁还修复了当前混乱的 DTX 可用性检查“重建”意图。 我们对所有重建和迁移相关逻辑使用新的“DAOS_INTENT_MIGRATION”。 VOS 中的 DTX 逻辑需要对具有此类意图的操作进行一些特殊处理，例如，当命中“损坏的”DTX 条目时返回“ALB_UNAVAILABLE”而不是“-DER_DATA_LOSS”。
         bool				 get_parity_list = false; -> DAOS-7879 EC：通过聚合优化 EC 降级获取 (#5967) 由于聚合在不同节点上异步运行，聚合和 EC 降级获取之间的主要竞争条件 - 1. VOS 可能会合并相邻的分机（现在合并到较低的纪元）2. 当较低的历元扩展被较高的历元扩展完全覆盖时，VOS 可能会删除较低的历元扩展。 3. EC 聚合将新的奇偶校验扩展异步更新到不同的奇偶校验节点 该异步操作可能会导致获取的数据恢复处理降级 - 影子纪元对应的奇偶校验/数据扩展可能不可读，然后导致恢复中的静默数据损坏。 此补丁改进了 EC 降级获取的处理 - 1. 对于 EC 降级获取中的步骤 1，如果从快照获取且“snapshot_epoch < vos_agg_eph_boundary”奇偶校验服务器将 snapshot_epoch 回复为恢复纪元，则客户端将携带 (ORF_EC_RECOV_SNAP | ORF_EC_RECOV) 用于数据恢复，否则奇偶校验 服务器回复 max {parity_ext_epoch, vos_agg_eph_boundary} 作为 recovery_epoch。 2. 对于 EC 降级提取中的步骤 2 对于某些情况，需要在内部从头开始重新启动 deg 提取 - 服务器端检查 - 如果没有 ORF_EC_RECOV_SNAP 且当前 vos_agg_eph_boundary > recovery_epoch； 客户端检查 - 如果回复来自不同奇偶校验分片的 parity_epoch 不匹配。 修复 agg_process_stripe() 中的错误，该错误在检查奇偶校验扩展时未设置正确的历元范围。
         uint32_t			tgt_off = 0 -> DAOS-10768 对象：添加对象布局升级 (#10498) 将 OBJ_VERSION 添加到池和容器属性以用于升级目的。 添加 object_layout.c 以将所有对象布局相关函数放在那里。 将layout_version 添加到放置并将对象布局版本添加到OID。 添加 RB_LAYOUT_UPGRADE cmd 来重建进程。 重建扫描过程的一些清理。 如果重建目标是本地的，则不需要通过 RPC 发送对象列表。 添加升级测试 添加FORCE升级和升级测试以验证升级过程。
-        csum_verify_keys
+        csum_verify_keys(ioc->ioc_coc->sc_csummer, &orw->orw_dkey, orw->orw_dkey_csum, &orw->orw_iod_array, &orw->orw_oid)
         准备IO描述 -> DAOS-2444 obj：添加基本的 EC obj 获取处理 (#1093) 1) 添加基于同步更新提交的基本 EC obj 获取处理 2) 为 EC obj 重用 ORF_DTX_SYNC 标志 3) 修复了 epoch io 测试工具中的一个错误 4) 以及次要的 换成TSE。 这个补丁主要是为了让它工作（现在完整的条带更新/获取可以通过测试），但一些相关细节需要通过后续补丁来完善。
         if (obj_rpc_is_update(rpc)) -> 如果是写, DAOS-3196 对象：对象服务器的代码清理 (#1318) - 使用 DF_KEY/DP_KEY 作为关键调试消息 - 统一服务器端对象函数的函数名称。 删除私有函数的 ds_ 前缀。 添加 obj_ 作为私有函数的前缀。 重命名一些函数，因为它们的名称令人困惑 - 统一调试消息格式 - 小代码清理
             obj_singv_ec_rw_filter -> 过滤并准备单值 EC 更新/获取, DAOS-11423 对象：删除 obj_ec_rw_req_split (#10024) 从 obj_rw_obj_handler() 中删除 obj_ec_rw_req_split，并且只为多个 IOD 情况分配内存和副本
@@ -2272,9 +2270,13 @@ HG_QUEUE_ENTRY(hg_log_outlet) entry
 ## QA
 
 
-
-目标对象更新
-obj_tgt_update -> ds_obj_remote_update -> DAOS_OBJ_RPC_TGT_UPDATE -> crt_req_send(req, shard_update_req_cb, remote_arg) 发送RPC -> 
+obj_tgt_update(struct dtx_leader_handle *dlh, void *arg, int idx, dtx_sub_comp_cb_t comp_cb) -> 目标对象更新
+    if (idx == -1) -> 本地更新
+        obj_local_rw(exec_arg->rpc, exec_arg->ioc, &dlh->dlh_handle)
+    或远端目标更新
+    ds_obj_remote_update(dlh, arg, idx, comp_cb) 
+        obj_req_create(dss_get_module_info()->dmi_ctx, &tgt_ep, DAOS_OBJ_RPC_TGT_UPDATE, &req)
+        crt_req_send(req, shard_update_req_cb, remote_arg) -> 发送RPC请求 -> 服务端执行: ds_obj_tgt_update_handler
 
 
 
@@ -3775,7 +3777,7 @@ vos_db_init vos初始化 元数据初始化 -> vos_db_init_ex(db_path, NULL, fal
   db_open_create(&vos_db.db_pub, !!create) 创建或打开 vos_pool_open -> 在持久文件中创建或打开系统数据库(系统数据库是一个简单的本地KV存储) -> db_open_create(struct sys_db *db, bool try_create)
     access 先检查文件是否存在 第二轮创建(try_create为真)
     mkdir(vdb->db_path, 0777)
-    vos_pool_create(vdb->db_file, vdb->db_pool, SYS_DB_SIZE, 0, VOS_POF_SYSDB, &vdb->db_poh) -> 创建vosp 系统scm池(128MB) jump, 0个blob, 
+    vos_pool_create(vdb->db_file, vdb->db_pool, SYS_DB_SIZE, 0, VOS_POF_SYSDB, &vdb->db_poh) -> 创建vosp 系统scm池(128MB) jump, 0个blob, 如: vpa_nvme_size = 4GB, path: "/mnt/daos/NEWBORNS/4f2cd862-d40a-4723-9974-7f308e58f3bd/vos-0", 
     vos_pool_create_ex(const char *path, uuid_t uuid, daos_size_t scm_sz, daos_size_t nvme_sz, daos_size_t wal_sz, unsigned int flags, daos_handle_t *poh) -> wal_sz=0
     
     vos_cont_create(vdb->db_poh, vdb->db_cont) 在vos池中(vpool)创建一个容器
@@ -4041,8 +4043,9 @@ ds_mgmt_hdlr_tgt_create(crt_rpc_t *tc_req)
   ABT_thread_yield()
   dss_thread_collective(tgt_vos_create_one, &vpa, 0) 在所有服务流上集体执行 coll_ops.co_func	= tgt_vos_create_one
     dss_collective_internal
-      dss_thread_collective_reduce(&coll_ops, &coll_args, flags) coll_ops.co_func	= func 集合聚合缩减函数
+      线程模型 -> dss_thread_collective_reduce(&coll_ops, &coll_args, flags) coll_ops.co_func	= func 集合聚合缩减函数
         dss_collective_reduce_internal
+      rc = dss_task_collective_reduce(&coll_ops, &coll_args, flags) -> 任务模型
   rc = rename(tca.tca_newborn, tca.tca_path)
   (void)dir_fsync(tca.tca_path) 确认目录已持久化
   rc = ds_pool_start(tc_in->tc_pool_uuid);
@@ -4077,7 +4080,7 @@ ds_pool_create_handler
 
 daos_pool_connect
 
-
+----- vos -----
 tgt_vos_create_one
   path_gen /mnt/daos/93c634a2-d122-4914-b4b3-5ba76c696f68/vos-0 创建vos目录
   vos_pool_create 创建vos池
@@ -4092,8 +4095,27 @@ tgt_vos_create_one
     vos_pmemobj_create(path, uuid, VOS_POOL_LAYOUT, scm_sz, nvme_sz, wal_sz, flags, &ph)
       struct bio_xs_context	*xs_ctxt = vos_xsctxt_get() -> 每个xs一个nvme上下文
       store.store_type = umempobj_get_backend_type() -> 默认pm作后端, daos_md_backend = DAOS_MD_PMEM
-      bio_mc_create(xs_ctxt, pool_id, meta_sz, wal_sz, nvme_sz, mc_flags)
-      bio_mc_open(xs_ctxt, pool_id, mc_flags, &mc) -> smd_pool_get_blob -> pool_get_blob
+      bio_mc_create(xs_ctxt, pool_id, meta_sz, wal_sz, nvme_sz, mc_flags) -> 元数据的blobstore需要单独配置(默认不配置)
+        bio_blob_create(uuid, xs_ctxt, nvme_sz)
+            spdk_bs_get_cluster_size(bbs->bb_bs) -> 默认集群1GB
+            spdk_blob_opts_init(&bma.bma_opts, sizeof(bma.bma_opts))
+            bma.bma_opts.num_clusters = (blob_sz + cluster_sz - 1) / cluster_sz -> 集群个数: 4833741823/1073741824 = 4.5 = 4
+            smd_pool_get_blob
+            blob_cp_arg_init(ba)
+            bio_bs_hold(bbs) -> 增加blob_stor的引用计数
+            spdk_thread_send_msg(owner_thread(bbs), blob_msg_create, &bma)
+                spdk_bs_create_blob_ext(arg->bma_bs, &arg->bma_opts, blob_create_cb,msg_arg) -> 给定 blobstore 选项创建新的 blobstore
+                    ABT_eventual_set(ba->bca_eventual, NULL, 0) -> 在回调中设置结果
+            blob_wait_completion(xs_ctxt, ba)
+            smd_pool_add_tgt(uuid, xs_ctxt->bxc_tgt_id, ba->bca_id, st, blob_sz)
+                pool_add_tgt(pool_id, tgt_id, blob_id, TABLE_POOLS[st], blob_sz) -> 将 blobstore 加入目标池,下次就能查询到
+            spdk_bs_create_blob_ext
+        blob_wait_completion
+            xs_poll_completion
+                spdk_thread_poll(ctxt->bxc_thread, 0, 0)
+                在线程上执行一次迭代处理。 这包括过期的和连续的轮询器以及消息。 如果线程已经退出，则立即返回
+            ABT_eventual_wait(ba->bca_eventual, NULL) -> 或用协程等待结果        
+      bio_mc_open(xs_ctxt, pool_id, mc_flags, &mc) -> smd_pool_get_blob -> pool_get_blob -> 查找该池的BLOB
         db_fetch(struct sys_db *db, char *table, d_iov_t *key, d_iov_t *val)
           db_io_init(&io, table, key, val)
           vos_obj_fetch -> vos_obj_fetch_ex
@@ -4101,26 +4123,38 @@ tgt_vos_create_one
               vos_ioc_create
               vos_dth_set
               vos_ts_set_add -> vos_ts_get_negative -> 当子树不存在时，我们需要一个负条目。 在这种情况下，条目由哈希值标识。 这会查找负条目并在必要时分配它。 将 te_create_idx 重置为 NULL
+        __bio_ioctxt_open(&bio_mc->mc_data, xs_ctxt, pool_id, flags, SMD_DEV_TYPE_DATA, data_blobid)
+            bio_blob_open(ctxt, false, flags, st, open_blobid)
+                ctxt->bic_io_unit = spdk_bs_get_io_unit_size(bbs->bb_bs) -> 获取spdk最小IO单元(默认512字节)
+                bma->bma_async = async -> 关闭异步(默认同步)
+                spdk_thread_send_msg(owner_thread(bbs), blob_msg_open, bma)
+                    spdk_bs_open_blob(arg->bma_bs, arg->bma_blob_id, blob_open_cb, msg_arg) -> 打开blobstore
       bio_meta_get_attr(mc, &store.stor_size, &store.stor_blk_size, &store.stor_hdr_blks)
+      store.stor_ops = &vos_store_ops -> 设置blobstore的操作为VOS函数操作表
       pop = umempobj_create(path, layout, UMEMPOBJ_ENABLE_STATS, scm_sz, 0600, &store)
         pop = pmemobj_create(path, layout_name, poolsize, mode) -> 创建持久内存对象,取scm大小 -> pmdk笔记: https://blog.csdn.net/Sylvia_Wu51/article/details/117442789, 创建pm内存池: https://manpages.debian.org/experimental/libpmemobj-dev/pmemobj_create.3.en.html, 参考:持久内存编程开发人员综合指南
       pmemobj_ctl_set(pop, "stats.enabled", &enabled) -> 启用使用率统计, scm和nvme
-      register_slabs(umm_pool) -> register_slabs(struct umem_pool *ph_p) -> slab_map[] -> 不同大小的slab
+      register_slabs(umm_pool) -> register_slabs(struct umem_pool *ph_p) -> slab_map[] -> 为内存池注册不同大小的slab(缓存)
         __builtin_ctz(used) -> 返回输入数二进制表示从最高位开始(左起)的连续的0的个数
         set_slab_desc(ph_p, slab) -> 创建slab
-          pmemobj_ctl_set(pop, "heap.alloc_class.new.desc", &pmemslab) -> 创建pool_set, 参考: https://cloud.tencent.com/developer/article/1747314, 官方API: http://wlemkows.github.io/pmdk/manpages/linux/v1.6/libpmemobj/pmemobj_ctl_get.3
-    ...
+            pmemslab.unit_size = slab->unit_size -> 32
+            pmemslab.units_per_block = 1000 -> 8158
+            pmemobj_ctl_set(pop, "heap.alloc_class.new.desc", &pmemslab) -> 创建pool_set, 参考: https://cloud.tencent.com/developer/article/1747314, 官方API: http://wlemkows.github.io/pmdk/manpages/linux/v1.6/libpmemobj/pmemobj_ctl_get.3
     pool_df = vos_pool_pop2df(ph) pm转持久格式 -> umempobj_get_rootptr
       TOID(struct vos_pool_df) pool_df
       pool_df = POBJ_ROOT(pop, struct vos_pool_df) 获取根
         pmemobj_root(PMEMobjpool *pop, size_t size)
+    scm_sz = lstat.st_size -> 228MB(240001024)        
     uma.uma_id = umempobj_backend_type2class_id(ph->up_store.store_type)
     umem_class_init(&uma, &umem) 通过uma中的属性实例化一个内存类umm -> static umem_ops_t	vmem_ops
+      umm->umm_ops		= umc->umc_ops -> static umem_ops_t	pmem_ops
       set_offsets(umm) 为池计算出必要的偏移量和基地址, 如果是vmem则置零
-        pmemobj_root
-        pmemobj_direct
+        pmemobj_root -> 获取根
+        pmemobj_direct -> 返回根的指针
+        umm->umm_base = (uint64_t)root - root_oid.off -> 缓存该池的基地址
     umem_tx_begin(&umem, NULL) 开始事务
       umm->umm_ops->mo_tx_begin(umm, txd)  .mo_tx_begin		= pmem_tx_begin, 开始pm事务
+        pmemobj_tx_begin(pop, NULL, TX_PARAM_NONE)
         pmemobj_tx_begin(umm->umm_pool  可变参数
         pmdk事务 libpmemobj就提供了存储的事务特性
         https://www.cnblogs.com/Kimbing-Ng/p/12738735.html 
@@ -4129,7 +4163,8 @@ tgt_vos_create_one
         https://my.oschina.net/fileoptions/blog/1629405
     umem_tx_add_ptr(&umem, pool_df, sizeof(*pool_df))
       mo_tx_add_ptr -> pmem_tx_add_ptr
-        pmemobj_tx_add_range_direct 添加内存范围
+        pmemobj_tx_add_range_direct(ptr, size) 添加内存范围
+    memset(pool_df, 0, sizeof(*pool_df))        
     dbtree_create_inplace(VOS_BTR_CONT_TABLE 创建b树, 头文件: btree.h
       dbtree_create_inplace_ex
         btr_context_create
@@ -4146,7 +4181,8 @@ tgt_vos_create_one
         btr_tcx2hdl
           hdl.cookie = (uint64_t)tcx
     dbtree_close(hdl) 减引用
-    gc_init_pool(&umem, pool_df)
+    pool_df->pd_magic	= POOL_DF_MAGIC -> 设置vos池属性
+    gc_init_pool(&umem, pool_df) -> 初始化VOS垃圾回收池(GC)
       GC_MAX = 4
       struct vos_gc_bin_df *bin = &pd->pd_gc_bins[i]
       bin->bin_bag_size  = gc_bag_size 包大小=250
@@ -4157,35 +4193,30 @@ tgt_vos_create_one
         pmemobj_tx_commit
         pmemobj_tx_end
     bio_nvme_configured // 以下只针对配置了Nvme大小的池, 纯SCM(vos池)不走下面的逻辑
-    bio_blob_create(uuid, xs_ctxt, nvme_sz)
     // Format SPDK blob header 格式化spdk
-      spdk_bs_get_cluster_size(bbs->bb_bs)
-      spdk_blob_opts_init
-      smd_pool_get_blob
-      blob_cp_arg_init(ba)
-      bio_bs_hold(bbs)
-      spdk_thread_send_msg(owner_thread(bbs), blob_msg_create, &bma)
-      blob_wait_completion(xs_ctxt, ba)
-      smd_pool_add_tgt
-      spdk_bs_create_blob_ext
-    blob_wait_completion
-      xs_poll_completion
-        spdk_thread_poll(ctxt->bxc_thread, 0, 0)
-        在线程上执行一次迭代处理。 这包括过期的和连续的轮询器以及消息。 如果线程已经退出，则立即返回。
-    vea_format(&umem, vos_txd_get(), &pool_df->pd_vea_df, VOS_BLK_SZ  vos_blob_format_cb
-      rc = cb(cb_data, umem) 先执行回调 vos_blob_format_cb
-      umem_tx_begin
-      umem_tx_add_ptr
-      dbtree_open_inplace free_btr  vec_btr
-      dbtree_update
-      dbtree_create_inplace(DBTREE_CLASS_IV
-      umem_tx_abort(umem, rc) : umem_tx_commit 提交或终止
+    blob_hdr.bbh_blk_sz = VOS_BLK_SZ -> 块大小为4K
+    vea_format(&umem, vos_txd_get(flags & VOS_POF_SYSDB), &pool_df->pd_vea_df,VOS_BLK_SZ, VOS_BLOB_HDR_BLKS, nvme_sz, vos_blob_format_cb, &blob_hdr, false) -> 格式化分配器(带版本管理的盘区元数据分配器)
+        erase_md(umem, md) -> 如果魔术字存在且允许强制重新格式化,则销毁该元数据
+            dbtree_open_inplace
+            dbtree_destroy
+        (blk_sz && ((blk_sz % VEA_BLK_SZ) != 0 || blk_sz > (1U << 20))) -> 块大小必须4K对齐且不超过1MB
+        rc = cb(cb_data) -> vos_blob_format_cb
+        umem_tx_begin(umem, txd)
+        umem_tx_add_ptr(umem, md, sizeof(*md))
+        dbtree_create_inplace
+        dbtree_update(free_btr, &key, &val)
+        ...
+        return rc ? umem_tx_abort(umem, rc) : umem_tx_commit(umem) -> 提交或终止/回滚事务
+            pmemobj_tx_commit()
+            pmemobj_tx_end()
     pool_open(ph, pool_df, uuid, flags, poh) // 打开池
       pool_alloc(uuid, &pool)
         d_uhash_ulink_init(&pool->vp_hlink, &pool_uuid_hops) uuid hash tab
         D_INIT_LIST_HEAD(&pool->vp_gc_link)
         D_INIT_LIST_HEAD(&pool->vp_gc_cont)
-      vos_register_slabs(uma) 注册7个slab
+      bio_ioctxt_open(&pool->vp_dummy_ioctxt, vos_xsctxt_get(), pool->vp_id, true)
+        __bio_ioctxt_open(pctxt, xs_ctxt, uuid, 0, SMD_DEV_TYPE_DATA, SPDK_BLOBID_INVALID)
+      vos_register_slabs(uma) 注册7个slab -> 最新版已去掉该逻辑
         set_slab_prop(i, slab) slab->unit_size: 单个分配单元中的字节数。 单个分配最多可跨越 64 个单元（或在没有标头的情况下为 1 个）。 如果创建一个具有特定单元大小的分配类并强制它处理更大的大小，那么将使用多个单元。 例如，具有紧凑标头和 128 字节单元大小的分配类，对于 200 字节的请求，将创建一个包含 256 字节且跨越两个单元的内存块。 该分配的可用大小为 240 字节：2 * 128 - 16（标头）
           vos_tree_get_overhead(0, tclass, 0, &ovhd) 返回常量，可用于估计持久内存磁盘格式的元数据开销
             evt_overhead_get
@@ -4202,14 +4233,15 @@ tgt_vos_create_one
       bio_ioctxt_open 打开每个vos的io上下文
         D_INIT_LIST_HEAD(&ctxt->bic_link)
         bio_bs_hold 有nvme才执行
-        bio_blob_open
+        bio_blob_open(struct bio_io_context *ctxt, bool async, enum bio_mc_flags flags, enum smd_dev_type st, spdk_blob_id open_blobid)
+            ctxt->bic_blob = ba->bca_blob
       vea_load 从 SCM 加载空间跟踪信息以初始化内存中的复合索引
       vos_dedup_init
-        d_hash_table_create vp_dedup_hash
+        d_hash_table_create(D_HASH_FT_NOLOCK, 13, /* 8k buckets */ NULL, &dedup_hash_ops, &pool->vp_dedup_hash);
       pool_link
-        d_uhash_link_insert vos_pool_hhash_get
+        d_uhash_link_insert(vos_pool_hhash_get(pool->vp_sysdb), ukey, NULL, &pool->vp_hlink)
         vos_pool2hdl
-      vos_space_sys_init
+      vos_space_sys_init(pool) -> 初始化在VOS中保留的空间(系统空间)
         POOL_SCM_SYS
         get_frag_overhead
         gc_reserve_space(&pool->vp_space_sys[0]) gc保留
@@ -4225,10 +4257,11 @@ tgt_vos_create_one
         printf("Soft limit: %" PRIuMAX " bytes\n", (uintmax_t)cur_bytes);
         printf("Soft limit: %ju bytes\n", (uintmax_t)cur_bytes);
         mlock((void *)pool->vp_umm.umm_base, pool->vp_pool_df->pd_scm_sz) 锁内存, 保证范围 [ADDR,ADDR+LEN) 映射的所有整页都驻留在内存中(no swap)
-
-vos_blob_format_cb 写blob头
-  bio_ioctxt_open 创建一个上下文来获取blob
-  bio_ioctxt_close
+    vos_pmemobj_close(ph)
+        umempobj_close(pop)
+            pmemobj_close(pop)
+        bio_mc_close(store.stor_priv)
+            bio_ioctxt_close(bio_mc->mc_data)
 
 rsvc 复制服务
 架构, daos vos, daos元数据, 核心, daos基石
@@ -4499,22 +4532,30 @@ do {
 } while (0)
 
 
-
+VOS格式化Blob后的回调
 vos_blob_format_cb
-  bio_write_blob_hdr -> 完成设置 blob 标头并将信息写入 blob 偏移量 0。
-    bio_write -> 写入每个vos实例的blob
-      bio_rw
-        bio_rwv
-          bio_iod_post 提交io描述
-            dma_rw
-              nvme_rw
-                spdk_blob_io_write rw_completion
-                  blob_request_submit_op
-                    blob_request_submit_op_single
-                      bs_batch_write_dev
-                        blob_bdev->bs_dev.write
-                        bdev_blob_write
-                          spdk_bdev_write_blocks
+    bio_ioctxt_open(&ioctxt, xs_ctxt, blob_hdr->bbh_pool, false)
+    bio_write_blob_hdr -> 完成设置 blob 标头并将信息写入 blob 偏移量 0。
+        bio_write -> 写入每个vos实例的blob
+        bio_rw
+            bio_rwv
+            bio_iod_post 提交io描述
+                dma_rw
+                    nvme_rw(struct bio_desc *biod, struct bio_rsrvd_region *rg)
+                        xs_ctxt = biod->bd_ctxt->bic_xs_ctxt;
+                        blob = biod->bd_ctxt->bic_blob;
+                        channel = bxb->bxb_io_channel;
+                        payload = rg->brr_chk->bdc_ptr + (rg->brr_pg_idx << BIO_DMA_PAGE_SHIFT)
+                        pg_idx = rg->brr_off >> BIO_DMA_PAGE_SHIFT
+                        pg_cnt = (rg->brr_end + BIO_DMA_PAGE_SZ - 1) >> BIO_DMA_PAGE_SHIFT
+                        spdk_blob_io_write(blob, channel, payload, page2io_unit(biod->bd_ctxt, pg_idx, BIO_DMA_PAGE_SZ), page2io_unit(biod->bd_ctxt, rw_cnt, BIO_DMA_PAGE_SZ), rw_completion, biod)
+                        blob_request_submit_op
+                            blob_request_submit_op_single
+                            bs_batch_write_dev
+                                blob_bdev->bs_dev.write
+                                bdev_blob_write
+                                spdk_bdev_write_blocks
+    bio_ioctxt_close(ioctxt)                                
 
 
 rw_completion(void *cb_arg, int err)
@@ -4673,7 +4714,7 @@ check_short_read_cb
 daos_opc_t
 dc_funcs[opc].task_func 客户端方法数组
 
-dc_obj_update_task(tse_task_t *task) DAOS_OPC_OBJ_UPDATE 写
+dc_obj_update_task(tse_task_t *task) DAOS_OPC_OBJ_UPDATE 写 -> 客户端更新对象(写/改对象)的任务
   obj_req_valid(task, args, DAOS_OBJ_RPC_UPDATE
     obj_auxi = tse_task_stack_push(task, sizeof(*obj_auxi)) -> 将任务压栈
       pushed_ptr = dtp->dtp_buf + sizeof(dtp->dtp_buf) - dtp->dtp_stack_top
@@ -4777,10 +4818,11 @@ dc_obj_update_task(tse_task_t *task) DAOS_OPC_OBJ_UPDATE 写
     tse_task_register_comp_cb(task, obj_comp_cb, NULL, 0)
     obj_csum_update(obj, args, obj_auxi)
     obj_rw_bulk_prep(obj, args->iods, args->sgls, args->nr, true, obj_auxi->req_tgts.ort_srv_disp, task, obj_auxi) -> 准备读写大块数据
-      daos_sgls_packed_size -> 内联提取需要将 sqls 缓冲区打包到 RPC 中，因此使用它来检查是否需要批量传输
-      obj_bulk_prep
-        crt_bulk_create
-        crt_bulk_bind -> 将批量句柄绑定到本地上下文，将本地上下文的源地址与批量句柄关联起来。 它可用于将批量句柄从一台服务器转发/共享到另一台服务器，在这种情况下，批量句柄的原始地址可以即时序列化/反序列化。 示例用法：客户端向服务器 A 发送嵌入批量句柄的 RPC 请求，服务器 A 将客户端批量句柄转发到另一台服务器 B。对于该用法，客户端应调用此 API 将批量句柄与其本地上下文绑定 因此，当服务器B收到服务器A转发的反序列化的批量句柄时，服务器B就可以知道客户端的原始地址来进行批量传输。 用户应注意，绑定批量句柄会增加序列化的额外开销，因此建议谨慎使用。 在源上绑定批量句柄时，应使用 crt_bulk_bind_transfer()，因为源地址信息嵌入在句柄中
+      sgls_size = daos_sgls_packed_size(sgls, nr, NULL) -> 计算sgl大小, 内联提取需要将 sqls 缓冲区打包到 RPC 中，因此使用它来检查是否需要批量传输(bulk)
+      if (sgls_size >= DAOS_BULK_LIMIT || (obj_is_ec(obj) && !obj_auxi->reasb_req.orr_single_tgt)) -> 如果所有SGL总长度达到19K(1k留给header), 或者对象是EC模式且不是对单个tgt下发的EC_SGL重组请求, 则需要使用BULK传输
+        obj_bulk_prep(sgls, nr, bulk_bind, bulk_perm, task, &obj_auxi->bulks)
+            crt_bulk_create(daos_task2ctx(task), &sgls[i], bulk_perm, &bulks[i]) -> 针对每个SGL, 创建1个BULK, 得到bulk的指针数组和bulk个数
+            crt_bulk_bind -> 将批量句柄绑定到本地上下文，将本地上下文的源地址与批量句柄关联起来。 它可用于将批量句柄从一台服务器转发/共享到另一台服务器，在这种情况下，批量句柄的原始地址可以即时序列化/反序列化。 示例用法：客户端向服务器 A 发送嵌入批量句柄的 RPC 请求，服务器 A 将客户端批量句柄转发到另一台服务器 B。对于该用法，客户端应调用此 API 将批量句柄与其本地上下文绑定 因此，当服务器B收到服务器A转发的反序列化的批量句柄时，服务器B就可以知道客户端的原始地址来进行批量传输。 用户应注意，绑定批量句柄会增加序列化的额外开销，因此建议谨慎使用。 在源上绑定批量句柄时，应使用 crt_bulk_bind_transfer()，因为源地址信息嵌入在句柄中
     obj_req_fanout(obj, obj_auxi, dkey_hash, map_ver, epoch, shard_rw_prep, dc_obj_shard_rw, task) -> 扇出 shard_io_cb = io_cb = dc_obj_shard_rw
 
 
@@ -4799,6 +4841,8 @@ ds_obj_rw_handler(crt_rpc_t *rpc) -> 服务端对象读写处理器(DAOS_OBJ_RPC
   obj_local_rw 本地读写
   ...
   rc = dtx_leader_exec_ops(dlh, obj_tgt_update, NULL, 0, &exec_arg)
+    dtx_leader_exec_ops_ult(void *arg)
+        ult_arg->func(dlh, ult_arg->func_arg, i, dtx_sub_comp_cb) -> obj_tgt_update
 
 
 创建任务, daos_task_create
@@ -4863,7 +4907,7 @@ dfuse_start
 
 
 
-dc_obj_shard_rw 客户端对象分片读写(读写对象分片)
+dc_obj_shard_rw 客户端对象分片读写(读写对象分片), 封装对象读写参数/BULK等(orw)
     crt_rpc_t		*req = NULL -> 声明cart请求/RPC请求
     struct obj_rw_in	*orw -> 对象读写RPC输入参数
     dc_cont2uuid(shard->do_co, &cont_hdl_uuid, &cont_uuid) -> 设置容器uuid
@@ -4876,6 +4920,11 @@ dc_obj_shard_rw 客户端对象分片读写(读写对象分片)
     uuid_copy
     daos_dti_copy 拷贝dtx_id
     orw... > 填充容器读写结构体
+    if (args->bulks != NULL) -> 填充BULK数量和指针数组
+        orw->orw_sgls.ca_count = 0;
+        orw->orw_sgls.ca_arrays = NULL;
+        orw->orw_bulks.ca_count = nr;
+        orw->orw_bulks.ca_arrays = args->bulks;
     跳过ec逻辑
     tse_task_register_comp_cb(task, dc_rw_cb -> 注册容器读写任务回调
     daos_rpc_send
@@ -6224,6 +6273,9 @@ tse_task_buf_embedded 给task嵌入指定大小的参数, 返回参数地址, �
 
 
 ------------------ vos --------------------------
+API及头文件: src/include/daos_srv/vos.h
+类型定义: src/include/daos_srv/vos_types.h
+
 所有单元测试: run_all_tests(int keys), 化身日志, 
 
 agg -> 聚合测试 -> ./vos_tests -a -> main
@@ -6640,6 +6692,8 @@ uint32_t	cio_max_unexpected_size;
 /** Size of (un)expected Mercury buffers */ 默认预期和非预期大小是20K, bulk阈值
 #define DAOS_RPC_SIZE  (20480) /* 20KiB */
 crt_gdata.cg_iv_inline_limit = ops->cio_max_expected_size - 1024; 20K-1K = 19K
+
+#define DAOS_BULK_LIMIT	(DAOS_RPC_SIZE - 1024) /* Reserve 1KiB for headers */ -> BULK阈值为19KB
 
 
 
@@ -7397,3 +7451,406 @@ enum {
 	DSS_POOL_GENERIC,
 	DSS_POOL_CNT,
 };
+
+
+
+crc:
+
+meta_csum_init(struct bio_meta_context *mc, uint16_t csum_type)
+
+daos_csummer_init(struct daos_csummer **obj, struct hash_ft *ft, size_t chunk_bytes, bool srv_verify)
+
+struct hash_ft crc64_algo = {
+	.cf_update	= crc64_update,
+	.cf_init	= crc64_init,
+	.cf_reset	= crc64_reset,
+	.cf_destroy	= crc64_destroy,
+	.cf_finish	= crc64_finish,
+	.cf_hash_len	= sizeof(uint64_t),
+	.cf_name	= "crc64",
+	.cf_type	= HASH_TYPE_CRC64
+};
+
+crc(uint64_t data, uint32_t init_val) -> 这对于 Jump_map 放置以伪随机排列彼此相似的输入键很有用。 这极大地提高了输出布局分布的均匀度
+    crc64_ecma_refl(init_val, (uint8_t *)&data, sizeof(data))
+        crc64_ecma_refl_base(seed, buf, len) -> isal -> 以反射格式从 ECMA-182 标准生成 CRC，运行适当的版本。 该函数确定启用哪些指令集并在运行时选择适当的版本。 返回：64 位 CRC
+        build/external/debug/isal/crc/crc64_base.c
+uint64_t crc64_ecma_refl_base(uint64_t seed, const uint8_t * buf, uint64_t len)
+{
+	uint64_t i, crc = ~seed;
+
+	for (i = 0; i < len; i++) {
+		uint8_t byte = buf[i];
+		crc = crc64_ecma_refl_table[(uint8_t) crc ^ byte] ^ (crc >> 8);
+	}
+
+	return ~crc;
+}
+static const uint64_t crc64_ecma_refl_table[256] ...
+
+
+
+
+crc64_update(void *daos_mhash_ctx, uint8_t *buf, size_t buf_len) -> Johann Lombardi，3 年前（2020 年 9 月 17 日下午 5:17）DAOS-5605 常见：为 QAT 添加基本基础设施（#3402）引入压缩和密码算法接口以及支持压缩和加密的容器属性。 引入一个仅用于哈希函数的新接口（称为 multihash，因为 Gurt 已将哈希用于哈希表）并使其独立于 csummer 接口。 所有 ISA-L 函数都移至特定文件，以便我们最终可以支持不同的实现（例如 QAT）。 删除 mchecksum 支持，因为不再使用它
+
+基础算法测试: test_all_algo_basic
+    dts_sgl_init_with_strings(&sgl, 1, "Data");
+    daos_csummer_init(&csummer, daos_mhash_type2algo(type), 128, 0) -> 内存块大小为128B
+        result->dcs_algo->cf_init(&result->dcs_ctx) -> crc32_init(void **daos_mhash_ctx)
+    daos_csummer_calc_iods(csummer, &sgl, &iod, NULL, 1, 0, NULL, 0, &csums1)
+        daos_csummer_alloc_iods_csums
+        daos_csummer_calc_for_iov
+            daos_csummer_reset(csummer)
+            daos_csummer_update(csummer, iov->iov_buf, iov->iov_len)
+                obj->dcs_algo->cf_update(obj->dcs_ctx, buf, buf_len) -> crc32_update | crc64_update -> spdk项目中使用前者: https://github.com/spdk/spdk/blob/master/lib/util/crc32c.c, 后者是在isal库中
+            daos_csummer_finish(csummer)            
+        calc_csum_recx
+        calc_csum_sv
+    daos_csummer_get_csum_len(csummer)
+    daos_csummer_calc_iods(csummer, &sgl, &iod, NULL, 1, 0, NULL, 0, &csums2)
+    daos_csummer_get_csum_len(csummer)
+    print_checksum(csummer, &csums1->ic_akey)
+    daos_csummer_destroy(&csummer)
+
+crc32_iscsi
+
+
+DAOS 支持的校验和类型。 主要用于查找用于 csummer 的适当算法函数: 
+enum DAOS_HASH_TYPE {
+	HASH_TYPE_UNKNOWN = 0,
+
+	HASH_TYPE_CRC16	= 1,
+	HASH_TYPE_CRC32	= 2,
+	HASH_TYPE_CRC64	= 3,
+	HASH_TYPE_SHA1	= 4,
+	HASH_TYPE_SHA256 = 5,
+	HASH_TYPE_SHA512 = 6,
+	HASH_TYPE_ADLER32 = 7,
+
+	HASH_TYPE_END	= 8,
+	HASH_TYPE_NOOP = 9, /* Should not be used in real systems */
+};
+
+
+IO测试:
+run_io_test
+cmocka_run_group_tests_name(test_name, io_tests, setup_io, teardown_io) -> static const struct CMUnitTest io_tests[]
+io_simple_one_key
+    io_update_and_fetch_dkey -> io_update_and_fetch_dkey(arg, 1, 1) -> epoch = 1
+        hash_key(&dkey, is_daos_obj_type_set(arg->otype, DAOS_OT_DKEY_UINT64))
+        io_test_obj_update(arg, update_epoch, 0, &dkey, &iod, &sgl, NULL, true)
+        io_test_obj_fetch(arg, fetch_epoch, 0, &dkey, &iod, &sgl, true)
+io_simple_punch
+
+
+
+io_simple_one_key_cross_container -> 跨容器
+
+
+
+
+
+计算hash:
+uint32_t
+d_hash_string_u32(const char *string, unsigned int len)
+{
+	uint32_t result = 5381;
+	const unsigned char *p;
+
+	p = (const unsigned char *) string;
+
+	for (; len > 0; len--) {
+		result = (result << 5) + result + *p;
+		++p;
+	}
+	return result;
+}
+
+
+
+计算sgl大小:
+daos_size_t
+daos_sgls_packed_size(d_sg_list_t *sgls, int nr, daos_size_t *buf_size)
+{
+	daos_size_t size = 0;
+	int i;
+
+	if (sgls == NULL) {
+		if (buf_size != NULL)
+			*buf_size = 0;
+		return 0;
+	}
+
+	size = daos_sgls_buf_size(sgls, nr);
+	if (buf_size != NULL)
+		*buf_size = size;
+
+	for (i = 0; i < nr; i++) {
+		size += sizeof(sgls[i].sg_nr) + sizeof(sgls[i].sg_nr_out);
+		size += sgls[i].sg_nr * (sizeof(sgls[i].sg_iovs[0].iov_len) +
+				sizeof(sgls[i].sg_iovs[0].iov_buf_len));
+	}
+
+	return size;
+}
+
+
+
+daos_obj_update(daos_handle_t oh, daos_handle_t th, uint64_t flags, daos_key_t *dkey, unsigned int nr, daos_iod_t *iods, d_sg_list_t *sgls, daos_event_t *ev) -> 插入或更新存储在数组中的对象记录。
+参数：
+oh – 对象打开句柄。
+th – 用于更新的可选事务句柄。 将 DAOS_TX_NONE 用于独立事务。
+flags – 更新标志（条件操作）。
+dkey – 与更新操作关联的分发密钥。
+nr – 分别在 iods 和 sqls 中的描述符和分散/聚集列表的数量。
+iods – I/O 描述符数组。 每个描述符都与一个由其键标识的数组相关联，并描述要更新的记录范围列表。 每个记录范围的校验和存储在 iods[]::iod_csums[] 中。 如果范围的记录大小为零，则它实际上是指定索引范围的打孔。
+sqls – 分散/聚集列表 (sql)，用于存储输入数据记录。 每个I/O描述符在sqls中拥有一个单独的sgl。 同一盘区的不同记录可以存储在 sgl 的单独 iod 中，也可以连续存储在任意 iod 中，只要总缓冲区大小可以与总盘区大小匹配即可。
+ev – 完成事件，可选且可以为 NULL。 如果 ev 为 NULL，函数将以阻塞模式运行。
+返回：
+在非阻塞模式下，ev::ev_error 将返回这些值： 0 成功 -DER_NO_HDL 无效的对象打开句柄 -DER_INVAL 无效的参数 -DER_REC2BIG 记录大于输入 sqls 缓冲区中的缓冲区。 -DER_NO_PERM 权限被拒绝 -DER_UNREACH 网络无法访问 -DER_EP_RO Epoch 是只读的 -DER_EP_OLD 相关 RPC 重发太晚，因为相关重发历史记录可能已聚合。 更新结果未定义。
+
+
+ds_obj_tgt_update_handler(crt_rpc_t *rpc) -> 引擎IO, DAOS_Engine_IO(ServerObjIO) 引擎IO/服务端对象读写IO
+struct obj_rw_in		*orw = crt_req_get(rpc)
+struct obj_rw_out		*orwo = crt_reply_get(rpc)
+...
+dtx_begin
+obj_local_rw(rpc, &ioc, dth) -> obj_local_rw_internal(rpc, ioc, iods, csums, offs, skips, nr, dth)
+    if (obj_rpc_is_update(rpc)) -> 写IO
+        ...
+    else -> 读IO
+    vos_fetch_begin
+    if (get_parity_list)
+        daos_recx_ep_list_merge(parity_list, iods_nr) -> 合并校验数据(两层for循环遍历)
+        if (rma) -> 如果是远程内存访问
+            obj_set_reply_nrs(rpc, ioh, NULL, skips) -> 将 nrs 打包在回复中的 sgls 中，以便客户端可以在返回到应用程序之前更新 sgls。 在回复中打包sgl的数据大小，客户端fetch可以根据它来更新sql的iov_len
+        else -> 本地访问
+            obj_prep_fetch_sgls(rpc, ioc)
+    bio_iod_prep
+    if (rma)
+        obj_bulk_transfer(rpc, bulk_op, bulk_bind, orw->orw_bulks.ca_arrays, offs, skips, ioh, NULL, iods_nr, NULL, ioc->ioc_coh) -> 将IO从客户端拉取到io控制器(ioh)
+    else
+        bio_iod_copy    
+    bio_iod_post_async(biod, rc)
+    obj_rw_complete(rpc, ioc, ioh, rc, dth) -> 读写引擎对象完成
+dtx_end
+obj_rw_reply(rpc, rc, 0, &ioc) -> 回复客户端
+
+
+
+
+
+
+
+DAOS的IO记录列表(包含epoch)
+struct daos_recx_ep_list {
+	/** #valid items in re_items array */
+	uint32_t		 re_nr;
+	/** #total items (capacity) in re_items array */
+	uint32_t		 re_total;
+	/** recovery from snapshot flag */
+	bool			 re_snapshot;
+	/** epoch valid flag, re_items' re_ep can be ignored when it is false */
+	bool			 re_ep_valid;
+	struct daos_recx_ep	*re_items;
+};
+DAOS-2448 vos：为 EC 降级获取添加影子扩展/纪元 (#2108)，为 EC 降级获取添加 VOS 级别影子相关处理，它将用作：
+1. 客户端向奇偶校验目标发送降级的获取请求。
+2. 在奇偶校验服务器上 - 查询奇偶校验空间以获取存在的奇偶校验扩展为影子。 获取数据空间，以及上面步骤中获得的影子列表。 将shadow上面的数据传回，并回复recx_list@shadow。
+3. 如果recx_list@shadow非空，客户端需要恢复/重建丢失的数据。
+
+
+块IO描述符
+struct bio_desc {
+    ...
+    struct bio_sglist	 bd_sgls[0]
+}
+
+每个VOS实例关联的IO上下文
+/* Per VOS instance I/O context */
+struct bio_io_context {
+	d_list_t		 bic_link; /* link to bxb_io_ctxts */
+	struct spdk_blob	*bic_blob; // SPDK的BLOB
+	struct bio_xs_blobstore	*bic_xs_blobstore;
+	struct bio_xs_context	*bic_xs_ctxt;
+	uint32_t		 bic_inflight_dmas;
+	uint32_t		 bic_io_unit;
+	uuid_t			 bic_pool_id;
+	unsigned int		 bic_opening:1,
+				 bic_closing:1,
+				 bic_dummy:1;
+};
+
+
+
+内存模块: src/common/mem.c
+
+内存类型: 
+typedef enum {
+	/** volatile memory */
+	UMEM_CLASS_VMEM,
+	/** persistent memory */
+	UMEM_CLASS_PMEM,
+	/** persistent memory but ignore PMDK snapshot */
+	UMEM_CLASS_PMEM_NO_SNAP,
+	/** blob backed memory */
+	UMEM_CLASS_BMEM,
+	/** ad-hoc memory */
+	UMEM_CLASS_ADMEM,
+	/** unknown */
+	UMEM_CLASS_UNKNOWN,
+} umem_class_id_t;
+
+
+内存中的元数据上下文:
+/* In-memory Meta context, exported as opaque data structure */
+struct bio_meta_context {
+	struct bio_io_context	*mc_data;	/* Data blob I/O context */
+	struct bio_io_context	*mc_meta;	/* Meta blob I/O context */
+	struct bio_io_context	*mc_wal;	/* WAL blob I/O context */
+	struct meta_header	 mc_meta_hdr;	/* Meta blob header */
+	struct wal_super_info	 mc_wal_info;	/* WAL blob super information */
+	struct hash_ft		*mc_csum_algo;
+	void			*mc_csum_ctx;
+};
+
+全局默认blobstore的集群大小为1GB
+nvme_glb.bd_bs_opts.cluster_sz = (1UL << 30);	/* 1GB */
+
+每个IO通道的最大并发飞行的blob个数为4096, 用于初始化SPDK
+/* Max in-flight blob IOs per io channel */
+#define BIO_BS_MAX_CHANNEL_OPS	(4096)
+
+一个IO通道超过2048个 blob IO 在排队等待时, 启动/调度NVMe开始轮询
+/* Schedule a NVMe poll when so many blob IOs queued for an io channel */
+#define BIO_BS_POLL_WATERMARK	(2048) -> bio_need_nvme_poll
+
+协程调度器最近的优化:
+DAOS-3745 iosrv：改进服务器调度程序（#1646），改进 iosrv 调度程序：
+- 根据ULT作业类型重新定义ABT池，基本上相同优先级的ULT将被放入同一个ABT池中；
+- 在原始调度程序中，无论当前 IO 工作负载如何，重建 ULT 始终有 30% 的机会被调度，此补丁已修复；
+- 调度程序现在能够控制网络和 NVMe 轮询的频率，并根据请求/IO 统计数据或空间压力动态限制某些类型的 ULT；
+代码清理：
+- 将调度程序代码移至 sched.c
+- 将线程集合 & ult 创建代码移至 ult.c 中；
+- 将 ABT 池定义从 daos_server.h 移至 srv_internal.h；
+待办：
+- 修改 dss_srv_handler() 使其成为纯网络轮询 ULT；
+- 根据请求/IO统计调整硬件轮询频率；
+- 对空间压力进行节流 IO ULT；
+
+...
+dss_sched_init(struct dss_xstream *dx)
+    .run	= sched_run, -> sched_run(ABT_sched sched)
+        while (1)
+            unit = sched_pop_net_poll(data, pool)
+            unit = sched_pop_nvme_poll(data, pool)
+                if (!need_nvme_poll(dx, cycle)) -> need_nvme_poll(struct dss_xstream *dx, struct sched_cycle *cycle)
+                    return bio_need_nvme_poll(dmi->dmi_nvme_ctxt)
+                       if (bxb && bxb->bxb_blob_rw > BIO_BS_POLL_WATERMARK) -> 如果当前协程对应的blobstore飞行中的读写IO个数超过2048个, 则开启nvme轮训
+                ret = ABT_pool_pop(pool, &unit)    
+            ...
+
+当排队的blob IO超过4000个时, 停止下发新的blob IO
+/* Stop issuing new IO when queued blob IOs reach a threshold */
+#define BIO_BS_STOP_WATERMARK	(4000) -> drain_inflight_ios
+
+...
+nvme_rw(struct bio_desc *biod, struct bio_rsrvd_region *rg) -> 读写NVME
+    while (pg_cnt > 0)
+        drain_inflight_ios(xs_ctxt, bxb) -> 读写IO前, 如果排队的blob IO超过4000个,则驱动spdk轮询或周期性让出CPU, 直到排队IO降低到水位线以下
+            do {
+                if (ctxt->bxc_self_polling)
+                    spdk_thread_poll(ctxt->bxc_thread, 0, 0);
+                else
+                    bio_yield(NULL);
+            } while (bxb->bxb_blob_rw >= BIO_BS_STOP_WATERMARK);
+...
+
+
+blob元数据头:
+/* Meta blob header */
+struct meta_header {
+	uint32_t	mh_magic;
+	uint32_t	mh_version;
+	uuid_t		mh_meta_devid;		/* Meta SSD device ID */
+	uuid_t		mh_wal_devid;		/* WAL SSD device ID */
+	uuid_t		mh_data_devid;		/* Data SSD device ID */
+	uint64_t	mh_meta_blobid;		/* Meta blob ID */
+	uint64_t	mh_wal_blobid;		/* WAL blob ID */
+	uint64_t	mh_data_blobid;		/* Data blob ID */
+	uint32_t	mh_blk_bytes;		/* Block size for meta, in bytes */
+	uint32_t	mh_hdr_blks;		/* Meta blob header size, in blocks */
+	uint64_t	mh_tot_blks;		/* Meta blob capacity, in blocks */
+	uint32_t	mh_vos_id;		/* Associated per-engine target ID */
+	uint32_t	mh_flags;		/* Meta header flags */
+	uint32_t	mh_padding[5];		/* Reserved */
+	uint32_t	mh_csum;		/* Checksum of this header */
+};
+
+
+
+
+VOS函数操作表
+struct umem_store_ops vos_store_ops = {
+	.so_load	= vos_meta_load,
+	.so_read	= vos_meta_readv,
+	.so_write	= vos_meta_writev,
+	.so_flush_prep	= vos_meta_flush_prep,
+	.so_flush_copy	= vos_meta_flush_copy,
+	.so_flush_post	= vos_meta_flush_post,
+	.so_wal_reserv	= vos_wal_reserve,
+	.so_wal_submit	= vos_wal_commit,
+	.so_wal_replay	= vos_wal_replay, -> 重放预写日志
+	.so_wal_id_cmp	= vos_wal_id_cmp,
+};
+
+
+内存池中的缓存大小:
+#define UMM_SLABS_CNT 16
+/** Define common slabs.  We can refine this for 2.4 pools but that is for next patch */
+static const int        slab_map[] = {
+    0,          /* 32 bytes */
+    1,          /* 64 bytes */
+    2,          /* 96 bytes */
+    3,          /* 128 bytes */
+    4,          /* 160 bytes */
+    5,          /* 192 bytes */
+    6,          /* 224 bytes */
+    7,          /* 256 bytes */
+    8,          /* 288 bytes */
+    -1, 9,      /* 352 bytes */
+    10,         /* 384 bytes */
+    11,         /* 416 bytes */
+    -1, -1, 12, /* 512 bytes */
+    -1, 13,     /* 576 bytes (2.2 compatibility only) */
+    -1, -1, 14, /* 672 bytes (2.2 compatibility only) */
+    -1, -1, 15, /* 768 bytes (2.2 compatibility only) */
+};
+
+
+Durable format for VOS pool VOS池的持久格式
+struct vos_pool_df
+
+
+每个VOS池关联的SPDK Blob的头部信息
+/**
+ * Header for SPDK blob per VOS pool
+ */
+struct bio_blob_hdr {
+	uint32_t	bbh_magic;
+	uint32_t	bbh_blk_sz;
+	uint32_t	bbh_hdr_sz; /* blocks reserved for blob header */
+	uint32_t	bbh_vos_id; /* service xstream id */
+	uint64_t	bbh_blob_id;
+	uuid_t		bbh_blobstore;
+	uuid_t		bbh_pool;
+};
+
+
+/**
+ * VOS pool (DRAM) 内存中的VOS池结构
+ */
+struct vos_pool
+
+
