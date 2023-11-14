@@ -335,6 +335,21 @@ strace -o xxx.log -fff exec -f config_file
 
 
 ---------- ec ----------
+分片读写参数
+struct shard_rw_args {
+	struct shard_auxi_args	 auxi;
+	d_sg_list_t		*sgls_dup;
+	struct dtx_id		 dti;
+	crt_bulk_t		*bulks;
+	struct obj_io_desc	*oiods;
+	uint64_t		*offs;
+	struct dcs_csum_info	*dkey_csum;
+	struct dcs_iod_csums	*iod_csums;
+	struct obj_reasb_req	*reasb_req;
+};
+
+
+
 参考: DaosObjectClass.java, DaosObjectType.java
 oclass: 对象类型(object class), 具有明确布局的副本对象, 第一个数字是副本数，G后面的数字代表冗余组的数量
 2G1 : 2个副本, 分布在冗余组1
@@ -436,7 +451,8 @@ OC_EC_8P1G6  = OBJ_CLASS_DEF(OR_RS_8P1, 6ULL),
 OC_EC_8P2G6  = OBJ_CLASS_DEF(OR_RS_8P2, 6ULL),
 
 
-ec相关的宏:
+ec相关的宏: 
+src/include/daos/common.h
 #define daos_sgl_move(sgl, iov_idx, iov_off, move_dist) -> 将 sgl 从 iov_idx/iov_off 向前移动，距离为 move_dist, 调用者需要检查边界, 返回索引和偏移
 #define daos_sgl_next_iov(iov_idx, iov_off)
 #define daos_iov_left(sgl, iov_idx, iov_off)
@@ -1673,10 +1689,6 @@ shard_query_key_task
 
 daos_task_create(DAOS_OPC_OBJ_QUERY_KEY
 
-
-dc_obj_open_task_create
-  dc_task_create(dc_obj_open, "obj open")
-  
 
 
 
@@ -4722,7 +4734,8 @@ dc_obj_update_task(tse_task_t *task) DAOS_OPC_OBJ_UPDATE 写 -> 客户端更新�
     dc_io_epoch_set(epoch, opc)
     tse_task_stack_pop -> 将任务从栈上弹出来
       poped_ptr = dtp->dtp_buf + sizeof(dtp->dtp_buf) - dtp->dtp_stack_top
-  dc_tx_attach(args->th, obj, DAOS_OBJ_RPC_UPDATE, task) 如果事务有效(hdl.cookie == 1), 则走dtx
+  if (daos_handle_is_valid(args->th))
+    dc_tx_attach(args->th, obj, DAOS_OBJ_RPC_UPDATE, task) 如果事务有效(hdl.cookie == 1), 则走分布式事务(dtx)
   return dc_obj_update(task, &epoch, map_ver, args, obj) -> 提交对象更新
     obj_task_init(task, DAOS_OBJ_RPC_UPDATE, map_ver, args->th, &obj_auxi, obj)
       obj_task_init_common(task, opc, map_ver, th, auxi, obj)
@@ -4731,7 +4744,7 @@ dc_obj_update_task(tse_task_t *task) DAOS_OPC_OBJ_UPDATE 写 -> 客户端更新�
         obj_auxi->is_ec_obj = obj_is_ec(obj) -> 设置EC对象标志
       tse_task_register_comp_cb(task, obj_comp_cb, NULL, 0) -> 为任务注册对象完成回调, 弹出任务参数, 重试, 错误处理等
       ----------------------
-    obj_update_sgls_dup(obj_auxi, args) -> 用户可能提供 iov_len < iov_buf_len 的 sql，这可能会给内部处理带来一些麻烦，例如 crt_bulk_create/daos_iov_left() 总是使用 iov_buf_len。 对于这种情况，我们复制 sql 并使其 iov_buf_len = iov_len
+    obj_update_sgls_dup(obj_auxi, args) -> 复制SGL, 用户可能提供 iov_len < iov_buf_len 的 sgl，这可能会给内部处理带来一些麻烦，例如 crt_bulk_create/daos_iov_left() 总是使用 iov_buf_len。 对于这种情况，我们复制 sql 并使其 iov_buf_len = iov_len
     obj_auxi->dkey_hash = obj_dkey2hash(obj->cob_md.omd_id, args->dkey) -> 比如为1
     if (obj_is_ec(obj)) -> 如果是EC对象(对象类属性上的封装方法为 DAOS_RES_EC ), 则重新组装对象写请求
       obj_rw_req_reassemb(obj, args, NULL, obj_auxi) -> 配置了EC的对象需要重新组装, 对象的读写请求
@@ -4744,7 +4757,7 @@ dc_obj_update_task(tse_task_t *task) DAOS_OPC_OBJ_UPDATE 写 -> 客户端更新�
             ...    
         obj_ec_req_reasb(obj, args->iods, obj_auxi->dkey_hash, args->sgls, reasb_req, args->nr, obj_auxi->opc == DAOS_OBJ_RPC_UPDATE);
             for (i = 0; i < iod_nr; i++)
-                obj_ec_singv_req_reasb
+                obj_ec_singv_req_reasb -> 对单个IO向量进行重组
                     ec_recx_array->oer_k = oca->u.ec.e_k
                     ec_recx_array->oer_p = oca->u.ec.e_p
                     if (obj_ec_singv_one_tgt(iod->iod_size, sgl, oca))
@@ -4761,7 +4774,7 @@ dc_obj_update_task(tse_task_t *task) DAOS_OPC_OBJ_UPDATE 写 -> 客户端更新�
                     obj_ec_singv_encode(codec, oca, iod, sgl, ec_recx_array) -> DAOS-7539 EC：自定义 EC 单元大小 (#5832)，用户可以通过池或容器属性指定 EC 单元大小，DAOS_PROP_PO_EC_CELL_SZ，设置池的默认 EC 单元大小，DAOS_PROP_CO_EC_CELL_SZ，设置容器的默认 EC 单元大小，如果是 EC 为池和容器都设置了单元格大小，然后容器的值会覆盖池的值。 此补丁将 EC 单元大小从属性应用到客户端 EC 堆栈、服务器 I/O 处理程序、数据迁移服务和 EC 聚合服务。 - EC单元大小应为4K的倍数且小于1MB，默认单元大小仍为1MB，后续应更改修补
                         obj_ec_pbufs_init(recxs, c_bytes)
                         obj_ec_recx_encode(codec, oca, iod, sgl, recxs) -> 编码满条带
-                            for (i = 0; i < recx_nr; i++)
+                            for (i = 0; i < recx_nr; i++) -> 为EC满条带计算校验片, /* calculate EC parity for each full_stripe */, 遍历条带个数
                                 obj_ec_stripe_encode(iod, sgl, iov_idx, iov_off, codec, oca, cell_bytes, parity_buf)
                                     ec_encode_data(cell_bytes, k, p, codec->ec_gftbls, data, parity_bufs) -> ec编码, isa-l 中 ec_init_tables() 的用途: https://blog.csdn.net/choumin/article/details/126898021
                     d_sgl_init(r_sgl, sgl->sg_nr + obj_ec_parity_tgt_nr(oca)) -> 重组sgl
@@ -4793,6 +4806,9 @@ dc_obj_update_task(tse_task_t *task) DAOS_OPC_OBJ_UPDATE 写 -> 客户端更新�
       req_tgts->ort_shard_tgts = req_tgts->ort_tgts_inline -> 分片目标数组，包含 (ort_grp_nr * ort_grp_size) 个目标。 如果#targets <= OBJ_TGT_INLINE_NR 那么它指向ort_tgts_inline。 在数组中，[0, ort_grp_size - 1] 表示第一组，[ort_grp_size, ort_grp_size * 2 - 1] 表示第二组，依此类推。 如果 (ort_srv_disp == 1)，则在每个组中，第一个目标是领导分片，后面的 (ort_grp_size - 1) 目标是前向非领导分片。 现在只有一种情况 (ort_grp_nr > 1) 用于对象打孔，所有其他情况均为 (ort_grp_nr == 1)
       obj_shard_tgts_query -> 分片目标查询
     obj_csum_update
+        dc_obj_csum_update
+            daos_csummer_calc_iods
+                daos_csummer_calc_for_iov
     -------------------
     obj_req_get_tgts 获取对象对应的目标
       obj_dkey2grpmemb
@@ -5275,8 +5291,6 @@ shard_query_key_task
 daos_task_create(DAOS_OPC_OBJ_QUERY_KEY
 
 
-dc_obj_open_task_create
-  dc_task_create(dc_obj_open, "obj open")
   
 
 
@@ -6896,7 +6910,7 @@ typedef struct {
 
 
 sgl操作:
-obj_update_sgls_dup
+obj_update_sgls_dup 复制SGL
 d_sgl_init
 d_sgl_buf_copy -> src/include/gurt/common.h
 
@@ -6907,7 +6921,7 @@ d_sgl_buf_copy -> src/include/gurt/common.h
 #define isset(a,i)      ((a)[(i)/NBBY] & (1<<((i)%NBBY)))
 #define isclr(a,i)      (((a)[(i)/NBBY] & (1<<((i)%NBBY))) == 0)
 
-/* Macros for counting and rounding.  */
+/* Macros for counting and rounding.  向上对齐 */
 #ifndef howmany
 # define howmany(x, y)  (((x) + ((y) - 1)) / (y))
 #endif
@@ -6920,7 +6934,7 @@ d_sgl_buf_copy -> src/include/gurt/common.h
 #endif
 #define powerof2(x)     ((((x) - 1) & (x)) == 0)
 
-/* Macros for min/max.  */
+/* Macros for min/max.  两者最小/最大 */
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
@@ -7957,4 +7971,110 @@ enum {
 	ACTION(VOS_TS_TYPE_DKEY,	"dkey",		128 * 1024)	\
 	ACTION(VOS_TS_TYPE_AKEY,	"akey",		512 * 1024)
 
-    
+
+
+容器相关接口: src/include/daos_cont.h
+daos_cont_create_snap
+dc_cont_create_snap
+CONT_SNAP_CREATE -> ds_cont_snap_create
+    snap_create_bcast
+        ds_cont_bcast_create(ctx, cont->c_svc,CONT_TGT_SNAPSHOT_NOTIFY, &rpc)
+            ds_pool_bcast_create
+                map_ranks_init
+                opc = DAOS_RPC_OPCODE(opcode, module, version) -> 解码RPC操作码 -> CONT_TGT_SNAPSHOT_NOTIFY
+                crt_corpc_req_create 
+        gen_oit_oid
+            rdb_tx_lookup
+            daos_oit_gen_id
+            rdb_tx_lookup
+            pl_map_query
+            daos_obj_set_oid
+        dss_rpc_send
+        rdb_tx_update
+    snap_oit_create
+    rdb_tx_update
+    rdb_tx_lookup
+    rdb_tx_update
+---------------------------    
+CONT_TGT_SNAPSHOT_NOTIFY -> ds_cont_tgt_snapshot_notify_handler
+    dss_thread_collective(cont_snap_notify_one, &args, 0)
+        ds_cont_child_lookup
+            cont_child_lookup
+                daos_lru_ref_hold
+        cont_child_gather_oids
+            ds_pool_iv_svc_fetch
+            dsc_pool_open
+                dc_pool_alloc(pool_map_comp_cnt(map))
+                dc_mgmt_sys_attach
+                rsvc_client_init
+                dc_pool_map_update
+            dsc_cont_open
+                dsc_cont_init_props
+            dsc_obj_open
+                dc_obj_open_task_create dsc_scheduler
+                    dc_task_create(dc_obj_open, tse, ev, task)
+                        dc_obj_fetch_md
+                        obj_init_oca
+                            daos_oclass_attr_find
+                        obj_layout_create
+                            obj_pl_place
+                            obj_layout_dump
+                        dc_obj_redun_check
+                            daos_cont_rf2allowedfailures
+                dsc_task_run
+            vos_iterate cont_iter_obj_cb
+                daos_oid_is_oit
+                daos_oid_cmp
+                uint64_t d_hash_murmur64(const unsigned char *key, unsigned int key_len, unsigned int seed) -> hash算法, https://sites.google.com/site/murmurhash
+            cont_send_oit_bucket
+                dsc_obj_update
+                    dc_obj_update_task_create
+                        dc_task_create(dc_obj_update_task, tse, ev, task) -> 更新对象
+
+
+daos_cont_aggregate -> 指定epoch, 触发聚合
+    ...
+    dc_epoch_op(args->coh, CONT_EPOCH_AGGREGATE, &args->epoch, 0, task)
+    ...
+ds_cont_epoch_aggregate(tx, pool_hdl, cont, hdl, rpc)    
+
+
+
+
+daos_cont_create_snap(daos_handle_t coh, daos_epoch_t *epoch, char *name, daos_event_t *ev);
+在当前纪元创建持久快照并返回它。 返回的纪元可用于创建只读事务以从该持久快照读取数据。 （可选）可以为快照指定一个名称作为属性，可以使用 daos_cont_list_snap() 检索该名称。 名称长度不能超过 DAOS_SNAPSHOT_MAX_LEN。
+参数：
+coh – 容器句柄
+epoch – 返回拍摄的持久快照的纪元。
+name – 快照的可选空终止名称。
+ev – 完成事件，可选且可以为 NULL。 如果 ev 为 NULL，该函数将以阻塞模式运行。
+
+
+性能测试, pf_tests: src/tests/daos_perf.c
+main
+run_commands(cmds, pf_tests)
+
+
+struct credit_context
+I/O测试上下文，它是携带池和容器uuid等的输入参数，以及返回池和容器打开句柄的输出参数。 如果设置了 tsc_pmem_file，则为 VOS I/O 测试上下文，否则为 DAOS I/O 测试上下文，应设置 ts_svc
+
+
+cont_iter_obj_cb
+DAOS-4873 容器：对象 ID 表 (#2805)
+DAOS 的数据移动器需要枚举容器的所有对象。 这可以通过客户端向所有服务器发送广播来完成。 但是客户端缓冲区和迭代器游标管理非常具有挑战性，因为可能有数十亿个对象，并且每个目标可以有不同数量的对象。
+该补丁通过使用对象 API 为 DAOS 容器实现“对象 ID 表”：
+- 对象ID表本质上是一个特殊的对象，它只能由服务器写入。
+- 使用 daos_cont_create_snap_opt(...DAOS_SNAP_OPT_OIT...) 创建快照时生成对象 ID 表，所有服务器
+将扫描 OID 并将其写入此特殊对象
+- 所有 OID 都作为 KV 存储在该对象中。 DAOS 客户端可以通过迭代对象的 KV 来枚举对象。
+- 添加了一些新的 API
+daos_cont_create_snap_opt()
+daos_oit_open()
+daos_oit_close()
+daos_oit_list()
+去做：
+- 为 OIT 启用数据保护
+- 为了简化实现，所有 OID 都存储在同一个 dkey 下，这应该更改并且 OID 应该更具可扩展性
+- 添加另一个 API 并允许用户显式创建 OIT，而不是附带创建快照。
+
+
