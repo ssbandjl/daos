@@ -50,7 +50,7 @@ cart流程:
 1. 日志初始化/注册协议和操作码 crt_init_opt
 2. 创建上下文（fabric->domain->endpoint->cq...） crt_context_create
 3. 创建请求 crt_req_create / crt_corpc_req_create RPC请求集合 传入目的端点 -> ep_rank
-4. 发送请求（请求跟踪和取消跟踪） crt_req_send / dss_rpc_send, 客户端发送: daos_rpc_send
+4. 发送请求（请求跟踪和取消跟踪） crt_req_send / dss_rpc_send(服务端发送), 客户端发送: daos_rpc_send
 5. 查看请求进度和回调（progress和trigger） crt_progress
 6. 发送回复 crt_reply_send / crt_reply_get
 
@@ -1539,7 +1539,8 @@ crt_ctx_epi_abort
   crt_rpc_complete
 
 dsc_pool_svc_call(uuid_t uuid, d_rank_list_t *ranks, struct dsc_pool_svc_call_cbs *cbs, void *arg,uint64_t deadline)
-调用PS操作。 引擎代码中的所有地方最终都会迁移到这个模板来调用 PS 操作。 PS由uuid和rank指定，操作由cbs和arg指定，整个调用的deadline由deadline指定。 实现很简单，如果不是太简单的话。 供将来考虑的一些想法： 在单个调用之外缓存 rsvc_client 对象，以便对同一 PS 的后续调用不需要从领导者搜索开始。 使用一些可以容忍较短 RPC 超时的 RPC 来搜索领导者。 将 PS 的可用性状态缓存一段时间，这样就不必每次对不可用 PS 的调用都需要达到其截止时间。
+调用PS操作。 引擎代码中的所有地方最终都会迁移到这个模板来调用 PS 操作。 PS由uuid和rank指定，操作由cbs和arg指定，整个调用的deadline由deadline指定。 实现很简单，如果不是太简单的话。 供将来考虑的一些想法： 在单个调用之外缓存 rsvc_client 对象，以便对同一 PS 的后续调用不需要从领导者搜索开始。 使用一些可以容忍较短 RPC 超时的 RPC 来搜索领导者。 将 PS 的可用性状态缓存一段时间，这样就不必每次对不可用 PS 的调用都需要达到其截止时间
+
 
 
 dc_pool_query
@@ -1912,12 +1913,30 @@ hg_core_recv_input_cb
   hg_core_process_input 处理输入
   hg_core_complete_na 完成 期望计数=实际计数
   crt_swim_srv_cb 执行上层回调 Incoming  rpc注册的控制器 .prf_hdlr = crt_swim_srv_cb
-  crt_reply_send -> 发送前需要用(crt_req_create)填充回复数据到(cr_output)
-    crt_hg_reply_send
+  crt_reply_send(crt_rpc_t *req) -> 发送前需要用(crt_req_create)填充回复数据到(cr_output)
+    crt_corpc_reply_hdlr(&cb_info) -> 集合请求
+    or crt_hg_reply_send -> 非集合请求
       HG_Respond(rpc_priv->crp_hg_hdl, crt_hg_reply_send_cb, rpc_priv, &rpc_priv->crp_pub.cr_output) -> 回复数据设置到(cr_output)
-        HG_Core_respond
+        private_handle->respond_cb = callback <- hg_core_respond_cb
+            ...
+            hg_handle->respond_cb(&hg_cb_info) -> 引擎执行回复成功后的回调
+        HG_Core_respond(handle->core_handle, hg_core_respond_cb, handle, flags, payload_size)
+            ...
+            hg_core_handle->ops.respond(hg_core_handle) -> .respond = hg_core_respond_na,
+                static hg_return_t hg_core_respond_na(struct hg_core_private_handle *hg_core_handle)
+                    hg_core_handle->op_type = HG_CORE_RESPOND
+                    NA_Msg_recv_expected
+                    NA_Msg_send_expected
+                        msg_send_expected -> na_ofi_msg_send_expected
+                            na_ofi_tag_send
+                            na_ofi_op_retry
 
-
+static hg_return_t crt_hg_reply_send_cb(const struct hg_cb_info *hg_cbinfo)
+    判断错误码, 减引用计数(释放RPC)
+    opc = rpc_priv->crp_pub.cr_opc
+    hg_ret = hg_cbinfo->ret
+    RPC_DECREF(rpc_priv)
+    return hg_ret
 
 
 epoll_wait
@@ -1990,12 +2009,18 @@ crt_rpc_handler_common
     crt_rpc_common_hdlr 不是集合rpc
         crt_grp_priv_get_primary_rank
         crt_rpc_cb_customized 自定义回调, 并且非心跳rpc, crt_opc_is_swim, 那么就执行自定义回调
-        crt_ctx->cc_rpc_cb(..., crt_handle_rpc) cart的rpc控制器
+        rc = crt_ctx->cc_rpc_cb((crt_context_t)crt_ctx, &rpc_priv->crp_pub, crt_handle_rpc,crt_ctx->cc_rpc_cb_arg); // 接收端处理, cart的rpc控制器
         cc_rpc_cb = dss_rpc_hdlr -> sched_create_thread(dx, func -> ABT_thread_create -> crt_handle_rpc
         ... 入队，出队
         crt_handle_rpc
-            rpc_priv->crp_opc_info->coi_rpc_cb(rpc_pub) 执行回调,如 obj_req_create DAOS_OBJ_RPC_TGT_UPDATE 对应的 ds_obj_tgt_update_handler
+            rpc_priv->crp_opc_info->coi_rpc_cb(rpc_pub) 执行回调,如 obj_req_create DAOS_OBJ_RPC_TGT_UPDATE 对应的 void ds_obj_tgt_update_handler(crt_rpc_t *rpc)
+                struct obj_rw_in		*orw = crt_req_get(rpc); -> 获取客户端参数
+                struct obj_rw_out		*orwo = crt_reply_get(rpc);
     crt_corpc_common_hdlr -> 集合RPC请求
+
+
+DAOS上下文的 RPC 回调，当上下文接收到任何 RPC 时将调用该回调。 在此回调中，处理程序可以在此上下文中专门为此 RPC 执行某些操作，例如创建另一个 ULT 来处理它，请参阅 DAOS。
+typedef int (*crt_rpc_task_t) (crt_context_t *ctx, void *rpc_hdlr_arg, void (*rpc_hdlr)(void *), void *arg);
 
 
 
@@ -3015,7 +3040,11 @@ na_ofi_complete
 crt_hg_req_send_cb
   crp_complete_cb -> complete_cb
   调用 crt_req_send 传入的回调，如： shard_update_req_cb
-  crt_context_req_untrack 取消rpc超时跟踪(注意超时后也可能会执行此动作)
+  crt_context_req_untrack(rpc_priv) 取消rpc超时跟踪(注意超时后也可能会执行此动作)
+    d_list_add_tail(&tmp_rpc->crp_tmp_link, &submit_list) -> 加入重发队列
+    while ((tmp_rpc = d_list_pop_entry(&submit_list, struct crt_rpc_priv, crp_tmp_link))) -> 重新提交RPC请求
+        crt_rpc_complete_and_unlock(tmp_rpc, rc) -> 异常场景
+
 
 
 
@@ -3047,6 +3076,10 @@ tse_task_reint_with_dely
 dfuse_do_work
   dfuse_do_work
     dfuse_cb_read dfuse_cb_read
+    ev->de_complete_cb = dfuse_cb_read_complete -> 读完成回调
+        DFUSE_REPLY_BUFQ(oh, ev->de_req, ev->de_iov.iov_buf, ev->de_len)
+        daos_event_fini(&ev->de_ev) -> 终止事件
+        d_slab_release(ev->de_eqt->de_read_slab, ev) -> 释放缓存(slab)
     dfs_read
     dfs_read_int dfs_read_int
       dc_task_create(dc_array_read, NULL, ev, &task)
@@ -4327,8 +4360,9 @@ func ListPools
           sgl.sg_iovs = &iov; -> 封装为SGL
           crt_bulk_create(ctx, &sgl, CRT_BULK_RW, bulk)
             crt_hg_bulk_create(&ctx->cc_hg_ctx, sgl, bulk_perm, bulk_hdl) -> 传入SGL
-        dss_rpc_send(rpc) -> ds_pool_query_handler
-        out = crt_reply_get(rpc)
+        dss_rpc_send(rpc) -> ds_pool_query_handler -> 引擎给其他引擎发送RPC请求
+            rc = ABT_eventual_wait(eventual, (void **)&status) -> 阻塞,等待其他引擎回复
+        out = crt_reply_get(rpc) -> 获取其他引擎发来的回复
         pool_rsvc_client_complete_rpc
         process_query_result 处理结果
         rsvc_client_fini(&client)
@@ -5352,8 +5386,13 @@ ds_pool_tgt_query_handler
 
 
 
-
+多版本:
 ds_pool_query_handler_v5 <- POOL_QUERY
+ds_pool_query_handler(crt_rpc_t *rpc, int version)
+...
+    crt_reply_send(rpc) -> 引擎发送响应/回复给客户端
+
+
 
 
 obj_req_fanout
@@ -5874,7 +5913,7 @@ dc_pool_connect
     pool_req_create(daos_task2ctx(task), &ep, POOL_CONNECT, &rpc)
     dc_sec_request_creds(&pci->pci_cred)
     map_bulk_create
-    tse_task_register_comp_cb(task, pool_connect_cp, &con_args
+    tse_task_register_comp_cb(task, pool_connect_cp, &con_args -> 任务完成回调
     daos_rpc_send(rpc, task)
 
 
@@ -5897,7 +5936,7 @@ daos_cont_create2 -> daos_cont_create
         rsvc_client_choose
         dc_mgmt_pool_find
       cont_req_create(daos_task2ctx(task), &ep, CONT_CREATE, &rpc) -> 创建容器操作 -> ds_cont_op_handler
-      tse_task_register_comp_cb(task, cont_create_complete 完成回调
+      tse_task_register_comp_cb(task, cont_create_complete, &arg, sizeof(arg)) -> 注册容器创建完成的回调
         cont_rsvc_client_complete_rpc
           tse_task_reinit(task) 重新初始化任务并将其移至调度程序的初始化列表中。 该任务必须具有要重新插入调度程序的主体函数。 如果任务在其完成 CB 之一中重新初始化，则该回调和已执行的回调将从 cb 列表中删除，并且需要在重新插入后由用户重新注册 -> tse_task_reinit_with_delay(task, 0 /* delay */)
             dtp_generation_inc(dtp) -> 任务的生成，每次任务重新初始化或添加依赖任务时+1
@@ -7287,6 +7326,9 @@ struct ds_cont_child -> 每线程容器（内存）对象，存储每个线程�
 d_getenv_bool("DAOS_EC_AGG_DISABLE", &ec_agg_disabled) -> 可关闭EC聚合
 
 
+自动生成结构体:
+CRT_RPC_DECLARE(obj_rw,		DAOS_ISEQ_OBJ_RW, DAOS_OSEQ_OBJ_RW)
+#define CRT_RPC_DECLARE(rpc_name, fields_in, fields_out)
 rpc输入输出参数, 用于编码/解码rpc数据:
 struct obj_rw_in { 
     struct dtx_id orw_dti; 
@@ -8232,4 +8274,20 @@ static int stride_marks[] = {
 struct crt_grp_priv	*grp_priv;
 d_list_for_each_entry(grp_priv, &crt_grp_list, gp_link)
 grp_priv->gp_pub.cg_grpid
+
+
+
+字符串语法:
+#define X(a, b, c, d, e, f, g, h, i) a,
+enum na_ofi_prov_type { NA_OFI_PROV_TYPES };
+
+
+读完成:
+do { 
+    int __rc; 
+    __rc = fuse_reply_buf(ev->de_req, ev->de_iov.iov_buf, ev->de_len); 
+    if (__rc != 0) do { 
+        if (__builtin_expect(daos_dfuse_logfac_cache[DD_FLAG_DLOG_ERR_daos_dfuse_logfac - 1], 0)) { 
+            if (daos_dfuse_logfac_cache[DD_FLAG_DLOG_ERR_daos_dfuse_logfac - 1] == (int)0x80000000) { do { (daos_dfuse_logfac_cache[DD_FLAG_DLOG_ERR_daos_dfuse_logfac - 1]) = d_log_check((DLOG_ERR) | daos_dfuse_logfac); if (daos_dfuse_logfac_cache[DD_FLAG_DLOG_ERR_daos_dfuse_logfac - 1]) { d_log(daos_dfuse_logfac_cache[DD_FLAG_DLOG_ERR_daos_dfuse_logfac - 1], "%s:%d %s(%p) " "" "fuse_reply_buf() returned: %d (%s)" "\n", "/home/xb/project/stor/daos/main/daos/src/client/dfuse/ops/read.c", 48, __func__, oh,__rc, strerror(-__rc)); } } while (0); break; } d_log(daos_dfuse_logfac_cache[DD_FLAG_DLOG_ERR_daos_dfuse_logfac - 1], "%s:%d %s(%p) " "" "fuse_reply_buf() returned: %d (%s)" "\n", "/home/xb/project/stor/daos/main/daos/src/client/dfuse/ops/read.c", 48, __func__, oh,__rc, strerror(-__rc)); } } while (0); } while (0)
+
 
