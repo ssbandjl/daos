@@ -8291,3 +8291,153 @@ do {
             if (daos_dfuse_logfac_cache[DD_FLAG_DLOG_ERR_daos_dfuse_logfac - 1] == (int)0x80000000) { do { (daos_dfuse_logfac_cache[DD_FLAG_DLOG_ERR_daos_dfuse_logfac - 1]) = d_log_check((DLOG_ERR) | daos_dfuse_logfac); if (daos_dfuse_logfac_cache[DD_FLAG_DLOG_ERR_daos_dfuse_logfac - 1]) { d_log(daos_dfuse_logfac_cache[DD_FLAG_DLOG_ERR_daos_dfuse_logfac - 1], "%s:%d %s(%p) " "" "fuse_reply_buf() returned: %d (%s)" "\n", "/home/xb/project/stor/daos/main/daos/src/client/dfuse/ops/read.c", 48, __func__, oh,__rc, strerror(-__rc)); } } while (0); break; } d_log(daos_dfuse_logfac_cache[DD_FLAG_DLOG_ERR_daos_dfuse_logfac - 1], "%s:%d %s(%p) " "" "fuse_reply_buf() returned: %d (%s)" "\n", "/home/xb/project/stor/daos/main/daos/src/client/dfuse/ops/read.c", 48, __func__, oh,__rc, strerror(-__rc)); } } while (0); } while (0)
 
 
+
+
+RPC注册:
+
+
+
+
+
+mercury使用可靠数据报的连接类型, 连接数更少
+mercury/src/na/na_ofi.c -> 设置提示信息
+    hints->ep_attr->type = FI_EP_RDM
+参考获取信息的函数:
+na_ofi_getinfo(enum na_ofi_prov_type prov_type, const struct na_ofi_info *info,
+    struct fi_info **fi_info_p)
+{
+    struct fi_info *hints = NULL;
+    const char *node = NULL, *service = NULL;
+    uint64_t flags = 0;
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    /* Hints to query and filter providers */
+    hints = fi_allocinfo();
+    NA_CHECK_SUBSYS_ERROR(
+        cls, hints == NULL, out, ret, NA_NOMEM, "fi_allocinfo() failed");
+
+    /**
+     * FI_ASYNC_IOV mode indicates  that  the  application  must  provide  the
+     * buffering needed for the IO vectors. When set, an application must not
+     * modify an IO vector  of  length  >  1, including  any  related  memory
+     * descriptor array, until the associated operation has completed.
+     * FI_ASYNC_IOV 模式指示应用程序必须提供 IO 向量所需的缓冲。 设置后，应用程序不得修改长度 > 1 的 IO 向量，包括任何相关的内存描述符数组，直到关联操作完成
+     */
+    hints->mode = FI_ASYNC_IOV; // FI_RX_CQ_DATA
+
+    /* ep_type: reliable datagram (connection-less) */
+    hints->ep_attr->type = FI_EP_RDM;
+
+    /* caps: capabilities required for all providers */
+    hints->caps = FI_MSG | FI_TAGGED | FI_RMA | FI_DIRECTED_RECV;
+
+    /**
+     * msg_order: guarantee that messages with same tag are ordered.
+     * (FI_ORDER_SAS - Send after send. If set, message send operations,
+     *  including tagged sends, are transmitted in the order submitted relative
+     *  to other message send. If not set, message sends may be transmitted out
+     *  of order from their submission).
+     */
+    hints->tx_attr->msg_order = FI_ORDER_SAS;
+    hints->tx_attr->comp_order = FI_ORDER_NONE; /* No send completion order */
+    /* Generate completion event when it is safe to re-use buffer */
+    hints->tx_attr->op_flags = FI_INJECT_COMPLETE;
+
+    /* all providers should support this */
+    hints->domain_attr->av_type = FI_AV_MAP;
+
+    /* Resource management will be enabled for this provider domain. */
+    hints->domain_attr->resource_mgmt = FI_RM_ENABLED;
+
+    /**
+     * this is the requested MR mode (i.e., what we currently support),
+     * cleared MR mode bits (depending on provider) are later checked at the
+     * appropriate time.
+     */
+    hints->domain_attr->mr_mode =
+        NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL | FI_MR_ENDPOINT;
+
+    if (prov_type != NA_OFI_PROV_NULL) {
+        /* Filter out providers within libfabric using provider name */
+        hints->fabric_attr->prov_name = strdup(na_ofi_prov_name[prov_type]);
+        NA_CHECK_SUBSYS_ERROR(cls, hints->fabric_attr->prov_name == NULL,
+            cleanup, ret, NA_NOMEM, "Could not duplicate name");
+
+        if (na_ofi_prov_flags[prov_type] & NA_OFI_CONTEXT2)
+            hints->mode |= FI_CONTEXT2;
+        else
+            hints->mode |= FI_CONTEXT;
+
+        /* set endpoint protocol */
+        NA_CHECK_SUBSYS_ERROR(cls,
+            na_ofi_prov_ep_proto[prov_type] <= FI_PROTO_UNSPEC, cleanup, ret,
+            NA_PROTONOSUPPORT, "Unsupported endpoint protocol (%d)",
+            na_ofi_prov_ep_proto[prov_type]);
+        hints->ep_attr->protocol = (uint32_t) na_ofi_prov_ep_proto[prov_type];
+
+        /* add any additional caps that are particular to this provider */
+        hints->caps |= na_ofi_prov_extra_caps[prov_type];
+
+        /* set default progress mode */
+        hints->domain_attr->control_progress = na_ofi_prov_progress[prov_type];
+        hints->domain_attr->data_progress = na_ofi_prov_progress[prov_type];
+    }
+
+    if (info) {
+        /* Use addr format if not FI_FORMAT_UNSPEC */
+        NA_CHECK_SUBSYS_ERROR(cls,
+            (prov_type != NA_OFI_PROV_NULL) &&
+                (info->addr_format <= FI_FORMAT_UNSPEC),
+            cleanup, ret, NA_PROTONOSUPPORT, "Unsupported address format (%d)",
+            info->addr_format);
+        hints->addr_format = (uint32_t) info->addr_format;
+
+        /* Set requested thread mode */
+        hints->domain_attr->threading = info->thread_mode;
+
+        /* Ask for HMEM support */
+        if (info->use_hmem && (na_ofi_prov_flags[prov_type] & NA_OFI_HMEM)) {
+            hints->caps |= FI_HMEM;
+            hints->domain_attr->mr_mode |= FI_MR_HMEM;
+        }
+
+        /* Set src addr hints (FI_SOURCE must not be set in that case) */
+        if (info->src_addr) {
+            hints->src_addr = info->src_addr;
+            hints->src_addrlen = info->src_addrlen;
+        } else if (info->node && info->service) {
+            /* For provider node resolution (always pass a numeric address) */
+            flags = FI_SOURCE | FI_NUMERICHOST;
+            node = info->node;
+            service = info->service;
+            NA_LOG_SUBSYS_DEBUG(cls,
+                "Passing node/service (%s,%s) to fi_getinfo()", node, service);
+        }
+    }
+
+    /* Retrieve list of all providers supported with above requirement hints */
+    rc = fi_getinfo(NA_OFI_VERSION, node, service, flags, hints, fi_info_p);
+    NA_CHECK_SUBSYS_ERROR(cls, rc != 0, cleanup, ret, na_ofi_errno_to_na(-rc),
+        "fi_getinfo(%s) failed, rc: %d (%s)", hints->fabric_attr->prov_name, rc,
+        fi_strerror(-rc));
+
+cleanup:
+    free(hints->fabric_attr->prov_name);
+    hints->fabric_attr->prov_name = NULL;
+    hints->src_addr = NULL;
+    fi_freeinfo(hints);
+
+out:
+    return ret;
+}
+
+
+
+
+rxm_open_core_res
+    ofi_get_core_info
+    if (ep->msg_info->ep_attr->rx_ctx_cnt == FI_SHARED_CONTEXT) -> 共享接收队列
+    fi_srx_context -> int vrb_srq_context
+        srx->srq = ibv_create_srq(dom->pd, &srq_init_attr) -> 创建共享接收队列
+    rxm_listener_open
