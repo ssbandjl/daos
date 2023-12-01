@@ -1722,7 +1722,9 @@ dfuse_do_work
   fuse_session_process_buf_int -> 核心函数, 原本被 fuse_main 调用, 处理通用缓冲区中提供的原始请求 fusion_buf 可能包含内存缓冲区或管道文件描述符
   fuse_session_process_buf
   dfuse_cb_write
-    dfuse_mcache_evict -> 将缓存置为无效
+  if (atomic_fetch_add_relaxed(&oh->doh_write_count, 1) == 0) -> 写计数加1, 如果原来的计数为0, 且打开文件计数为0, 则将缓存置为无效
+    dfuse_mcache_evict -> 将缓存置为无效, 清除时间缓存
+        ie->ie_mcache_last_update.tv_sec  = 0
     ev = d_slab_acquire(eqt->de_write_slab) -> d_slab_acquire(struct d_slab_type *type) -> 获取一个新对象，这是在关键路径上考虑的，所以应该尽可能轻量级
       type->st_no_restock++ -> 补货
       if (type->st_free_count == 0)
@@ -4907,7 +4909,6 @@ dfuse_start
 
 
 
-ubix:
 
 pool_map
 dfuse_cb_write position=0
@@ -8441,3 +8442,18 @@ rxm_open_core_res
     fi_srx_context -> int vrb_srq_context
         srx->srq = ibv_create_srq(dom->pd, &srq_init_attr) -> 创建共享接收队列
     rxm_listener_open
+
+    
+
+写计数, 缓存元数据, 
+doh_write_count
+DAOS-10365 dfuse：允许 dfuse 缓存元数据。 (#9565) 存储 inode 的统计信息，如果内核在有效超时内重新请求数据，则使用现有数据和超时值进行回复，以匹配原始到期日期。 这主要是在启用写回缓存时，尽管内核已获得缓存数据的权限，但内核仍会发出元数据更新请求。 仅当自上次更新后文件尚未写入时才使用此缓存，并在使用拦截库时禁用。 需要时使用索引节点的缓存值。 当内核使用回写缓存时，它可以在超时到期之前查询 inode 元数据，并且每次打开文件时都会产生费用。 为了处理这个问题，请记录 inode 上次向内核报告的时间以及超时之前的请求，然后使用缓存的数据进行回复，但使用较短的超时。
+
+
+__atomic_fetch_add是GCC的一个内置函数, 函数原型为如下, 其作用是将val加到ptr指向的变量中
+
+
+执行释放, 
+do_release
+    req->se->op.release(req, nodeid, &fi) -> dfuse_cb_release(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
+        if (atomic_load_relaxed(&oh->doh_write_count) != 0) -> 如果写计数不为0
