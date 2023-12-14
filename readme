@@ -3909,8 +3909,8 @@ vos_db_init vos初始化 元数据初始化 -> vos_db_init_ex(db_path, NULL, fal
                   reserve_space(ioc, DAOS_MEDIA_SCM, scm_size, &off)
                     vos_reserve_scm
                       umem_reserve
-                    vos_reserve_blocks
-                      vea_reserve
+                    vos_reserve_blocks(ioc->ic_cont, &ioc->ic_blk_exts, size, VOS_IOS_GENERIC, off)
+                      vea_reserve(vsi, blk_cnt, hint_ctxt, rsrvd_nvme)
                   vos_irec_init_csum(irec, value_csum)
                   bio_addr_set_hole
                 vos_reserve_recx(ioc, media, size, recx_csum
@@ -4283,6 +4283,8 @@ tgt_vos_create_one
         bio_blob_open(struct bio_io_context *ctxt, bool async, enum bio_mc_flags flags, enum smd_dev_type st, spdk_blob_id open_blobid)
             ctxt->bic_blob = ba->bca_blob
       vea_load 从 SCM 加载空间跟踪信息以初始化内存中的复合索引
+        d_binheap_create_inplace(DBH_FT_NOLOCK, 0, NULL, &heap_ops, &vfc->vfc_heap) -> 64MB+ 大堆
+        dbtree_create(DBTREE_CLASS_IFV, BTR_FEAT_UINT_KEY, VEA_TREE_ODR, &uma, NULL, &vfc->vfc_size_btr) -> 空闲小块(0~64MB)
       vos_dedup_init
         d_hash_table_create(D_HASH_FT_NOLOCK, 13, /* 8k buckets */ NULL, &dedup_hash_ops, &pool->vp_dedup_hash);
       pool_link
@@ -6397,9 +6399,52 @@ Missing separate debuginfos, use: debuginfo-install glibc-2.17-326.el7_9.x86_64 
 
 
 ---------- vea ----------
+每个target空闲块分配和回收, 相互独立
+头文件: src/vea/vea_internal.h
+#define VEA_MAGIC	(0xea201804)
+#define VEA_BLK_SZ	(4 * 1024)	/* 4K */
+#define VEA_TREE_ODR	20
+
+/* Common free extent structure for both SCM & in-memory index */
+struct vea_free_extent {
+	uint64_t	vfe_blk_off;	/* Block offset of the extent */
+	uint32_t	vfe_blk_cnt;	/* Total blocks of the extent */
+	uint32_t	vfe_age;	/* Monotonic timestamp */
+};
+
+/* Min bitmap allocation class */
+#define VEA_MIN_BITMAP_CLASS	1
+/* Max bitmap allocation class */
+#define VEA_MAX_BITMAP_CLASS	64
+
+/* Bitmap chunk size */
+#define VEA_BITMAP_MIN_CHUNK_BLKS	256				/* 1MiB */
+#define VEA_BITMAP_MAX_CHUNK_BLKS	(VEA_MAX_BITMAP_CLASS * 256)	/* 64 MiB */
+
+
+API: src/vea/vea_api.c
 vea_flush: 刷新老化缓冲区中的空闲碎片
 
 vea_reserve: 在块设备上保留一个范围，如果块设备碎片太多而无法满足连续的保留，则可以保留一个范围向量
+int vea_reserve(struct vea_space_info *vsi, uint32_t blk_cnt, struct vea_hint_context *hint, d_list_t *resrvd_list)
+    aging_flush
+    reserve_hint
+        dbtree_fetch(vsi->vsi_free_btr, BTR_PROBE_EQ, DAOS_INTENT_DEFAULT, &key, NULL, &val)
+        compound_alloc_extent(vsi, &vfe, entry)
+    reserve_single
+        reserve_small
+            reserve_size_tree
+            dbtree_fetch(btr_hdl, BTR_PROBE_GE, DAOS_INTENT_DEFAULT, &key, NULL, &val_out)
+        reserve_extent
+            root = d_binheap_root(&vfc->vfc_heap)
+    trigger_aging_flush
+        flush_internal
+            d_list_for_each_entry_safe(entry, tmp, &vsi->vsi_agg_lru, vfe_link) 
+                dbtree_delete(btr_hdl, BTR_PROBE_EQ, &key, NULL)
+                compound_free(vsi, &free_entry, 0)
+                    merge_free_ext(vsi, vfe, VEA_TYPE_COMPOUND, flags, vsi->vsi_free_btr)
+        reclaim_unused_bitmap
+        
 
 vea_load: 从 SCM 加载空间跟踪信息以初始化内存中复合索引
 
@@ -8457,3 +8502,79 @@ __atomic_fetch_add是GCC的一个内置函数, 函数原型为如下, 其作用�
 do_release
     req->se->op.release(req, nodeid, &fi) -> dfuse_cb_release(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
         if (atomic_load_relaxed(&oh->doh_write_count) != 0) -> 如果写计数不为0
+
+
+vrb_msg_ep_get_qp_attr
+    attr->qp_type = IBV_QPT_RC
+
+
+
+
+vea:
+/* In-memory compound index */
+struct vea_space_info {
+	/* Instance for the pmemobj pool on SCM */
+	struct umem_instance		*vsi_umem;
+	/*
+	 * Stage callback data used by PMDK transaction.
+	 *
+	 * No public API offered by PMDK to get transaction stage callback
+	 * data, so we have to pass it around.
+	 */
+	struct umem_tx_stage_data	*vsi_txd;
+	/* Free space information stored on SCM */
+	struct vea_space_df		*vsi_md;
+	/* Open handles for the persistent free extent tree */
+	daos_handle_t			 vsi_md_free_btr;
+	/* Open handles for the persistent bitmap tree */
+	daos_handle_t			 vsi_md_bitmap_btr;
+	/* Free extent tree sorted by offset, for all free extents. */
+	daos_handle_t			 vsi_free_btr;
+	/* Bitmap tree, for small allocation */
+	daos_handle_t			 vsi_bitmap_btr;
+	/* Hint context for bitmap chunk allocation */
+	struct vea_hint_context		*vsi_bitmap_hint_context;
+	/* Index for searching free extent by size & age */
+	struct vea_free_class		 vsi_class;
+	/* LRU to aggergate just recent freed extents or bitmap blocks */
+	d_list_t			 vsi_agg_lru;
+	/*
+	 * Free entries sorted by offset, for coalescing the just recent
+	 * free extents.
+	 */
+	daos_handle_t			 vsi_agg_btr;
+	/* Unmap context to perform unmap against freed extent */
+	struct vea_unmap_context	 vsi_unmap_ctxt;
+	/* Statistics */
+	uint64_t			 vsi_stat[STAT_MAX];
+	/* Metrics */
+	struct vea_metrics		*vsi_metrics;
+	/* Last aging buffer flush timestamp */
+	uint32_t			 vsi_flush_time;
+	bool				 vsi_flush_scheduled;
+};
+
+vea_dump_extent
+#define VEA_LARGE_EXT_MB	64	/* Large extent threshold in MB */
+#define VEA_HINT_OFF_INVAL	0	/* Invalid hint offset */
+#define VEA_BITMAP_CHUNK_HINT_KEY	(~(0ULL))
+/*
+ * Large free extents (>VEA_LARGE_EXT_MB) are tracked in max a heap, small
+ * free extents (<= VEA_LARGE_EXT_MB) are tracked in a size tree.
+ */
+struct vea_free_class {
+	/* Max heap for tracking the largest free extent */
+	struct d_binheap	vfc_heap;
+	/* Small free extent tree */
+	daos_handle_t		vfc_size_btr;
+	/* Size threshold for large extent */
+	uint32_t		vfc_large_thresh;
+	/* Bitmap LRU list for different bitmap allocation class*/
+	d_list_t		vfc_bitmap_lru[VEA_MAX_BITMAP_CLASS];
+	/* Empty bitmap list for different allocation class */
+	d_list_t		vfc_bitmap_empty[VEA_MAX_BITMAP_CLASS];
+};
+
+create_free_class
+
+
