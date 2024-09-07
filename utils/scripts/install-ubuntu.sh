@@ -21,7 +21,6 @@ apt-get install \
     clang-format \
     cmake \
     curl \
-    fuse3 \
     git \
     golang-go \
     kmod \
@@ -37,6 +36,7 @@ apt-get install \
     liblz4-dev \
     libnuma-dev \
     libopenmpi-dev \
+    libpci-dev \
     libprotobuf-c-dev \
     librdmacm-dev \
     libssl-dev \

@@ -36,6 +36,10 @@
 |[RAFT](https://raft.github.io/)|Raft is a consensus algorithm used to distribute state transitions among DAOS server nodes. Raft 是一种共识算法，用于在 DAOS 服务器节点之间的分布式状态转换 |
 |RAS|Reliability, Availability & Serviceability 可靠性、可用性和可维护性|
 |RDB|Replicated Database, containing pool metadata and maintained across DAOS servers using the Raft algorithm. 副本数据库，包含池元数据并使用 Raft 算法跨 DAOS 服务器进行维护 |
+|[PMDK](https://github.com/pmem/pmdk)|Persistent Memory Devevelopment Kit|
+|[RAFT](https://raft.github.io/)|Raft is a consensus algorithm used to distribute state transitions among DAOS server nodes.|
+|RAS|Reliability, Availability & Serviceability|
+|RDB|Replicated Database, containing pool metadata and maintained across DAOS servers using the Raft algorithm.|
 |RDMA/RMA|Remote (Direct) Memory Access|
 |RDG|Redundancy Group 冗余组|
 |RPC|Remote Procedure Call|

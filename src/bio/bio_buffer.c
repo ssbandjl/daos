@@ -1,5 +1,5 @@
 /**
- * (C) Copyright 2018-2023 Intel Corporation.
+ * (C) Copyright 2018-2024 Intel Corporation.
  *
  * SPDX-License-Identifier: BSD-2-Clause-Patent
  */
@@ -185,20 +185,6 @@ dma_metrics_init(struct bio_dma_buffer *bdb, int tgt_id)
 	if (rc)
 		D_WARN("Failed to create grab_retries telemetry: "DF_RC"\n", DP_RC(rc));
 
-	rc = d_tm_add_metric(&stats->bds_wal_sz, D_TM_STATS_GAUGE, "WAL tx size",
-			     "bytes", "dmabuff/wal_sz/tgt_%d", tgt_id);
-	if (rc)
-		D_WARN("Failed to create WAL size telemetry: "DF_RC"\n", DP_RC(rc));
-
-	rc = d_tm_add_metric(&stats->bds_wal_qd, D_TM_STATS_GAUGE, "WAL tx QD",
-			     "commits", "dmabuff/wal_qd/tgt_%d", tgt_id);
-	if (rc)
-		D_WARN("Failed to create WAL QD telemetry: "DF_RC"\n", DP_RC(rc));
-
-	rc = d_tm_add_metric(&stats->bds_wal_waiters, D_TM_STATS_GAUGE, "WAL waiters",
-			     "transactions", "dmabuff/wal_waiters/tgt_%d", tgt_id);
-	if (rc)
-		D_WARN("Failed to create WAL waiters telemetry: "DF_RC"\n", DP_RC(rc));
 }
 
 struct bio_dma_buffer *
@@ -536,37 +522,51 @@ copy_one(struct bio_desc *biod, struct bio_iov *biov, void *data)
 	return -DER_REC2BIG;
 }
 
-static int
-iterate_biov(struct bio_desc *biod,
-	     int (*cb_fn)(struct bio_desc *, struct bio_iov *, void *data),
-	     void *data)
+static void
+copy_one_setup(struct bio_desc *biod, int idx, void *data)
 {
-	int i, j, rc = 0;
+	struct bio_copy_args *arg = data;
 
-	for (i = 0; i < biod->bd_sgl_cnt; i++) {
+	D_ASSERT(idx < arg->ca_sgl_cnt);
+	arg->ca_sgl_idx = idx;
+	arg->ca_iov_idx = 0;
+	arg->ca_iov_off = 0;
+	if (biod->bd_type == BIO_IOD_TYPE_FETCH)
+		arg->ca_sgls[idx].sg_nr_out = 0;
+}
+
+static void
+map_one_setup(struct bio_desc *biod, int idx, void *data)
+{
+	struct bio_bulk_args *arg = data;
+
+	arg->ba_sgl_idx = idx;
+}
+
+static int
+iterate_biov(struct bio_desc *biod, int (*cb_fn)(struct bio_desc *, struct bio_iov *, void *data),
+	     void            *data)
+{
+	void (*prep_fn)(struct bio_desc *, int, void *) = NULL;
+	int rc                                          = 0;
+
+	if (data != NULL) {
+		if (cb_fn == copy_one)
+			prep_fn = copy_one_setup;
+		else if (cb_fn == bulk_map_one)
+			prep_fn = map_one_setup;
+	}
+
+	for (int i = 0; i < biod->bd_sgl_cnt; i++) {
 		struct bio_sglist *bsgl = &biod->bd_sgls[i];
 
-		if (data != NULL) {
-			if (cb_fn == copy_one) {
-				struct bio_copy_args *arg = data;
-
-				D_ASSERT(i < arg->ca_sgl_cnt);
-				arg->ca_sgl_idx = i;
-				arg->ca_iov_idx = 0;
-				arg->ca_iov_off = 0;
-				if (biod->bd_type == BIO_IOD_TYPE_FETCH)
-					arg->ca_sgls[i].sg_nr_out = 0;
-			} else if (cb_fn == bulk_map_one) {
-				struct bio_bulk_args *arg = data;
-
-				arg->ba_sgl_idx = i;
-			}
-		}
+		if (prep_fn)
+			prep_fn(biod, i, data);
 
 		if (bsgl->bs_nr_out == 0)
 			continue;
 
-		for (j = 0; j < bsgl->bs_nr_out; j++) {
+		for (int j = 0; j < bsgl->bs_nr_out; j++) {
 			struct bio_iov *biov = &bsgl->bs_iovs[j];
 
 			rc = cb_fn(biod, biov, data);
@@ -1539,8 +1539,15 @@ bio_iod_post_async(struct bio_desc *biod, int err)
 	if (!bio_nvme_configured(SMD_DEV_TYPE_META))
 		goto out;
 	/*
-	 * When the value on data blob is too large, don't do async post to
-	 * avoid calculating checksum for large values.
+	 * When the I/O to data blob is too large, submitting the large data I/O & small
+	 * WAL I/O simultaneously might case more I/O reordering on SSD (when WAL & DATA
+	 * are sharing the same SSD), that could break the tx pipeline and impact the
+	 * throughput at the end.
+	 *
+	 * Given that async data I/O mode can only reduce latency, which isn't that valuable
+	 * for bandwidth intensive apps, here we turn to sync I/O mode for large I/O size,
+	 * that will mitigate the side effect of I/O reordering, at the same time, avoid the
+	 * unnecessary checksum calculation overhead.
 	 */
 	if (biod->bd_nvme_bytes > bio_max_async_sz)
 		goto out;

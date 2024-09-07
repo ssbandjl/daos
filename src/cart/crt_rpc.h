@@ -1,5 +1,5 @@
 /*
- * (C) Copyright 2016-2023 Intel Corporation.
+ * (C) Copyright 2016-2024 Intel Corporation.
  *
  * SPDX-License-Identifier: BSD-2-Clause-Patent
  */
@@ -12,11 +12,13 @@
 #define __CRT_RPC_H__
 
 #include <gurt/heap.h>
-#include "gurt/common.h"
+#include <gurt/common.h>
 
 /* default RPC timeout 60 seconds */
 #define CRT_DEFAULT_TIMEOUT_S	(60) /* second */
 #define CRT_DEFAULT_TIMEOUT_US	(CRT_DEFAULT_TIMEOUT_S * 1e6) /* micro-second */
+
+#define CRT_QUOTA_RPCS_DEFAULT 64
 
 /* uri lookup max retry times */
 #define CRT_URI_LOOKUP_RETRY_MAX	(8)
@@ -128,8 +130,12 @@ struct crt_rpc_priv {
 	crt_rpc_t		crp_pub; /* public part */
 	/* link to crt_ep_inflight::epi_req_q/::epi_req_waitq */
 	d_list_t		crp_epi_link;
-	/* tmp_link used in crt_context_req_untrack */
-	d_list_t		crp_tmp_link;
+	/* link for temp list used during timeout processing */
+	d_list_t                 crp_tmp_link_timeout;
+	/* link for temp list used for wait q processing */
+	d_list_t                 crp_tmp_link_submit;
+	/* link for crt_context::cc_quotas.rpc_waitq */
+	d_list_t		crp_waitq_link;
 	/* link to parent RPC crp_opc_info->co_child_rpcs/co_replied_rpcs */
 	d_list_t		crp_parent_link;
 	/* binheap node for timeout management, in crt_context::cc_bh_timeout */
@@ -147,7 +153,7 @@ struct crt_rpc_priv {
 	hg_handle_t		crp_hg_hdl; /* HG request handle */
 	hg_addr_t		crp_hg_addr; /* target na address */
 	struct crt_hg_hdl	*crp_hdl_reuse; /* reused hg_hdl */
-	crt_phy_addr_t		crp_tgt_uri; /* target uri address */
+	char                    *crp_tgt_uri;   /* target uri address */
 	crt_rpc_t		*crp_ul_req; /* uri lookup request */
 
 	uint32_t		crp_ul_retry; /* uri lookup retry counter */
@@ -216,11 +222,11 @@ crt_rpc_unlock(struct crt_rpc_priv *rpc_priv)
 	D_MUTEX_UNLOCK(&rpc_priv->crp_mutex);
 }
 
-#define CRT_PROTO_INTERNAL_VERSION 5
+#define CRT_PROTO_INTERNAL_VERSION 4
 #define CRT_PROTO_FI_VERSION 3
 #define CRT_PROTO_ST_VERSION 1
 #define CRT_PROTO_CTL_VERSION 1
-#define CRT_PROTO_IV_VERSION 1
+#define CRT_PROTO_IV_VERSION       2
 
 /* LIST of internal RPCS in form of:
  * OPCODE, flags, FMT, handler, corpc_hdlr,
@@ -375,10 +381,8 @@ CRT_GEN_STRUCT(crt_grp_cache, CRT_SEQ_GRP_CACHE)
 	((d_rank_t)		(ul_rank)		CRT_VAR) \
 	((uint32_t)		(ul_tag)		CRT_VAR)
 
-#define CRT_OSEQ_URI_LOOKUP	/* output fields */		 \
-	((crt_phy_addr_t)	(ul_uri)		CRT_VAR) \
-	((uint32_t)		(ul_tag)		CRT_VAR) \
-	((int32_t)		(ul_rc)			CRT_VAR)
+#define CRT_OSEQ_URI_LOOKUP /* output fields */                                                    \
+	((d_string_t)(ul_uri)CRT_VAR)((uint32_t)(ul_tag)CRT_VAR)((int32_t)(ul_rc)CRT_VAR)
 
 CRT_RPC_DECLARE(crt_uri_lookup, CRT_ISEQ_URI_LOOKUP, CRT_OSEQ_URI_LOOKUP)
 
@@ -688,8 +692,9 @@ crt_set_timeout(struct crt_rpc_priv *rpc_priv)
 	rpc_priv->crp_timeout_ts = d_timeus_secdiff(rpc_priv->crp_timeout_sec);
 }
 
-/* Convert opcode to string. Only returns string for internal RPCs */
-char *crt_opc_to_str(crt_opcode_t opc);
+/*  decode cart opcode into module and rpc opcode strings */
+void
+crt_opc_decode(crt_opcode_t opc, char **module_name, char **opc_name);
 
 bool crt_rpc_completed(struct crt_rpc_priv *rpc_priv);
 

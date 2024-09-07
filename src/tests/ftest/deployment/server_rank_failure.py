@@ -1,18 +1,17 @@
 """
-  (C) Copyright 2022-2023 Intel Corporation.
+  (C) Copyright 2022-2024 Intel Corporation.
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 """
-import time
 import os
 import threading
+import time
 
 from ClusterShell.NodeSet import NodeSet
-
+from command_utils_base import CommandFailure
+from general_utils import report_errors
 from ior_test_base import IorTestBase
 from ior_utils import IorCommand
-from general_utils import report_errors
-from command_utils_base import CommandFailure
 from job_manager_utils import get_job_manager
 from run_utils import stop_processes
 
@@ -42,11 +41,11 @@ class ServerRankFailure(IorTestBase):
                 Defaults to None, in which case infinite.
         """
         # Update the object class depending on the test case.
-        ior_cmd = IorCommand(namespace=namespace)
+        ior_cmd = IorCommand(self.test_env.log_dir, namespace=namespace)
         ior_cmd.get_params(self)
 
         # Standard IOR prep sequence.
-        ior_cmd.set_daos_params(self.server_group, pool, container.identifier)
+        ior_cmd.set_daos_params(pool, container.identifier)
         ior_cmd.update_params(test_file=os.path.join(os.sep, file_name))
 
         manager = get_job_manager(
@@ -185,7 +184,7 @@ class ServerRankFailure(IorTestBase):
 
         # 9. Call dmg pool query -b to find the disabled ranks.
         output = self.get_dmg_command().pool_query(pool=self.pool.identifier, show_disabled=True)
-        disabled_ranks = output["response"]["disabled_ranks"]
+        disabled_ranks = output["response"].get("disabled_ranks")
         self.log.info("Disabled ranks = %s", disabled_ranks)
 
         # 10. Call dmg pool reintegrate one rank at a time to enable all ranks.

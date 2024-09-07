@@ -1,17 +1,17 @@
 """
-  (C) Copyright 2018-2023 Intel Corporation.
+  (C) Copyright 2018-2024 Intel Corporation.
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 """
-from ior_test_base import IorTestBase
 from general_utils import report_errors
+from ior_test_base import IorTestBase
 
 
 class ListVerboseTest(IorTestBase):
     """DAOS-8267: Test class for dmg pool list --verbose tests.
 
     Verify all fields of dmg pool list --verbose; Label, UUID, SvcReps, SCM
-    Size, SCM Used, SCM Imbalance, NVME Size, NVME Used, NVME Imbalance, and Disabled.
+    Size, SCM Used, SCM Imbalance, NVMe Size, NVMe Used, NVMe Imbalance, and Disabled.
 
     Control plane test and not the underlying algorithm test. Assume that a
     single non-zero output verifies all other non-zero output. e.g., if we can
@@ -49,8 +49,10 @@ class ListVerboseTest(IorTestBase):
 
         if scm_size is None:
             scm_size = pool.scm_size.value * rank_count
+        scm_size = int(scm_size)
         if nvme_size is None:
             nvme_size = pool.nvme_size.value * rank_count
+        nvme_size = int(nvme_size)
 
         targets_total = self.server_managers[0].get_config_value("targets") * rank_count
 
@@ -59,17 +61,38 @@ class ListVerboseTest(IorTestBase):
         upgrade_layout_ver = p_query["response"]["upgrade_layout_ver"]
 
         return {
+            "query_mask": "rebuild,space",
+            "state": state,
             "uuid": pool.uuid.lower(),
             "label": pool.label.value,
-            "svc_ldr": 0,
+            "total_targets": targets_total,
+            "active_targets": targets_total - targets_disabled,
+            "total_engines": rank_count,
+            "disabled_targets": targets_disabled,
+            "svc_ldr": pool.svc_leader,
             "svc_reps": pool.svc_ranks,
-            "state": state,
-            "targets_total": targets_total,
-            "targets_disabled": targets_disabled,
             "upgrade_layout_ver": upgrade_layout_ver,
             "pool_layout_ver": pool_layout_ver,
-            "query_error_msg": "",
-            "query_status_msg": "",
+            "rebuild": {
+                "status": 0,
+                "state": rebuild_state,
+                "objects": 0,
+                "records": 0,
+                "total_objects": 0
+            },
+            # NB: tests should not expect min/max/mean values
+            "tier_stats": [
+                {
+                    "total": scm_size,
+                    "free": scm_free,
+                    "media_type": "scm",
+                },
+                {
+                    "total": nvme_size,
+                    "free": nvme_free,
+                    "media_type": "nvme",
+                },
+            ],
             "usage": [
                 {
                     "tier_name": "SCM",
@@ -83,7 +106,6 @@ class ListVerboseTest(IorTestBase):
                     "free": nvme_free,
                     "imbalance": nvme_imbalance
                 }],
-            "rebuild_state": rebuild_state
         }
 
     @staticmethod
@@ -171,6 +193,12 @@ class ListVerboseTest(IorTestBase):
         expected_pools = []
 
         actual_pools = self.get_dmg_command().get_pool_list_all(verbose=True)
+        for pool in actual_pools:
+            del pool['version']  # not easy to calculate expected value, could cause flaky tests
+            for tier in pool["tier_stats"]:  # expected values are tricky to calculate
+                del tier['min']
+                del tier['max']
+                del tier['mean']
 
         # Get free and imbalance from actual so that we can use them in expected.
         free_data = self.get_scm_nvme_free_imbalance(actual_pools)
@@ -219,7 +247,7 @@ class ListVerboseTest(IorTestBase):
 
         Args:
             pool_dict (dict): Pool info from list pool.
-            storage (str): SCM or NVME.
+            storage (str): SCM or NVMe.
         """
         free = 0
         imbalance = 0
@@ -251,7 +279,7 @@ class ListVerboseTest(IorTestBase):
         :avocado: tags=all,full_regression
         :avocado: tags=hw,medium
         :avocado: tags=pool
-        :avocado: tags=list_verbose,list_verbose_basic,test_fields_basic
+        :avocado: tags=ListVerboseTest,test_fields_basic
         """
         self.pool = []
 
@@ -325,7 +353,7 @@ class ListVerboseTest(IorTestBase):
         """Verification steps for test_used_imbalance.
 
         Args:
-            storage (str): NVME or SCM.
+            storage (str): NVMe or SCM.
 
         Returns:
             list: Errors.
@@ -408,10 +436,10 @@ class ListVerboseTest(IorTestBase):
         :avocado: tags=all,full_regression
         :avocado: tags=hw,medium
         :avocado: tags=pool
-        :avocado: tags=list_verbose,list_verbose_imbalance,test_used_imbalance
+        :avocado: tags=ListVerboseTest,test_used_imbalance
         """
         errors = []
-        self.log.debug("---------- NVME test ----------")
+        self.log.debug("---------- NVMe test ----------")
         errors.extend(self.verify_used_imbalance("NVME"))
         self.log.debug("---------- SCM test ----------")
         errors.extend(self.verify_used_imbalance("SCM"))

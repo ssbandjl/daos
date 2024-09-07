@@ -1,5 +1,5 @@
 /**
- * (C) Copyright 2018-2023 Intel Corporation.
+ * (C) Copyright 2018-2024 Intel Corporation.
  *
  * SPDX-License-Identifier: BSD-2-Clause-Patent
  */
@@ -353,17 +353,25 @@ struct bio_dev_info {
 	uint32_t		bdi_tgt_cnt;
 	int		       *bdi_tgts;
 	char		       *bdi_traddr;
-	uint32_t		bdi_dev_type;	/* reserved */
-	uint32_t		bdi_dev_roles;	/* reserved */
+	uint32_t                bdi_dev_roles;
+	struct nvme_ctrlr_t    *bdi_ctrlr; /* defined in control.h */
 };
 
 static inline void
 bio_free_dev_info(struct bio_dev_info *dev_info)
 {
-	if (dev_info->bdi_tgts != NULL)
-		D_FREE(dev_info->bdi_tgts);
-	if (dev_info->bdi_traddr != NULL)
-		D_FREE(dev_info->bdi_traddr);
+	D_FREE(dev_info->bdi_tgts);
+	D_FREE(dev_info->bdi_traddr);
+	if (dev_info->bdi_ctrlr != NULL) {
+		D_FREE(dev_info->bdi_ctrlr->model);
+		D_FREE(dev_info->bdi_ctrlr->serial);
+		D_FREE(dev_info->bdi_ctrlr->fw_rev);
+		D_FREE(dev_info->bdi_ctrlr->vendor_id);
+		D_FREE(dev_info->bdi_ctrlr->pci_type);
+		D_FREE(dev_info->bdi_ctrlr->pci_cfg);
+		D_FREE(dev_info->bdi_ctrlr->nss);
+		D_FREE(dev_info->bdi_ctrlr);
+	}
 	D_FREE(dev_info);
 }
 
@@ -376,7 +384,8 @@ bio_free_dev_info(struct bio_dev_info *dev_info)
  *
  * \return		Zero on success, negative value on error
  */
-int bio_dev_list(struct bio_xs_context *ctxt, d_list_t *dev_list, int *dev_cnt);
+int
+bio_dev_list(struct bio_xs_context *ctxt, d_list_t *dev_list, int *dev_cnt);
 
 /**
  * Callbacks called on NVMe device state transition
@@ -391,7 +400,6 @@ int bio_dev_list(struct bio_xs_context *ctxt, d_list_t *dev_list, int *dev_cnt);
 struct bio_reaction_ops {
 	int (*faulty_reaction)(int *tgt_ids, int tgt_cnt);
 	int (*reint_reaction)(int *tgt_ids, int tgt_cnt);
-	int (*ioerr_reaction)(int err_type, int tgt_id);
 };
 
 /*
@@ -427,7 +435,7 @@ int bio_nvme_init(const char *nvme_conf, int numa_node, unsigned int mem_size,
 		  unsigned int hugepage_size, unsigned int tgt_nr, bool bypass);
 
 /**
- * Global NVMe finilization.
+ * Global NVMe finalization.
  *
  * \return		N/A
  */
@@ -473,6 +481,18 @@ int bio_xsctxt_alloc(struct bio_xs_context **pctxt, int tgt_id, bool self_pollin
  * \returns		N/A
  */
 void bio_xsctxt_free(struct bio_xs_context *ctxt);
+
+/*
+ * Health check on the per-xstream NVMe context
+ *
+ * \param[in] xs_ctxt	Per-xstream NVMe context
+ * \param[in] log_err	Log media error if the device is not healthy
+ * \param[in] update	The check is called for an update operation or not
+ *
+ * \returns		0:		NVMe context is healthy
+ *			-DER_NVME_IO:	NVMe context is faulty
+ */
+int bio_xsctxt_health_check(struct bio_xs_context *xs_ctxt, bool log_err, bool update);
 
 /**
  * NVMe poller to poll NVMe I/O completions.
@@ -974,15 +994,22 @@ int bio_mc_close(struct bio_meta_context *mc);
 /* Function to return io context for data/meta/wal blob */
 struct bio_io_context *bio_mc2ioc(struct bio_meta_context *mc, enum smd_dev_type type);
 
+struct bio_wal_stats {
+	uint32_t	ws_size;	/* WAL size for single tx in bytes */
+	uint32_t	ws_qd;		/* WAL tx QD */
+	uint32_t	ws_waiters;	/* Waiters for WAL reclaiming */
+};
+
 /*
  * Reserve WAL log space for current transaction
  *
  * \param[in]	mc		BIO meta context
  * \param[out]	tx_id		Reserved transaction ID
+ * \param[out]	stats		WAL stats (optional)
  *
  * \return			Zero on success, negative value on error
  */
-int bio_wal_reserve(struct bio_meta_context *mc, uint64_t *tx_id);
+int bio_wal_reserve(struct bio_meta_context *mc, uint64_t *tx_id, struct bio_wal_stats *stats);
 
 /*
  * Submit WAL I/O and wait for completion
@@ -990,10 +1017,12 @@ int bio_wal_reserve(struct bio_meta_context *mc, uint64_t *tx_id);
  * \param[in]	mc		BIO meta context
  * \param[in]	tx		umem_tx pointer
  * \param[in]	biod_data	BIO descriptor for data update (optional)
+ * \param[out]	stats		WAL stats (optional)
  *
  * \return			Zero on success, negative value on error
  */
-int bio_wal_commit(struct bio_meta_context *mc, struct umem_wal_tx *tx, struct bio_desc *biod_data);
+int bio_wal_commit(struct bio_meta_context *mc, struct umem_wal_tx *tx, struct bio_desc *biod_data,
+		   struct bio_wal_stats *stats);
 
 /*
  * Compare two WAL transaction IDs from same WAL instance

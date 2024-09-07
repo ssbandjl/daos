@@ -1,5 +1,5 @@
 /**
- * (C) Copyright 2016-2023 Intel Corporation.
+ * (C) Copyright 2016-2024 Intel Corporation.
  *
  * SPDX-License-Identifier: BSD-2-Clause-Patent
  */
@@ -896,9 +896,27 @@ exit:
 }
 
 static inline int
-hold_objects(struct vos_object **objs, struct daos_lru_cache *occ,
-	     daos_handle_t *coh, daos_unit_oid_t *oid, int start, int end,
-	     bool no_create, int exp_rc)
+hold_obj(struct vos_container *cont, daos_unit_oid_t oid, daos_epoch_range_t *epr,
+	 daos_epoch_t bound, uint64_t flags, uint32_t intent, struct vos_object **obj_p,
+	 struct vos_ts_set *ts_set)
+{
+	int rc;
+
+	rc = vos_obj_hold(cont, oid, epr, bound, flags, intent, obj_p, ts_set);
+	if (rc)
+		return rc;
+
+	if (flags & VOS_OBJ_CREATE) {
+		assert_ptr_not_equal(*obj_p, NULL);
+		rc = vos_obj_incarnate(*obj_p, epr, bound, flags, intent, ts_set);
+	}
+
+	return rc;
+}
+
+static inline int
+hold_objects(struct vos_object **objs, daos_handle_t *coh, daos_unit_oid_t *oid,
+	     int start, int end, bool no_create, int exp_rc)
 {
 	int			i = 0, rc = 0;
 	daos_epoch_range_t	epr = {0, 1};
@@ -907,9 +925,8 @@ hold_objects(struct vos_object **objs, struct daos_lru_cache *occ,
 	hold_flags = no_create ? 0 : VOS_OBJ_CREATE;
 	hold_flags |= VOS_OBJ_VISIBLE;
 	for (i = start; i < end; i++) {
-		rc = vos_obj_hold(occ, vos_hdl2cont(*coh), *oid, &epr, 0,
-				  hold_flags, no_create ? DAOS_INTENT_DEFAULT :
-				  DAOS_INTENT_UPDATE, &objs[i], 0);
+		rc = hold_obj(vos_hdl2cont(*coh), *oid, &epr, 0, hold_flags,
+			      no_create ? DAOS_INTENT_DEFAULT : DAOS_INTENT_UPDATE, &objs[i], 0);
 		if (rc != exp_rc)
 			return 1;
 	}
@@ -974,7 +991,7 @@ io_obj_cache_test(void **state)
 	assert_int_equal(rc, 0);
 
 	uuid_generate_time_safe(pool_uuid);
-	rc = vos_pool_create(po_name, pool_uuid, VPOOL_256M, 0, 0, &l_poh);
+	rc = vos_pool_create(po_name, pool_uuid, VPOOL_256M, 0, 0, 0 /* version */, &l_poh);
 	assert_rc_equal(rc, 0);
 
 	rc = vos_cont_create(l_poh, ctx->tc_co_uuid);
@@ -991,76 +1008,105 @@ io_obj_cache_test(void **state)
 	rc = umem_tx_begin(ummg, NULL);
 	assert_rc_equal(rc, 0);
 
-	rc = vos_obj_hold(occ, vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0,
-			  VOS_OBJ_CREATE | VOS_OBJ_VISIBLE, DAOS_INTENT_DEFAULT,
-			  &objs[0], 0);
+	rc = hold_obj(vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0,
+		      VOS_OBJ_CREATE | VOS_OBJ_VISIBLE, DAOS_INTENT_UPDATE, &objs[0], 0);
 	assert_rc_equal(rc, 0);
 
-	rc = vos_obj_discard_hold(occ, vos_hdl2cont(ctx->tc_co_hdl), oids[0], &obj1);
+	/** Hold object for discard */
+	rc = hold_obj(vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0, VOS_OBJ_DISCARD,
+		      DAOS_INTENT_DISCARD, &obj1, 0);
 	assert_rc_equal(rc, 0);
-	/** Should be prevented because object already held for discard */
-	rc = vos_obj_discard_hold(occ, vos_hdl2cont(ctx->tc_co_hdl), oids[0], &obj2);
-	assert_rc_equal(rc, -DER_UPDATE_AGAIN);
+	/** Second discard should fail */
+	rc = hold_obj(vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0, VOS_OBJ_DISCARD,
+		      DAOS_INTENT_DISCARD, &obj2, 0);
+	assert_rc_equal(rc, -DER_BUSY);
+	/** Should prevent simultaneous aggregation */
+	rc = hold_obj(vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0, VOS_OBJ_AGGREGATE,
+		     DAOS_INTENT_PURGE, &obj2, 0);
+	assert_rc_equal(rc, -DER_BUSY);
 	/** Should prevent simultaneous hold for create as well */
-	rc = vos_obj_hold(occ, vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0,
-					   VOS_OBJ_CREATE | VOS_OBJ_VISIBLE, DAOS_INTENT_DEFAULT,
-					   &obj2, 0);
+	rc = hold_obj(vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0,
+				   VOS_OBJ_CREATE | VOS_OBJ_VISIBLE, DAOS_INTENT_UPDATE, &obj2, 0);
 	assert_rc_equal(rc, -DER_UPDATE_AGAIN);
 
 	/** Need to be able to hold for read though or iteration won't work */
-	rc = vos_obj_hold(occ, vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0,
-			  VOS_OBJ_VISIBLE, DAOS_INTENT_DEFAULT, &obj2, 0);
-	vos_obj_discard_release(occ, obj2);
-	vos_obj_discard_release(occ, obj1);
-	/** Now that other one is done, this should work */
-	rc = vos_obj_discard_hold(occ, vos_hdl2cont(ctx->tc_co_hdl), oids[0], &obj2);
+	rc = hold_obj(vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0, VOS_OBJ_VISIBLE,
+		      DAOS_INTENT_DEFAULT, &obj2, 0);
+	vos_obj_release(obj2, 0, false);
+	vos_obj_release(obj1, VOS_OBJ_DISCARD, false);
+
+	/** Hold object for aggregation */
+	rc = hold_obj(vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0, VOS_OBJ_AGGREGATE,
+		      DAOS_INTENT_PURGE, &obj1, 0);
 	assert_rc_equal(rc, 0);
-	vos_obj_discard_release(occ, obj2);
+	/** Discard should fail */
+	rc = hold_obj(vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0, VOS_OBJ_DISCARD,
+		      DAOS_INTENT_DISCARD, &obj2, 0);
+	assert_rc_equal(rc, -DER_BUSY);
+	/** Second aggregation should fail */
+	rc = hold_obj(vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0, VOS_OBJ_AGGREGATE,
+		      DAOS_INTENT_PURGE, &obj2, 0);
+	assert_rc_equal(rc, -DER_BUSY);
+	/** Simultaneous create should work */
+	rc = hold_obj(vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0,
+		      VOS_OBJ_CREATE | VOS_OBJ_VISIBLE, DAOS_INTENT_UPDATE, &obj2, 0);
+	assert_rc_equal(rc, 0);
+	vos_obj_release(obj2, 0, false);
+
+	/** Need to be able to hold for read though or iteration won't work */
+	rc = hold_obj(vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0, VOS_OBJ_VISIBLE,
+		      DAOS_INTENT_DEFAULT, &obj2, 0);
+	vos_obj_release(obj2, 0, false);
+	vos_obj_release(obj1, VOS_OBJ_AGGREGATE, false);
+
+	/** Now that other one is done, this should work */
+	rc = hold_obj(vos_hdl2cont(ctx->tc_co_hdl), oids[0], &epr, 0, VOS_OBJ_DISCARD,
+		      DAOS_INTENT_DISCARD, &obj2, 0);
+	assert_rc_equal(rc, 0);
+	vos_obj_release(obj2, VOS_OBJ_DISCARD, false);
 
 	rc = umem_tx_end(ummg, 0);
 	assert_rc_equal(rc, 0);
 
-	vos_obj_release(occ, objs[0], false);
+	vos_obj_release(objs[0], 0, false);
 
 	rc = umem_tx_begin(umml, NULL);
 	assert_rc_equal(rc, 0);
 
-	rc = vos_obj_hold(occ, vos_hdl2cont(l_coh), oids[1], &epr, 0,
-			  VOS_OBJ_CREATE | VOS_OBJ_VISIBLE, DAOS_INTENT_DEFAULT,
-			  &objs[0], 0);
+	rc = hold_obj(vos_hdl2cont(l_coh), oids[1], &epr, 0,
+		      VOS_OBJ_CREATE | VOS_OBJ_VISIBLE, DAOS_INTENT_UPDATE, &objs[0], 0);
 	assert_rc_equal(rc, 0);
-	vos_obj_release(occ, objs[0], false);
+	vos_obj_release(objs[0], 0, false);
 
 	rc = umem_tx_end(umml, 0);
 	assert_rc_equal(rc, 0);
 
-	rc = hold_objects(objs, occ, &ctx->tc_co_hdl, &oids[0], 0, 10, true, 0);
+	rc = hold_objects(objs, &ctx->tc_co_hdl, &oids[0], 0, 10, true, 0);
 	assert_int_equal(rc, 0);
 
-	rc = hold_objects(objs, occ, &ctx->tc_co_hdl, &oids[1], 10, 15, true,
-			  -DER_NONEXIST);
+	rc = hold_objects(objs, &ctx->tc_co_hdl, &oids[1], 10, 15, true, -DER_NONEXIST);
 	assert_int_equal(rc, 0);
 
-	rc = hold_objects(objs, occ, &l_coh, &oids[1], 10, 15, true, 0);
+	rc = hold_objects(objs, &l_coh, &oids[1], 10, 15, true, 0);
 	assert_int_equal(rc, 0);
-	rc = vos_obj_hold(occ, vos_hdl2cont(l_coh), oids[1], &epr, 0,
-			  VOS_OBJ_VISIBLE, DAOS_INTENT_DEFAULT, &objs[16], 0);
+	rc = hold_obj(vos_hdl2cont(l_coh), oids[1], &epr, 0, VOS_OBJ_VISIBLE,
+		      DAOS_INTENT_DEFAULT, &objs[16], 0);
 	assert_rc_equal(rc, 0);
 
-	vos_obj_release(occ, objs[16], false);
+	vos_obj_release(objs[16], 0, false);
 
 	for (i = 0; i < 5; i++)
-		vos_obj_release(occ, objs[i], false);
+		vos_obj_release(objs[i], 0, false);
 	for (i = 10; i < 15; i++)
-		vos_obj_release(occ, objs[i], false);
+		vos_obj_release(objs[i], 0, false);
 
-	rc = hold_objects(objs, occ, &l_coh, &oids[1], 15, 20, true, 0);
+	rc = hold_objects(objs, &l_coh, &oids[1], 15, 20, true, 0);
 	assert_int_equal(rc, 0);
 
 	for (i = 5; i < 10; i++)
-		vos_obj_release(occ, objs[i], false);
+		vos_obj_release(objs[i], 0, false);
 	for (i = 15; i < 20; i++)
-		vos_obj_release(occ, objs[i], false);
+		vos_obj_release(objs[i], 0, false);
 
 	rc = vos_cont_close(l_coh);
 	assert_rc_equal(rc, 0);
@@ -1858,7 +1904,7 @@ pool_cont_same_uuid(void **state)
 	uuid_generate(pool_uuid);
 	uuid_copy(co_uuid, pool_uuid);
 
-	ret = vos_pool_create(arg->fname, pool_uuid, VPOOL_256M, 0, 0, &poh);
+	ret = vos_pool_create(arg->fname, pool_uuid, VPOOL_256M, 0, 0, 0 /* version */, &poh);
 	assert_rc_equal(ret, 0);
 
 	ret = vos_cont_create(poh, co_uuid);

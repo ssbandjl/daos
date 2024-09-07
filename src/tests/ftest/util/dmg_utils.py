@@ -1,18 +1,18 @@
 """
-  (C) Copyright 2018-2023 Intel Corporation.
+  (C) Copyright 2018-2024 Intel Corporation.
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 """
+import re
+from grp import getgrgid
 # pylint: disable=too-many-lines
 from logging import getLogger
-from grp import getgrgid
 from pwd import getpwuid
-import re
 
-from exception_utils import CommandFailure
 from dmg_utils_base import DmgCommandBase
-from general_utils import get_numeric_list, dict_to_str
-from dmg_utils_params import DmgYamlParameters, DmgTransportCredentials
+from dmg_utils_params import DmgTransportCredentials, DmgYamlParameters
+from exception_utils import CommandFailure
+from general_utils import dict_to_str, get_numeric_list
 
 
 class DmgJsonCommandFailure(CommandFailure):
@@ -120,7 +120,6 @@ class DmgCommand(DmgCommandBase):
         #           ],
         #           "Providers": [
         #             "ofi+verbs;ofi_rxm",
-        #             "ofi+tcp;ofi_rxm",
         #             "ofi+verbs",
         #             "ofi+tcp",
         #             "ofi+sockets"
@@ -264,7 +263,7 @@ class DmgCommand(DmgCommandBase):
         return self._get_json_result(
             ("storage", "set", "nvme-faulty"), uuid=uuid, force=force)
 
-    def storage_query_list_devices(self, rank=None, health=False):
+    def storage_query_list_devices(self, rank=None, health=False, uuid=None):
         """Get the result of the 'dmg storage query list-devices' command.
 
         Args:
@@ -272,6 +271,7 @@ class DmgCommand(DmgCommandBase):
                 Defaults to None.
             health (bool, optional): Include device health in response.
                 Defaults to false.
+            uuid (str, optional): device UUID. Defaults to None.
 
         Raises:
             CommandFailure: if the dmg storage query list-devices command fails.
@@ -280,7 +280,9 @@ class DmgCommand(DmgCommandBase):
             dict: the dmg json command output converted to a python dictionary
 
         """
-        return self._get_json_result(("storage", "query", "list-devices"), rank=rank, health=health)
+        return self._get_json_result(
+            ("storage", "query", "list-devices"), rank=rank, health=health,
+            uuid=uuid)
 
     def storage_query_list_pools(self, uuid=None, rank=None, verbose=False):
         """Get the result of the 'dmg storage query list-pools' command.
@@ -355,21 +357,6 @@ class DmgCommand(DmgCommandBase):
             ("storage", "replace", "nvme"), old_uuid=old_uuid,
             new_uuid=new_uuid, no_reint=no_reint)
 
-    def storage_query_device_health(self, uuid):
-        """Get the result of the 'dmg storage query device-health' command.
-
-        Args:
-            uuid (str): Device UUID to query.
-
-        Raises:
-            CommandFailure: if the dmg storage query device-health command fails.
-
-        Returns:
-            dict: the dmg json command output converted to a python dictionary
-
-        """
-        return self._get_json_result(("storage", "query", "device-health"), uuid=uuid)
-
     def storage_scan_nvme_health(self):
         """Get the result of the 'dmg storage scan --nvme-health' command.
 
@@ -406,6 +393,8 @@ class DmgCommand(DmgCommandBase):
         #               "serial": "CVFT534200AY400BGN",
         #               "pci_addr": "0000:05:00.0",
         #               "fw_rev": "8DV10131",
+        #               "vendor_id": "0x8086",
+        #               "pci_type": "",
         #               "socket_id": 0,
         #               "health_stats": null,
         #               "namespaces": [
@@ -416,7 +405,7 @@ class DmgCommand(DmgCommandBase):
         #               ],
         #               "smd_devices": [
         #                 {
-        #                   "dev_state": "NORMAL",
+        #                   "role_bits": 0,
         #                   "uuid": "259608d1-c469-4684-9986-9f7708b20ca3",
         #                   "tgt_ids": [ 0, 1, 2, 3, 4, 5, 6, 7 ],
         #                   "rank": 0,
@@ -428,12 +417,28 @@ class DmgCommand(DmgCommandBase):
         #                   "meta_wal_size": 0,
         #                   "rdb_size": 134217728,
         #                   "rdb_wal_size": 268435456,
-        #                   "health": null,
-        #                   "tr_addr": "0000:05:00.0",
-        #                   "roles": "data",
-        #                   "has_sys_xs": false
+        #                   "roles": "NA",
+        #                   "has_sys_xs": false,
+        #                   "ctrlr": {
+        #                     "info": "",
+        #                     "model": "",
+        #                     "serial": "",
+        #                     "pci_addr": "",
+        #                     "fw_rev": "",
+        #                     "vendor_id": "",
+        #                     "pci_type": "",
+        #                     "socket_id": 0,
+        #                     "health_stats": null,
+        #                     "namespaces": null,
+        #                     "smd_devices": null,
+        #                     "dev_state": "UNKNOWN",
+        #                     "led_state": "OFF"
+        #                   },
+        #                   "ctrlr_namespace_id": 1
         #                 }
         #               ]
+        #               "dev_state": "NORMAL",
+        #               "led_state": "NA",
         #             }
         #           ],
         #           "scm_modules": null,
@@ -611,6 +616,7 @@ class DmgCommand(DmgCommandBase):
         data["status"] = output["status"]
         data["uuid"] = output["response"]["uuid"]
         data["svc"] = ",".join([str(svc) for svc in output["response"]["svc_reps"]])
+        data["leader"] = output["response"]["svc_ldr"]
         data["ranks"] = ",".join([str(r) for r in output["response"]["tgt_ranks"]])
         data["scm_per_rank"] = output["response"]["tier_bytes"][0]
         data["nvme_per_rank"] = output["response"]["tier_bytes"][1]
@@ -642,7 +648,7 @@ class DmgCommand(DmgCommandBase):
         #         "total_engines": 1,
         #         "disabled_targets": 0,
         #         "version": 1,
-        #         "leader": 0,
+        #         "svc_ldr": 0,
         #         "rebuild": {
         #             "status": 0,
         #             "state": "idle",
@@ -663,8 +669,8 @@ class DmgCommand(DmgCommandBase):
         #             "max": 3999993856,
         #             "mean": 3999993856
         #         },
-        #         "enabled_ranks": None,
-        #         "disabled_ranks": None
+        #         "enabled_ranks": [0,1,3],
+        #         "disabled_ranks": [2]
         #     },
         #     "error": null,
         #     "status": 0
@@ -818,10 +824,8 @@ class DmgCommand(DmgCommandBase):
         #             "svc_reps": [
         #             0
         #             ],
-        #             "targets_total": 8,
-        #             "targets_disabled": 0,
-        #             "query_error_msg": "",
-        #             "query_status_msg": "",
+        #             "total_targets": 8,
+        #             "disabled_targets": 0,
         #             "usage": [
         #             {
         #                 "tier_name": "SCM",
@@ -953,12 +957,12 @@ class DmgCommand(DmgCommandBase):
         return self._get_result(
             ("pool", "reintegrate"), pool=pool, rank=rank, tgt_idx=tgt_idx)
 
-    def cont_set_owner(self, pool, cont, user, group):
+    def cont_set_owner(self, pool, cont, user=None, group=None):
         """Dmg container set-owner to the specified new user/group.
 
         Args:
-            pool (str): Pool uuid.
-            cont (str): Container uuid.
+            pool (str): Pool label or UUID.
+            cont (str): Container label or UUID.
             user (str): new user for the container.
             group (str): new group for the container.
 
@@ -970,7 +974,7 @@ class DmgCommand(DmgCommandBase):
             CommandFailure: if the dmg pool reintegrate command fails.
 
         """
-        return self._get_result(
+        return self._get_json_result(
             ("cont", "set-owner"), pool=pool, cont=cont, user=user, group=group)
 
     def system_cleanup(self, machinename=None, verbose=True):
@@ -1009,6 +1013,26 @@ class DmgCommand(DmgCommandBase):
 
         return self._get_json_result(
             ("system", "cleanup"), machinename=machinename, verbose=verbose)
+
+    def system_clear_exclude(self, ranks, rank_hosts):
+        """Clear exclude ranks from system.
+
+        Either ranks or rank_hosts is necessary. Pass in None to one of them.
+
+        Args:
+            ranks (str): comma separated ranks to exclude.
+            rank_hosts (str): hostlist representing hosts whose managed ranks are to be
+                operated on.
+
+        Raises:
+            CommandFailure: if the dmg system clear-exclude command fails.
+
+        Returns:
+            dict: the dmg json command output converted to a python dictionary
+
+        """
+        return self._get_json_result(
+            ("system", "clear-exclude"), ranks=ranks, rank_hosts=rank_hosts)
 
     def system_query(self, ranks=None, verbose=True):
         """Query system to obtain the status of the servers.
@@ -1092,6 +1116,26 @@ class DmgCommand(DmgCommandBase):
 
         """
         return self._get_json_result(("system", "erase"))
+
+    def system_exclude(self, ranks, rank_hosts):
+        """Exclude ranks from system.
+
+        Either ranks or rank_hosts is necessary. Pass in None to one of them.
+
+        Args:
+            ranks (str): comma separated ranks to exclude.
+            rank_hosts (str): hostlist representing hosts whose managed ranks are to be
+                operated on.
+
+        Raises:
+            CommandFailure: if the dmg system exclude command fails.
+
+        Returns:
+            dict: the dmg json command output converted to a python dictionary
+
+        """
+        return self._get_json_result(
+            ("system", "exclude"), ranks=ranks, rank_hosts=rank_hosts)
 
     def system_start(self, ranks=None):
         """Start the system.
@@ -1180,7 +1224,7 @@ class DmgCommand(DmgCommandBase):
             net_class (str): Network class preferred. Defaults to None.
                 i.e. "ethernet"|"infiniband"
             net_provider (str): Network provider preferred. Defaults to None.
-                i.e. "ofi+tcp;ofi_rxm" etc.
+                i.e. "ofi+tcp" etc.
             use_tmpfs_scm (bool, optional): Whether to use a ramdisk instead of PMem
                 as SCM. Defaults to False.
             control_metadata_path (str): External directory provided to store control
@@ -1343,6 +1387,146 @@ class DmgCommand(DmgCommandBase):
         """
         return self._get_json_result(("version",))
 
+    def check_enable(self, pool=None, stop=True):
+        """Call dmg check enable.
+
+        Args:
+            pool (str): Pool label or UUID. Defaults to None.
+            stop (bool): Stop the system first before enabling checker. Defaults to True.
+
+        Returns:
+            dict: the dmg json command output converted to a python dictionary
+
+        """
+        if stop:
+            self.system_stop(force=True)
+
+        return self._get_json_result(("check", "enable"), pool=pool)
+
+    def check_set_policy(self, reset_defaults=False, all_interactive=False, policies=None):
+        """Call dmg check set-policy [options] [policies].
+
+        Args:
+            reset_defaults (bool, optional): Set all policies to default action. Defaults to False.
+            all_interactive (bool, optional): Set all policies to interactive. Defaults to False.
+            policies (str, optional): The policies for DAOS checker. Defaults to None.
+
+        Returns:
+            dict: the dmg json command output converted to a python dictionary.
+
+        """
+        return self._get_json_result(
+            ("check", "set-policy"), reset_defaults=reset_defaults,
+            all_interactive=all_interactive, policies=policies)
+
+    def check_repair(self, seq_num, action):
+        """Call dmg check repair.
+
+        Args:
+            seq_num (str): Pool ID to repair.
+            action (str): Repair action number.
+
+        Returns:
+            dict: the dmg json command output converted to a python dictionary
+
+        """
+        return self._get_json_result(("check", "repair"), seq_num=seq_num, action=action)
+
+    def check_start(self, pool=None, dry_run=False, reset=False, failout=None, auto=None,
+                    find_orphans=False, policies=None):
+        """Call dmg check start.
+
+        Args:
+            pool (str): Pool label or UUID. Defaults to None.
+            dry_run (bool): Scan only; do not initiate repairs. Defaults to False.
+            reset (bool): Reset the system check state. Defaults to False.
+            failout (str): Stop on failure [on|off]. Defaults to None.
+            auto (str): Attempt to automatically repair problems [on|off]. Defaults to
+                None.
+            find_orphans (bool): Find orphaned pools. Defaults to False.
+            policies (str): Set repair policies. Defaults to None.
+
+        Returns:
+            dict: the dmg json command output converted to a python dictionary
+
+        """
+        return self._get_json_result(
+            ("check", "start"), pool=pool, dry_run=dry_run, reset=reset, failout=failout,
+            auto=auto, find_orphans=find_orphans, policies=policies)
+
+    def check_stop(self, pool=None):
+        """Call dmg check stop.
+
+        Args:
+            pool (str): Pool label or UUID. Defaults to None.
+
+        Returns:
+            dict: the dmg json command output converted to a python dictionary
+
+        """
+        return self._get_json_result(("check", "stop"), pool=pool)
+
+    def check_query(self, pool=None):
+        """Call dmg check query.
+
+        Args:
+            pool (str): Pool label or UUID. Defaults to None.
+
+        Returns:
+            dict: the dmg json command output converted to a python dictionary
+
+        """
+        return self._get_json_result(("check", "query"), pool=pool)
+
+    def check_disable(self, pool=None, start=True):
+        """Call dmg check disable.
+
+        Args:
+            pool (str): Pool label or UUID. Defaults to None.
+            start (bool): Start the system after disabling checker. Defaults to True.
+
+        Returns:
+            dict: the dmg json command output converted to a python dictionary
+
+        """
+        res = self._get_json_result(("check", "disable"), pool=pool)
+
+        if start:
+            self.system_start()
+
+        return res
+
+    def faults_mgmt_svc_pool(self, pool, checker_report_class):
+        """Call dmg faults mgmt-svc pool <pool> <checker_report_class>
+
+        Args:
+            pool (str): Pool label or UUID.
+            checker_report_class (str): Fault type to inject such as
+                CIC_POOL_NONEXIST_ON_MS.
+
+        Returns:
+            dict: the dmg json command output converted to a python dictionary
+
+        """
+        return self._get_json_result(
+            ("faults", "mgmt-svc", "pool"), pool=pool,
+            checker_report_class=checker_report_class)
+
+    def faults_pool_svc(self, pool, checker_report_class):
+        """Call dmg faults pool-svc <pool> <checker_report_class>
+
+        Args:
+            pool (str): Pool label or UUID.
+            checker_report_class (str): Fault type to inject such as
+                CIC_POOL_NONEXIST_ON_ENGINE.
+
+        Returns:
+            dict: the dmg json command output converted to a python dictionary
+
+        """
+        return self._get_json_result(
+            ("faults", "pool-svc"), pool=pool, checker_report_class=checker_report_class)
+
 
 def check_system_query_status(data):
     """Check if any server crashed.
@@ -1473,16 +1657,21 @@ def get_storage_query_device_uuids(dmg, **kwargs):
         CommandFailure: if there is an error running the dmg command or parsing the json output
 
     Returns:
-        dict: a dictionary of host keys and list of device uuid values
+        dict: a dictionary of host keys and dictionary of device uuid values, e.g.
+            <host_1>: {
+                <uuid_1>: {'has_sys_xs': true, 'roles': 'data,meta,wal'},
+                ...
+            },
+            ...
     """
     uuids = {}
     smd_info = get_dmg_smd_info(dmg.storage_query_list_devices, 'devices', **kwargs)
     for host, devices in smd_info.items():
         if host not in uuids:
-            uuids[host] = []
+            uuids[host] = {}
         for device in devices:
             try:
-                uuids[host].append(device['uuid'])
+                uuids[host][device['uuid']] = {key: device[key] for key in ('has_sys_xs', 'roles')}
             except KeyError as error:
                 raise CommandFailure(
                     "Error parsing dmg.storage_query_list_devices({}) json output".format(

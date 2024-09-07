@@ -133,7 +133,6 @@ $ dmg pool create --help
 [create command options]
       -g, --group=      DAOS pool to be owned by given group, format name@domain
       -u, --user=       DAOS pool to be owned by given user, format name@domain
-      -p, --label=      Unique label for pool (deprecated, use positional argument)
       -P, --properties= Pool properties to be set
       -a, --acl-file=   Access Control List file path for DAOS pool
       -z, --size=       Total size of DAOS pool (auto)
@@ -331,21 +330,21 @@ $ dmg pool get-prop pool1
    Pool pool1 properties:
    Name                                                                             Value
    ----                                                                             -----
-   WAL Checkpointing behavior (checkpoint)                                          value not set
-   WAL Checkpointing frequency, in seconds (checkpoint_freq)                        not set
-   Usage of WAL before checkpoint is triggered, as a percentage (checkpoint_thresh) not set
+   WAL checkpointing behavior (checkpoint)                                          value not set
+   WAL checkpointing frequency, in seconds (checkpoint_freq)                        not set
+   WAL checkpoint threshold, in percentage (checkpoint_thresh)                      not set
    EC cell size (ec_cell_sz)                                                        64 KiB
    Performance domain affinity level of EC (ec_pda)                                 1
-   Global Version (global_version)                                                  1
+   Global version (global_version)                                                  1
    Pool label (label)                                                               pool1
    Pool performance domain (perf_domain)                                            value not set
-   Tier placement policy (policy)                                                   type=io_size
+   Data bdev threshold size (data_thresh)                                           4.0 KiB
    Pool redundancy factor (rd_fac)                                                  0
    Reclaim strategy (reclaim)                                                       lazy
    Performance domain affinity level of RP (rp_pda)                                 3
    Checksum scrubbing mode (scrub)                                                  value not set
-   Checksum scrubbing frequency (scrub-freq)                                        not set
-   Checksum scrubbing threshold (scrub-thresh)                                      not set
+   Checksum scrubbing frequency (scrub_freq)                                        not set
+   Checksum scrubbing threshold (scrub_thresh)                                      not set
    Self-healing policy (self_heal)                                                  exclude
    Rebuild space ratio (space_rb)                                                   0%
    Pool service replica list (svc_list)                                             [0]
@@ -362,19 +361,19 @@ $ dmg pool get-prop pool1
    ----                                                                             -----
    WAL Checkpointing behavior (checkpoint)                                          timed
    WAL Checkpointing frequency, in seconds (checkpoint_freq)                        5
-   Usage of WAL before checkpoint is triggered, as a percentage (checkpoint_thresh) 50
+   WAL checkpoint threshold, in percentage (checkpoint_thresh)                      50
    EC cell size (ec_cell_sz)                                                        64 KiB
    Performance domain affinity level of EC (ec_pda)                                 1
    Global Version (global_version)                                                  1
    Pool label (label)                                                               pool1
    Pool performance domain (perf_domain)                                            root
-   Tier placement policy (policy)                                                   type=io_size
+   Data bdev threshold size (data_thresh)                                           4.0 KiB
    Pool redundancy factor (rd_fac)                                                  0
    Reclaim strategy (reclaim)                                                       lazy
    Performance domain affinity level of RP (rp_pda)                                 3
    Checksum scrubbing mode (scrub)                                                  off
-   Checksum scrubbing frequency (scrub-freq)                                        604800
-   Checksum scrubbing threshold (scrub-thresh)                                      0
+   Checksum scrubbing frequency (scrub_freq)                                        604800
+   Checksum scrubbing threshold (scrub_thresh)                                      0
    Self-healing policy (self_heal)                                                  exclude
    Rebuild space ratio (space_rb)                                                   0%
    Pool service replica list (svc_list)                                             [0]
@@ -419,52 +418,86 @@ get-prop` command line.
 
 ```bash
 $ dmg pool get-prop tank
-Pool 8a05bf3a-a088-4a77-bb9f-df989fce7cc8 properties:
-Name                            Value
-----                            -----
-EC cell size (ec_cell_sz)       64 kiB
-Pool label (label)              tank
-Reclaim strategy (reclaim)      lazy
-Self-healing policy (self_heal) exclude
-Rebuild space ratio (space_rb)  0%
+
+   Pool 8a05bf3a-a088-4a77-bb9f-df989fce7cc8 properties:
+   Name                                                                             Value
+   ----                                                                             -----
+   WAL Checkpointing behavior (checkpoint)                                          timed
+   WAL Checkpointing frequency, in seconds (checkpoint_freq)                        5
+   WAL checkpoint threshold, in percentage (checkpoint_thresh)                      50
+   EC cell size (ec_cell_sz)                                                        64 KiB
+   Performance domain affinity level of EC (ec_pda)                                 1
+   Global Version (global_version)                                                  2
+   Pool label (label)                                                               tank
+   Pool performance domain (perf_domain)                                            root
+   Data bdev threshold size (data_thresh)                                           4.0 KiB
+   Pool redundancy factor (rd_fac)                                                  0
+   Reclaim strategy (reclaim)                                                       disabled
+   Reintegration mode (reintegration)                                               data_sync
+   Performance domain affinity level of RP (rp_pda)                                 3
+   Checksum scrubbing mode (scrub)                                                  off
+   Checksum scrubbing frequency (scrub_freq)                                        604800
+   Checksum scrubbing threshold (scrub_thresh)                                      0
+   Self-healing policy (self_heal)                                                  exclude,rebuild
+   Rebuild space ratio (space_rb)                                                   0%
+   Pool service replica list (svc_list)                                             [0]
+   Pool service redundancy factor (svc_rf)                                          2
+   Upgrade Status (upgrade_status)                                                  not started
 ```
 
 All properties can be specified when creating the pool.
 
 ```bash
 $ dmg pool create --size 50GB --properties reclaim:disabled tank2
-Creating DAOS pool with automatic storage allocation: 50 GB NVMe + 6.00% SCM
-Pool created with 100.00% SCM/NVMe ratio
------------------------------------------
-  UUID          : 1f265216-5877-4302-ad29-aa0f90df3f86
-  Service Ranks : 0
-  Storage Ranks : [0-1]
-  Total Size    : 50 GB
-  SCM           : 50 GB (25 GB / rank)
-  NVMe          : 0 B (0 B / rank)
+   Creating DAOS pool with automatic storage allocation: 50 GB NVMe + 6.00% SCM
+   Pool created with 100.00% SCM/NVMe ratio
+   -----------------------------------------
+     UUID          : 1f265216-5877-4302-ad29-aa0f90df3f86
+     Service Ranks : 0
+     Storage Ranks : [0-1]
+     Total Size    : 50 GB
+     SCM           : 50 GB (25 GB / rank)
+     NVMe          : 0 B (0 B / rank)
 
 $ dmg pool get-prop tank2
-Pool 1f265216-5877-4302-ad29-aa0f90df3f86 properties:
-Name                            Value
-----                            -----
-EC cell size (ec_cell_sz)       64 kiB
-Pool label (label)              tank2
-Reclaim strategy (reclaim)      disabled
-Self-healing policy (self_heal) exclude
-Rebuild space ratio (space_rb)  0%
+
+   Pool 1f265216-5877-4302-ad29-aa0f90df3f86 properties:
+   Name                                                                             Value
+   ----                                                                             -----
+   WAL Checkpointing behavior (checkpoint)                                          timed
+   WAL Checkpointing frequency, in seconds (checkpoint_freq)                        5
+   WAL checkpoint threshold, in percentage (checkpoint_thresh)                      50
+   EC cell size (ec_cell_sz)                                                        64 KiB
+   Performance domain affinity level of EC (ec_pda)                                 1
+   Global Version (global_version)                                                  2
+   Pool label (label)                                                               tank2
+   Pool performance domain (perf_domain)                                            root
+   Data bdev threshold size (data_thresh)                                           4.0 KiB
+   Pool redundancy factor (rd_fac)                                                  0
+   Reclaim strategy (reclaim)                                                       disabled
+   Reintegration mode (reintegration)                                               data_sync
+   Performance domain affinity level of RP (rp_pda)                                 3
+   Checksum scrubbing mode (scrub)                                                  off
+   Checksum scrubbing frequency (scrub_freq)                                        604800
+   Checksum scrubbing threshold (scrub_thresh)                                      0
+   Self-healing policy (self_heal)                                                  exclude,rebuild
+   Rebuild space ratio (space_rb)                                                   0%
+   Pool service replica list (svc_list)                                             [0]
+   Pool service redundancy factor (svc_rf)                                          2
+   Upgrade Status (upgrade_status)                                                  not started
 ```
 
 Some properties can be modified after pool creation via the `set-prop` option.
 
 ```bash
 $ dmg pool set-prop tank2 reclaim:lazy
-pool set-prop succeeded
+   pool set-prop succeeded
 
 $ dmg pool get-prop tank2 reclaim
-Pool 1f265216-5877-4302-ad29-aa0f90df3f86 properties:
-Name                       Value
-----                       -----
-Reclaim strategy (reclaim) lazy
+   Pool 1f265216-5877-4302-ad29-aa0f90df3f86 properties:
+   Name                       Value
+   ----                       -----
+   Reclaim strategy (reclaim) lazy
 ```
 
 ### Reclaim Strategy (reclaim)
@@ -496,6 +529,41 @@ engine for self-healing purpose. The reserved space cannot be consumed by
 applications. Valid values are 0% to 100%, the default is 0%.
 When setting this property, specifying the percentage symbol is optional:
 `space_rb:2%` and `space_rb:2` both specify two percent of storage capacity.
+
+### Data bdev threshold size (data\_thresh)
+
+This property defines the size threshold over which data is stored on backend block device
+(e.g. NVMe SSDs). Any single value or array value extent of size greater than or
+equal to the data\_thresh value is stored on a block device. It is otherwise stored
+in SCM. 0 is a special value meaning that data is always stored on SCM regardless of
+the size. 1 implies that data is always stored on the block device.
+
+The data threshold can be specified after the pool is created. The updated threshold applies
+only to new writes and extents that haven't yet been scanned by the background aggregation
+process:
+
+```bash
+$ dmg pool get-prop io500_pool data_thresh
+Pool io500_pool properties:
+Name                              Value
+----                              -----
+Data bdev threshold (data_thresh) 4.0 KiB
+
+$ dmg pool get-prop io500_pool data_thresh
+Pool io500_pool properties:
+Name                              Value
+----                              -----
+Data bdev threshold (data_thresh) 0 B
+
+$ dmg pool set-prop io500_pool data_thresh:8KiB
+pool set-prop succeeded
+
+$ dmg pool get-prop io500_pool data_thresh
+Pool io500_pool properties:
+Name                              Value
+----                              -----
+Data bdev threshold (data_thresh) 8.0 KiB
+```
 
 ### Default EC Cell Size (ec\_cell\_sz)
 
@@ -847,6 +915,30 @@ Meanwhile, PMDK provides a recovery tool (i.e., pmempool check) to verify
 and possibly repair a pmemobj file. As discussed in the previous section, the
 rebuild status can be consulted via the pool query and will be expanded
 with more information.
+
+## Pool Redundancy Factor
+
+If the DAOS system experiences cascading failures, where the number of failed
+fault domains exceeds a pool's redundancy factor, there could be unrecoverable
+errors and applications could suffer from data loss. This can happen in cases
+of power or network outages and would cause node/engine failures. In most cases
+those failures can be recovered and DAOS engines can be restarted and the system
+can function again.
+
+Administrator can set the default pool redundancy factor by environment variable
+"DAOS_POOL_RF" in the server yaml file. If SWIM detects and reports an engine is
+dead and the number of failed fault domain exceeds or is going to exceed the pool
+redundancy factor, it will not change pool map immediately. Instead, it will give
+critical log message:
+intolerable unavailability: engine rank x
+In this case, the system administrator should check and try to recover those
+failed engines and bring them back with:
+dmg system start --ranks=x
+one by one. A reintegrate call is not needed.
+
+For true unrecoverable failures, the administrator can still exclude engines.
+However, data loss is expected as the number of unrecoverable failures exceeds
+the pool redundancy factor.
 
 ## Recovering Container Ownership
 

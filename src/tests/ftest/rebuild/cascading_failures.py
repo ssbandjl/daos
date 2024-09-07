@@ -1,10 +1,10 @@
 """
-  (C) Copyright 2019-2022 Intel Corporation.
+  (C) Copyright 2019-2024 Intel Corporation.
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 """
-from rebuild_test_base import RebuildTestBase
 from daos_utils import DaosCommand
+from rebuild_test_base import RebuildTestBase
 
 
 class RbldCascadingFailures(RebuildTestBase):
@@ -52,14 +52,14 @@ class RbldCascadingFailures(RebuildTestBase):
         """Start the rebuild process."""
         if self.mode == "simultaneous":
             # Exclude both ranks from the pool to initiate rebuild
-            self.server_managers[0].stop_ranks(self.inputs.rank.value, self.d_log)
+            self.server_managers[0].stop_ranks(self.inputs.rank.value, self.d_log, force=True)
         else:
             # Exclude the first rank from the pool to initiate rebuild
-            self.server_managers[0].stop_ranks([self.inputs.rank.value[0]], self.d_log)
+            self.server_managers[0].stop_ranks([self.inputs.rank.value[0]], self.d_log, force=True)
 
         if self.mode == "sequential":
             # Exclude the second rank from the pool
-            self.server_managers[0].stop_ranks([self.inputs.rank.value[1]], self.d_log)
+            self.server_managers[0].stop_ranks([self.inputs.rank.value[1]], self.d_log, force=True)
 
         # Wait for rebuild to start
         self.pool.wait_for_rebuild_to_start(1)
@@ -69,7 +69,7 @@ class RbldCascadingFailures(RebuildTestBase):
         self.daos_cmd = DaosCommand(self.bin)
         if self.mode == "cascading":
             # Exclude the second rank from the pool during rebuild
-            self.server_managers[0].stop_ranks([self.inputs.rank.value[1]], self.d_log)
+            self.server_managers[0].stop_ranks([self.inputs.rank.value[1]], self.d_log, force=True)
 
         self.daos_cmd.container_set_prop(
             pool=self.pool.uuid, cont=self.container.uuid, prop="status", value="healthy")

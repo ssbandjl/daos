@@ -23,7 +23,6 @@ dnf --nodocs install \
     file \
     flex \
     fuse3 \
-    fuse3-devel \
     gcc \
     gcc-c++ \
     git \
@@ -54,6 +53,8 @@ dnf --nodocs install \
     openssl-devel \
     patch \
     patchelf \
+    pciutils \
+    pciutils-devel \
     protobuf-c-devel \
     python3-devel \
     python3-pip \

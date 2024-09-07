@@ -1,11 +1,10 @@
 '''
-  (C) Copyright 2018-2023 Intel Corporation.
+  (C) Copyright 2018-2024 Intel Corporation.
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 '''
 
 import yaml
-
 from apricot import TestWithServers
 from server_utils import ServerFailed
 
@@ -48,7 +47,7 @@ class ConfigGenerateRun(TestWithServers):
         # path needs to be set in that case.
         ext_md_path = ""
         if use_tmpfs_scm:
-            ext_md_path = self.test_dir
+            ext_md_path = self.test_env.log_dir
 
         # Call dmg config generate. AP is always the first server host.
         server_host = self.hostlist_servers[0]
@@ -63,7 +62,7 @@ class ConfigGenerateRun(TestWithServers):
             self.fail(f"Error loading dmg generated config! {error}")
 
         # Stop and restart daos_server. self.start_server_managers() has the
-        # server startup check built into it, so if there's something wrong,
+        # server start-up check built into it, so if there's something wrong,
         # it'll throw an error.
         self.log.info("Stopping servers")
         self.stop_servers()
