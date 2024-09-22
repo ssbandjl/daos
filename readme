@@ -451,7 +451,7 @@ OC_EC_8P1G6  = OBJ_CLASS_DEF(OR_RS_8P1, 6ULL),
 OC_EC_8P2G6  = OBJ_CLASS_DEF(OR_RS_8P2, 6ULL),
 
 
-ec相关的宏: 
+ec相关的宏/sgl ops, merge, move, calculate:
 src/include/daos/common.h
 #define daos_sgl_move(sgl, iov_idx, iov_off, move_dist) -> 将 sgl 从 iov_idx/iov_off 向前移动，距离为 move_dist, 调用者需要检查边界, 返回索引和偏移
 #define daos_sgl_next_iov(iov_idx, iov_off)
@@ -1044,8 +1044,6 @@ scons-3 BUILD_TYPE=debug TARGET_TYPE=debug client install --build-deps=yes
 
 engine start -> engine/init.c -> main
 
-spdk
-spdk_blob_io_write
 
 拦截库:libioil -> IOIL_SRC = ['int_posix.c', 'int_read.c', 'int_write.c'] -> src/client/dfuse/il/int_write.c -> ioil_do_pwritev -> 自动去掉前缀 dfuse_ -> __attribute__((weak, alias("dfuse_" #name)))
 writev -> dfuse_writev -> pwritev_rpc -> bytes_written = ioil_do_pwritev
@@ -1602,6 +1600,16 @@ df_ll_lookup
   d_hash_rec_decref(&fs_handle->dpi_iet, rlink)
 
 dfuse_cb_getattr 先获取属性
+    ev->de_complete_cb = dfuse_cb_getattr_cb
+    dfs_ostatx
+        dc_task_create(statx_task, NULL, ev, &task)
+             daos_task_create(DAOS_OPC_OBJ_FETCH, sched, 0, NULL, &fetch_task)
+             tse_task_register_comp_cb(task, ostatx_cb, &op_args, sizeof(op_args)) -> ostatx_cb
+                update_stbuf_times
+                    d_hlc2timespec
+                        nsec = d_hlc2nsec(hlc)
+                struct stat  *stbuf
+                tspec_gt
 dfuse_dfs_ops
 .lookup		= dfuse_cb_lookup
 分配ie
@@ -1715,6 +1723,27 @@ cp -r daosCA/certs/* /etc/daos/certs/
 
 write.c, new, master, dfuse写流程
 master: src/client/dfuse/dfuse_main.c:659 -> main
+struct option      long_options[] = {{"mountpoint", required_argument, 0, 'm'},
+				     {"multi-user", no_argument, 0, 'M'},
+				     {"path", required_argument, 0, 'P'},
+				     {"pool", required_argument, 0, 'p'},
+				     {"container", required_argument, 0, 'c'},
+				     {"sys-name", required_argument, 0, 'G'},
+				     {"singlethread", no_argument, 0, 'S'},
+				     {"thread-count", required_argument, 0, 't'},
+				     {"eq-count", required_argument, 0, 'e'},
+				     {"foreground", no_argument, 0, 'f'},
+				     {"enable-caching", no_argument, 0, 'E'},
+				     {"enable-wb-cache", no_argument, 0, 'F'},
+				     {"disable-caching", no_argument, 0, 'A'},
+				     {"disable-wb-cache", no_argument, 0, 'B'},
+				     {"read-only", no_argument, 0, 'r'},
+				     {"options", required_argument, 0, 'o'},
+				     {"version", no_argument, 0, 'v'},
+				     {"help", no_argument, 0, 'h'},
+				     {0, 0, 0, 0}};
+...
+parse_mount_option
 ...
 start_one(struct dfuse_tm *dtm)
 pthread_create(&dt->dt_id, NULL, dfuse_do_work, dt)
@@ -2834,6 +2863,11 @@ ValidateProviderConfig
 动态开日志：
 d_logfac_is_enabled
 d_log_setmasks
+d_log_setlogmask
+clog_setnfac
+
+src/gurt/tests/test_gurt.c
+cmocka_unit_test(test_log)
 
 cart_ctl
   crt_fill_set_log
@@ -3922,6 +3956,7 @@ vos_db_init vos初始化 元数据初始化 -> vos_db_init_ex(db_path, NULL, fal
           vos_obj_copy
             bio_iod_prep
               iterate_biov(biod, arg ? bulk_map_one : dma_map_one, arg)
+
               dma_rw(biod)
             bio_iod_copy
               iterate_biov(biod, copy_one, &arg)
@@ -4584,11 +4619,15 @@ do {
 
 VOS格式化Blob后的回调
 vos_blob_format_cb
+    struct bio_blob_hdr	*blob_hdr = cb_data
+    struct bio_io_context	*ioctxt
     bio_ioctxt_open(&ioctxt, xs_ctxt, blob_hdr->bbh_pool, false)
     bio_write_blob_hdr -> 完成设置 blob 标头并将信息写入 blob 偏移量 0。
         bio_write -> 写入每个vos实例的blob
-        bio_rw
-            bio_rwv
+        bio_write(ioctxt, addr, &iov) -> bio_rw(ioctxt, addr, iov, true)
+            bio_rwv(ioctxt, &bsgl, &sgl, update)
+                struct bio_desc		*biod
+                bsgl = iod_dup_sgl(biod, bsgl_in) -> DAOS-6911 bio：批量句柄缓存 (#5593) 为了减少繁重的 MR 操作，BIO 会缓存在 DMA 缓冲区块上创建的批量句柄。缓存的批量句柄按批量大小分类，一个 DMA 缓冲区块填充相同大小的批量句柄，如果某些大小的批量句柄不够用，它会尝试通过增加 DMA 缓冲区来填充空闲块，或者在 DMA 缓冲区大小达到上限时驱逐未使用的批量块。到目前为止，批量缓存仅用于 NVMe I/O。（不适用于 RDMA 到 SCM），要绕过批量缓存，请在“DAOS_IO_BYPASS”的旁路环境中指定“srv_bulk_cache”
             bio_iod_post 提交io描述
                 dma_rw
                     nvme_rw(struct bio_desc *biod, struct bio_rsrvd_region *rg)
@@ -4606,6 +4645,59 @@ vos_blob_format_cb
                                 bdev_blob_write
                                 spdk_bdev_write_blocks
     bio_ioctxt_close(ioctxt)                                
+
+
+/* Per VOS instance I/O context */
+struct bio_io_context {
+	d_list_t		 bic_link; /* link to bxb_io_ctxts */
+	struct spdk_blob	*bic_blob;
+	spdk_blob_id		 bic_blob_id;
+	struct bio_xs_blobstore	*bic_xs_blobstore;
+	struct bio_xs_context	*bic_xs_ctxt;
+	uint32_t		 bic_inflight_dmas;
+	uint32_t		 bic_io_unit;
+	uuid_t			 bic_pool_id;
+	unsigned int		 bic_opening:1,
+				 bic_closing:1,
+				 bic_dummy:1;
+};
+
+
+/* I/O descriptor */
+struct bio_desc {
+	struct umem_instance	*bd_umem;
+	struct bio_io_context	*bd_ctxt;
+	/* DMA buffers reserved by this io descriptor */
+	struct bio_rsrvd_dma	 bd_rsrvd;
+	/* Report blob i/o completion */
+	ABT_eventual		 bd_dma_done;
+	/* In-flight SPDK DMA transfers */
+	unsigned int		 bd_inflights;
+	int			 bd_result;
+	unsigned int		 bd_chk_type;
+	unsigned int		 bd_type;
+	/* Total bytes landed to data blob */
+	unsigned int		 bd_nvme_bytes;
+	/* Flags */
+	unsigned int		 bd_buffer_prep:1,
+				 bd_dma_issued:1,
+				 bd_retry:1,
+				 bd_rdma:1,
+				 bd_copy_dst:1,
+				 bd_in_fifo:1,
+				 bd_async_post:1,
+				 bd_non_blocking:1;
+	/* Cached bulk handles being used by this IOD */
+	struct bio_bulk_hdl    **bd_bulk_hdls;
+	unsigned int		 bd_bulk_max;
+	unsigned int		 bd_bulk_cnt;
+	/* Customized completion callback for bio_iod_post() */
+	void			 (*bd_completion)(void *cb_arg, int err);
+	void			*bd_comp_arg;
+	/* SG lists involved in this io descriptor */
+	unsigned int		 bd_sgl_cnt;
+	struct bio_sglist	 bd_sgls[0];
+};
 
 
 rw_completion(void *cb_arg, int err)
@@ -4645,9 +4737,12 @@ dfuse_main.c -> main
   duns_resolve_path
   dfuse_pool_connect
   dfuse_cont_open
+    dfc->dfs_ops = &dfuse_dfs_ops
   dfuse_fs_start 启动文件系统
     d_hash_rec_insert(&fs_handle->dpi_iet 将根插入hash表, 在 dfuse_reply_entry 中也会插入: d_hash_rec_find_insert(&fs_handle->dpi_iet
     d_slab_init
+        D_INIT_LIST_HEAD(&slab->slab_list)
+        D_TRACE_UP(DB_ANY, slab, arg, "slab")
     d_slab_register
     dfuse_progress_thread pthread_create(&fs_handle->dpi_thread, NULL, dfuse_progress_thread, fs_handle) 异步进度线程，该线程在启动时使用事件队列启动，并阻塞在信号量上，直到创建异步事件，此时线程唤醒并在 daos_eq_poll() 中忙于轮询直到完成
       sem_wait -> 等信号量
@@ -4657,13 +4752,110 @@ dfuse_main.c -> main
         crt_progress_cond(epa.eqx->eqx_ctx, timeout, eq_progress_cb, &epa)
           eq_progress_cb
         dfuse_launch_fuse(fs_handle, &args) 创建fuse文件系统
-          fuse_session_new(args, &dfuse_ops, sizeof(dfuse_ops), fs_handle)
-          fuse_session_mount
-          dfuse_send_to_fg
-          dfuse_loop
-            rc = sem_init(&dtm->tm_finish
-            sem_wait(&dtm->tm_finish) -> 等信号量 sem_post
+            dfuse_info->di_session = dfuse_session_new(args, dfuse_info)
+            fuse_session_new(args, &dfuse_ops, sizeof(dfuse_ops), fs_handle)
+                struct fuse_session *se
+                fuse_opt_parse(args, se, fuse_ll_opts, NULL)
+                parse_mount_opts
+                se->bufsize = FUSE_MAX_MAX_PAGES * getpagesize() + FUSE_BUFFER_HEADER_SIZE -> 256 * 4k + 4k
+                pthread_key_create(&se->pipe_key, fuse_ll_pipe_destructor)
+                se->owner = getuid()
+            fuse_session_mount
+                fd = fuse_mnt_parse_fuse_fd(mountpoint) -> 为了允许 FUSE 守护进程在没有特权的情况下运行，调用者可以在启动文件系统之前打开 /dev/fuse，并通过指定 /dev/fd/N 作为挂载点来传递文件描述符。请注意，在这种情况下，父进程负责执行挂载
+                    if (sscanf(mountpoint, "/dev/fd/%u%n", &fd, &len)
+                fd = fuse_kern_mount(mountpoint, se->mo) -> 将 struct fuse_chan 变成实现细节 用户应用程序可以访问的唯一 struct fuse_chan 是 fuse_mount 返回并存储在 struct fuse_session 中的“主”通道。当使用带有“clone_fd”选项的多线程主循环时，每个工作线程都会获得自己的 struct fuse_chan。但是，这些都不适用于用户应用程序，它们也不包含对 struct fuse_session 的引用（指针始终为空）。因此，可以通过依赖 struct fuse_session 来删除 struct fuse_chan 的任何存在而不会丢失功能。这减少了 API 函数的数量并消除了潜在的混淆源（因为新 API 看起来不再可能将多个通道添加到一个会话，或者在多个会话之间共享一个通道）
+                    res = fuse_mount_sys(mountpoint, mo, mnt_opts)
+                        const char *devname = "/dev/fuse"
+                        fd = open(devname, O_RDWR | O_CLOEXEC)
+                        fuse_opt_add_opt(&mo->kernel_opts, tmp) -> "fd=%i,rootmode=%o,user_id=%u,group_id=%u"
+                        strcpy(type, mo->blkdev ? "fuseblk" : "fuse")
+                        res = mount(source, mnt, type, mo->flags, mo->kernel_opts)
+                    setup_auto_unmount
+                        argv[a++] = FUSERMOUNT_PROG -> "fusermount3"
+                        argv[a++] = "--auto-unmount"
+                        argv[a++] = mountpoint
+                        exec_fusermount(argv)
+                            execv(FUSERMOUNT_DIR "/" FUSERMOUNT_PROG, (char **) argv)
+                            execvp(FUSERMOUNT_PROG, (char **) argv)
+                    fuse_mount_fusermount
+                        pid = fork()
+                        exec_fusermount(argv)
+            dfuse_send_to_fg
+            dfuse_loop
+                rc = sem_init(&dtm->tm_finish
+                sem_wait(&dtm->tm_finish) -> 等信号量 sem_post
   dfuse_fs_fini
+
+
+static const struct fuse_opt fuse_mount_opts[] = {
+	FUSE_MOUNT_OPT("allow_other",		allow_other),
+	FUSE_MOUNT_OPT("blkdev",		blkdev),
+	FUSE_MOUNT_OPT("auto_unmount",		auto_unmount),
+	FUSE_MOUNT_OPT("fsname=%s",		fsname),
+	FUSE_MOUNT_OPT("max_read=%u",		max_read),
+	FUSE_MOUNT_OPT("subtype=%s",		subtype),
+	FUSE_OPT_KEY("allow_other",		KEY_KERN_OPT),
+	FUSE_OPT_KEY("auto_unmount",		KEY_FUSERMOUNT_OPT),
+	FUSE_OPT_KEY("blkdev",			KEY_FUSERMOUNT_OPT),
+	FUSE_OPT_KEY("fsname=",			KEY_FUSERMOUNT_OPT),
+	FUSE_OPT_KEY("subtype=",		KEY_SUBTYPE_OPT),
+	FUSE_OPT_KEY("blksize=",		KEY_KERN_OPT),
+	FUSE_OPT_KEY("default_permissions",	KEY_KERN_OPT),
+	FUSE_OPT_KEY("context=",		KEY_KERN_OPT),
+	FUSE_OPT_KEY("fscontext=",		KEY_KERN_OPT),
+	FUSE_OPT_KEY("defcontext=",		KEY_KERN_OPT),
+	FUSE_OPT_KEY("rootcontext=",		KEY_KERN_OPT),
+	FUSE_OPT_KEY("max_read=",		KEY_KERN_OPT),
+	FUSE_OPT_KEY("user=",			KEY_MTAB_OPT),
+	FUSE_OPT_KEY("-n",			KEY_MTAB_OPT),
+	FUSE_OPT_KEY("-r",			KEY_RO),
+	FUSE_OPT_KEY("ro",			KEY_KERN_FLAG),
+	FUSE_OPT_KEY("rw",			KEY_KERN_FLAG),
+	FUSE_OPT_KEY("suid",			KEY_KERN_FLAG),
+	FUSE_OPT_KEY("nosuid",			KEY_KERN_FLAG),
+	FUSE_OPT_KEY("dev",			KEY_KERN_FLAG),
+	FUSE_OPT_KEY("nodev",			KEY_KERN_FLAG),
+	FUSE_OPT_KEY("exec",			KEY_KERN_FLAG),
+	FUSE_OPT_KEY("noexec",			KEY_KERN_FLAG),
+	FUSE_OPT_KEY("async",			KEY_KERN_FLAG),
+	FUSE_OPT_KEY("sync",			KEY_KERN_FLAG),
+	FUSE_OPT_KEY("dirsync",			KEY_KERN_FLAG),
+	FUSE_OPT_KEY("noatime",			KEY_KERN_FLAG),
+	FUSE_OPT_KEY("nodiratime",		KEY_KERN_FLAG),
+	FUSE_OPT_KEY("nostrictatime",		KEY_KERN_FLAG),
+	FUSE_OPT_END
+};
+
+
+fuse_mnt_parse_fuse_fd
+允许从父进程传递 `/dev/fuse` 文件描述符
+
+这增加了对一种操作模式的支持，在该模式下，特权父进程打开 `/dev/fuse` 并负责挂载。然后，FUSE 文件系统守护进程可以作为非特权子进程运行，仅处理 FUSE 文件描述符上的请求，这些请求使用特殊的 `/dev/fd/%u` 语法作为挂载点参数传递。
+
+主要好处是 FUSE 文件系统守护进程本身无需直接或间接执行任何特权操作，因此 FUSE 进程可以完全无特权运行，并且可以使用 securebits 和 no_new_privs 等机制来防止子进程通过 setuid、fscaps 等重新获取特权。这降低了 FUSE 文件系统被恶意文件系统数据利用的风险。
+
+下面是一个说明这一点的示例。请注意，我使用 shell
+是为了演示目的，期望父进程
+将实现与 `mount -i` 和 `capsh` 命令等效的功能。
+\# example/hello can mount successfully with privilege
+$ sudo sh -c "LD_LIBRARY_PATH=build/lib ./example/hello /mnt/tmp"
+$ sudo cat /mnt/tmp/hello
+Hello World!
+$ sudo umount /mnt/tmp
+
+\# example/hello fails to mount without privilege
+$ sudo capsh --drop=all --secbits=0x2f -- -c 'LD_LIBRARY_PATH=build/lib ./example/hello -f /mnt/tmp'
+fusermount3: mount failed: Operation not permitted
+
+\# Passing FUSE file descriptor via /dev/fd/%u allows example/hello to work without privilege
+$ sudo sh -c '
+exec 17<>/dev/fuse  # exec 8<> tother           # open "tother" for reading and writing on fd 8
+mount -i -o nodev,nosuid,noexec,fd=17,rootmode=40000,user_id=0,group_id=0 -t fuse hello /mnt/tmp
+capsh --drop=all --secbits=0x2f -- -c "LD_LIBRARY_PATH=build/lib example/hello /dev/fd/17"
+'
+$ sudo cat /mnt/tmp/hello
+Hello World!
+$ sudo umount /mnt/tmp
 
 
 dfuse_progress_thread
@@ -4677,7 +4869,7 @@ dfuse_progress_thread
       d_list_add_tail(entry, &type->st_pending_list)
 
 struct fuse_lowlevel_ops dfuse_ops dfuse低层操作对象
-  .create		= df_ll_create
+    .create		= df_ll_create
 	.open		= dfuse_cb_open,
 	.release	= dfuse_cb_release,
 	.write_buf	= dfuse_cb_write,
@@ -8578,3 +8770,158 @@ struct vea_free_class {
 create_free_class
 
 
+
+#define DF_POOL_PREFIX "pool="
+#define DF_CONT_PREFIX "container="
+#define DF_RO          "ro"
+#define DF_MULTI       "multi_user"
+parse_mount_option
+    if (strncmp(token, DF_RO, sizeof(DF_RO) - 1) == 0) -> readonly -> ro
+        dfuse_info->di_read_only = true
+
+
+dfuse_session_new
+    struct fuse_lowlevel_ops ops = {}
+    FOR_CB_FN(SET_MEMBER)
+
+以member作为, 函数映射:
+ops.member = fn
+#define FOR_CB_FN(ACTION)                                                                          \
+	ACTION(getattr, df_ll_getattr, false)                                                      \
+	ACTION(lookup, df_ll_lookup, false)                                                        \
+	ACTION(mkdir, df_ll_mkdir, true)                                                           \
+	ACTION(opendir, df_ll_opendir, false)                                                      \
+	ACTION(releasedir, df_ll_releasedir, false)                                                \
+	ACTION(unlink, df_ll_unlink, true)                                                         \
+	ACTION(rmdir, df_ll_unlink, true)                                                          \
+	ACTION(readdir, df_ll_readdir, false)                                                      \
+	ACTION(readdirplus, df_ll_readdirplus, false)                                              \
+	ACTION(create, df_ll_create, true)                                                         \
+	ACTION(mknod, df_ll_mknod, true)                                                           \
+	ACTION(rename, df_ll_rename, true)                                                         \
+	ACTION(symlink, df_ll_symlink, true)                                                       \
+	ACTION(setxattr, df_ll_setxattr, true)                                                     \
+	ACTION(getxattr, df_ll_getxattr, false)                                                    \
+	ACTION(listxattr, df_ll_listxattr, false)                                                  \
+	ACTION(removexattr, df_ll_removexattr, true)                                               \
+	ACTION(setattr, df_ll_setattr, true)                                                       \
+	ACTION(statfs, df_ll_statfs, false)                                                        \
+	ACTION(init, dfuse_fuse_init, false)                                                       \
+	ACTION(forget, dfuse_cb_forget, false)                                                     \
+	ACTION(forget_multi, dfuse_cb_forget_multi, false)                                         \
+	ACTION(open, dfuse_cb_open, false)                                                         \
+	ACTION(release, dfuse_cb_release, false)                                                   \
+	ACTION(write_buf, dfuse_cb_write, true)                                                    \
+	ACTION(read, dfuse_cb_read, false)                                                         \
+	ACTION(readlink, dfuse_cb_readlink, false)                                                 \
+	ACTION(ioctl, dfuse_cb_ioctl, false)                                                       \
+	ACTION(flush, dfuse_cb_flush, true)                                                        \
+	ACTION(fsync, dfuse_cb_fdatasync, true)
+
+
+
+
+const struct dfuse_inode_ops dfuse_dfs_ops = {
+    .lookup      = dfuse_cb_lookup,
+    .mknod       = dfuse_cb_mknod,
+        _dfuse_mode_update
+            fuse_req_getgroups
+                /proc/%lu/task/%lu/status
+        dfuse_ie_init
+        dfuse_compute_inode -> 生成用于此 dfs 对象的 inode。这将从三个 64 位数生成单个 64 位数，因此并不完美，但可以避免大多数冲突。获取 hi 和 lo 对象 id 的序列部分，并将它们放在 inode 的不同部分，然后或放在此 dfs 对象根的 inode 编号中，以避免跨容器冲突
+            hi = (oid->hi & (-1ULL >> 32)) | (dfs->dfs_ino << 48)
+            *_ino = hi ^ (oid->lo << 32)
+        dfuse_reply_entry
+    .opendir     = dfuse_cb_opendir,
+        dfuse_open_handle_init
+        fuse_reply_err -> 用于回复 fuse 请求的宏。由于 fuse 在请求期间持有 inode 或打开句柄的引用，因此在回复内核后，不再持有任何引用，因此如果 dfuse 没有获取额外的引用，则访问请求的对象是不安全的。因此，这些宏在回复内核之前获取 inode 或打开文件句柄指针并将其设置为 NULL
+            send_reply_iov(req, error, iov, count)
+                fuse_send_reply_iov_nofree
+                    fuse_send_msg(req->se, req->ch, iov, count)
+                        se->io->writev
+    .releasedir  = dfuse_cb_releasedir,
+    .getattr     = dfuse_cb_getattr,
+    .unlink      = dfuse_cb_unlink,
+    .create      = dfuse_cb_create,
+        dfuse_cache_evict_dir
+            dfuse_cache_evict
+                dfuse_mcache_evict
+                    ie->ie_mcache_last_update.tv_sec  = 0
+                dfuse_dcache_evict
+        dfs_dup
+    .rename      = dfuse_cb_rename,
+        dfs_move_internal
+        dfuse_oid_moved
+            dfuse_inode_lookup
+                rlink = d_hash_rec_find(&dfuse_info->dpi_iet, &ino, sizeof(ino))
+    .symlink     = dfuse_cb_symlink,
+    .setxattr    = dfuse_cb_setxattr,
+        duns_parse_attr
+            daos_parse_ctype(t, &attr->da_type)
+        dfs_setxattr
+    .getxattr    = dfuse_cb_getxattr,
+        dfs_getxattr
+    .listxattr   = dfuse_cb_listxattr,
+    .removexattr = dfuse_cb_removexattr,
+    .setattr     = dfuse_cb_setattr,
+    .statfs      = dfuse_cb_statfs,
+};
+
+
+src/include/daos_prop.h
+/** container layout type */
+enum {
+	DAOS_PROP_CO_LAYOUT_UNKNOWN,
+	DAOS_PROP_CO_LAYOUT_UNKOWN = DAOS_PROP_CO_LAYOUT_UNKNOWN,
+	DAOS_PROP_CO_LAYOUT_POSIX,	/** DFS/dfuse/MPI-IO */
+	DAOS_PROP_CO_LAYOUT_HDF5,	/** HDF5 DAOS VOL connector */
+	DAOS_PROP_CO_LAYOUT_PYTHON,	/** PyDAOS */
+	DAOS_PROP_CO_LAYOUT_SPARK,	/** Specific layout for Spark shuffle */
+	DAOS_PROP_CO_LAYOUT_DATABASE,	/** SQL Database */
+	DAOS_PROP_CO_LAYOUT_ROOT,	/** ROOT/RNTuple format */
+	DAOS_PROP_CO_LAYOUT_SEISMIC,	/** Seismic Graph, aka SEGY */
+	DAOS_PROP_CO_LAYOUT_METEO,	/** Meteorology, aka Field Data Base */
+	DAOS_PROP_CO_LAYOUT_MAX
+};
+daos_parse_ctype(const char *string, daos_cont_layout_t *type)
+{
+	if (strcasecmp(string, "HDF5") == 0)
+		*type = DAOS_PROP_CO_LAYOUT_HDF5;
+	else if (strcasecmp(string, "POSIX") == 0)
+		*type = DAOS_PROP_CO_LAYOUT_POSIX;
+	else if (strcasecmp(string, "PYTHON") == 0)
+		*type = DAOS_PROP_CO_LAYOUT_PYTHON;
+	else if (strcasecmp(string, "SPARK") == 0)
+		*type = DAOS_PROP_CO_LAYOUT_SPARK;
+	else if (strcasecmp(string, "DATABASE") == 0 ||
+		 strcasecmp(string, "DB") == 0)
+		*type = DAOS_PROP_CO_LAYOUT_DATABASE;
+	else if (strcasecmp(string, "ROOT") == 0 ||
+		 strcasecmp(string, "RNTuple") == 0)
+		*type = DAOS_PROP_CO_LAYOUT_ROOT;
+	else if (strcasecmp(string, "SEISMIC") == 0 ||
+		 strcasecmp(string, "DSG") == 0)
+		*type = DAOS_PROP_CO_LAYOUT_SEISMIC;
+	else if (strcasecmp(string, "METEO") == 0 ||
+		 strcasecmp(string, "FDB") == 0)
+		*type = DAOS_PROP_CO_LAYOUT_METEO;
+	else
+		*type = DAOS_PROP_CO_LAYOUT_UNKNOWN;
+}
+
+
+
+
+daos_array_create
+
+get_sys_info_test
+    daos_mgmt_get_sys_info
+        dc_mgmt_get_sys_info
+            alloc_rank_uris
+                D_STRNDUP(uris[i].dru_uri, resp->rank_uris[i]->uri, CRT_ADDR_STR_MAX_LEN - 1)
+
+
+
+bio_led_manage
+    led_manage
+        bio_dev_list
