@@ -3612,12 +3612,32 @@ dss_nvme_poll_ult
     is_bbs_owner
     bio_bs_monitor
         bio_bs_state_transit
+        collect_raw_health_data
+            struct spdk_nvme_cmd	 cmd
+            bdev = spdk_bdev_desc_get_bdev(dev_health->bdh_desc)
+            cmd.opc = SPDK_NVME_OPC_GET_LOG_PAGE
+            spdk_bdev_nvme_admin_passthru(dev_health->bdh_desc,
+					   dev_health->bdh_io_channel,
+					   &cmd,
+					   dev_health->bdh_health_buf,
+					   page_sz,
+					   get_spdk_health_info_completion,
+					   cb_arg)
     is_init_xstream
     scan_bio_bdevs
     bio_led_event_monitor
     ABT_thread_yield
 
 
+get_spdk_health_info_completion
+    populate_health_stats(dev_health)
+        d_tm_set_counter(bdh->bdh_du_written, page->data_units_written[0])
+        ...
+    get_spdk_intel_smart_log_completion
+    cmd.opc = SPDK_NVME_OPC_GET_LOG_PAGE
+    cmd.cdw10 |= SPDK_NVME_INTEL_LOG_SMART
+    spdk_bdev_nvme_admin_passthru get_spdk_intel_smart_log_completion
+        get_spdk_identify_ctrlr_completion
 
 nvme配置文件
 /mnt/daos1/daos_nvme.conf
@@ -6213,6 +6233,14 @@ wal_ut_setup -> 前置函数
       smd_init(db)
       bio_xsctxt_alloc(&self_mode.self_xs_ctxt, tgt_id, true)
         if (!bio_nvme_configured(SMD_DEV_TYPE_MAX))
+            bio_spdk_conf_read(&opts)
+                bio_add_allowed_alloc
+                    check_vmd_status
+                bio_set_hotplug_filter
+                bio_read_accel_props
+                bio_read_rpc_srv_settings
+                bio_read_auto_faulty_criteria
+                    decode_daos_data
           ctxt->bxc_dma_buf = dma_buffer_create(bio_chk_cnt_init, tgt_id) -> DAOS-10372 bio：以 FIFO 顺序等待 DMA 缓冲区 (#9584) 当 DMA 缓冲区因繁重的工作负载而耗尽时，未能抓取 DMA 缓冲区的 IO 请求将不得不等待先前 IO 的完成，在以下情况下可能会发生饥饿：- 请求A无法抓取缓冲区，它开始等待先前的IO完成； - 后来请求B到达服务器，被推送到ABT池的先进先出队列中执行； - Prior IO完成，唤醒请求A，并将请求A推入ABT池的FIFO队列中执行； - 请求B将在请求A之前被处理，如果DMA缓冲区被请求B用完，请求A可能需要等待另一轮； 另一个问题是，一旦先前的 IO 完成，即使释放的缓冲区只能满足较少的等待者，所有等待者也会被唤醒，这会不必要地浪费 CPU 周期。 该补丁通过确保当有任何先前请求等待 DMA 缓冲区时所有传入请求都在 FIFO 队列中等待，解决了饥饿问题，并且等待者将按照 FIFO 顺序一一唤醒。 该补丁还引入了 DMA 缓冲区管理的遥测技术，抓取缓冲区失败时发出的错误消息受到速率限制
             ABT_cond_create(&buf->bdb_wait_iod)
             bulk_cache_create(buf)
@@ -8925,3 +8953,35 @@ get_sys_info_test
 bio_led_manage
     led_manage
         bio_dev_list
+
+
+
+
+bio_init_health_monitoring
+    spdk_bdev_get_io_channel
+
+Intel Vendor SMART Attributes:
+Program Fail Count:
+Normalized:100%
+Raw:0
+Erase Fail Count:
+Normalized:100%
+Raw:0
+Wear Leveling Count:
+Normalized:100%
+Min:23
+Max:24
+Avg:23
+End-to-End Error Detection Count:0
+CRC Error Count:0
+Timed Workload, Media Wear:63%
+Timed Workload, Host Reads:65535
+Timed Workload, Timer:65535
+Thermal Throttle Status:0%
+Thermal Throttle Event Count:0
+Retry Buffer Overflow Counter:0
+PLL Lock Loss Count:0
+NAND Bytes Written:211411
+Host Bytes Written:48252
+
+
