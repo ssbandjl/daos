@@ -8985,3 +8985,14 @@ NAND Bytes Written:211411
 Host Bytes Written:48252
 
 
+
+
+
+ATOMIC uint64_t           doh_write_count;
+atomic_init(&oh->doh_write_count, 0);
+atomic_fetch_add(&ctx->cc_quotas.current[quota], 1)
+atomic_fetch_sub(&ctx->cc_quotas.current[quota], 1)
+atomic_store(&evx->evx_status, DAOS_EVS_COMPLETED);
+atomic_load_relaxed(&ie->ie_open_count))
+if (atomic_fetch_add_relaxed(&oh->doh_write_count, 1) == 0)
+(atomic_load_relaxed(&oh->doh_write_count) != 0)
