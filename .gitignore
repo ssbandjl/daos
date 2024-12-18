@@ -77,3 +77,4 @@ cache_tgz
 tmpfile
 
 src/common/tests/build/
+utils/rpms/mock.cfg

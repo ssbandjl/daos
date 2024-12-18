@@ -25,7 +25,7 @@ import (
 
 	"github.com/daos-stack/daos/src/control/common"
 	"github.com/daos-stack/daos/src/control/lib/hardware"
-	"github.com/daos-stack/daos/src/control/lib/hardware/hwprov"
+	"github.com/daos-stack/daos/src/control/lib/hardware/defaults/topology"
 	"github.com/daos-stack/daos/src/control/logging"
 	"github.com/daos-stack/daos/src/control/server/config"
 )
@@ -464,7 +464,7 @@ func rsyncLog(log logging.Logger, opts ...CollectLogsParams) error {
 	if cfgPath != "" {
 		serverConfig := config.DefaultServer()
 		serverConfig.SetPath(cfgPath)
-		if err := serverConfig.Load(); err == nil {
+		if err := serverConfig.Load(log); err == nil {
 			if serverConfig.SupportConfig.FileTransferExec != "" {
 				return customCopy(log, opts[0], serverConfig.SupportConfig.FileTransferExec)
 			}
@@ -682,7 +682,7 @@ func copyServerConfig(log logging.Logger, opts ...CollectLogsParams) error {
 
 	serverConfig := config.DefaultServer()
 	serverConfig.SetPath(cfgPath)
-	serverConfig.Load()
+	serverConfig.Load(log)
 	// Create the individual folder on each server
 	targetConfig, err := createHostLogFolder(DaosServerConfig, log, opts...)
 	if err != nil {
@@ -862,7 +862,7 @@ func collectServerLog(log logging.Logger, opts ...CollectLogsParams) error {
 	}
 	serverConfig := config.DefaultServer()
 	serverConfig.SetPath(cfgPath)
-	serverConfig.Load()
+	serverConfig.Load(log)
 
 	switch opts[0].LogCmd {
 	case "EngineLog":
@@ -928,7 +928,7 @@ func collectDaosMetrics(daosNodeLocation string, log logging.Logger, opts ...Col
 		}
 		serverConfig := config.DefaultServer()
 		serverConfig.SetPath(cfgPath)
-		serverConfig.Load()
+		serverConfig.Load(log)
 
 		for i := range serverConfig.Engines {
 			engineId := fmt.Sprintf("%d", i)
@@ -961,7 +961,7 @@ func collectDaosServerCmd(log logging.Logger, opts ...CollectLogsParams) error {
 		}
 	case "dump-topology":
 		hwlog := logging.NewCommandLineLogger()
-		hwProv := hwprov.DefaultTopologyProvider(hwlog)
+		hwProv := topology.DefaultProvider(hwlog)
 		topo, err := hwProv.GetTopology(context.Background())
 		if err != nil {
 			return err
