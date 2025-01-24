@@ -8996,3 +8996,24 @@ atomic_store(&evx->evx_status, DAOS_EVS_COMPLETED);
 atomic_load_relaxed(&ie->ie_open_count))
 if (atomic_fetch_add_relaxed(&oh->doh_write_count, 1) == 0)
 (atomic_load_relaxed(&oh->doh_write_count) != 0)
+
+
+python ffl:
+import inspect
+import sys
+def __LINE__():
+    try:
+        raise Exception
+    except:
+        return sys.exc_info()[2].tb_frame.f_back.f_lineno
+def __FILE__():
+    return inspect.currentframe().f_code.co_filename
+
+print(f"os_path:{os.environ['PATH']}, {__FILE__()}:{__LINE__()}")
+
+scons:
+print(f"env:{env.Dump()}, go_bin: {env.d_go_bin}, {__FILE__()}:{__LINE__()}")
+
+
+
+
