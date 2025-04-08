@@ -1,5 +1,6 @@
 //
 // (C) Copyright 2019-2024 Intel Corporation.
+// (C) Copyright 2025 Hewlett Packard Enterprise Development LP
 //
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 //
@@ -362,23 +363,6 @@ func (cs *ControlService) scanScm(ctx context.Context, req *ctlpb.ScanScmReq) (*
 	return resp, nil
 }
 
-// Returns the engine configuration managing the given NVMe controller
-func (cs *ControlService) getEngineCfgFromNvmeCtl(nc *ctlpb.NvmeController) (*engine.Config, error) {
-	pciAddrStr, err := ctrlrToPciStr(nc)
-	if err != nil {
-		return nil, err
-	}
-
-	for index := range cs.srvCfg.Engines {
-		if findBdevTier(pciAddrStr, cs.srvCfg.Engines[index].Storage.Tiers) != nil {
-			return cs.srvCfg.Engines[index], nil
-		}
-	}
-
-	return nil, errors.Errorf("unknown PCI device, scanned ctrlr %q not found in cfg",
-		pciAddrStr)
-}
-
 // Returns the engine configuration managing the given SCM name-space
 func (cs *ControlService) getEngineCfgFromScmNsp(nsp *ctlpb.ScmNamespace) (*engine.Config, error) {
 	mountPoint := nsp.GetMount().Path
@@ -531,7 +515,7 @@ func getClusterCount(sizeBytes uint64, tgtCount int, clusterSize uint64) uint64 
 	return clusterCount * uint64(tgtCount)
 }
 
-func (cs *ControlService) getMetaClusterCount(engineCfg *engine.Config, devToAdjust deviceToAdjust) (subtrClusterCount uint64) {
+func (cs *ControlService) getMetaClusterCount(devToAdjust deviceToAdjust) (subtrClusterCount uint64) {
 	dev := devToAdjust.ctlr.GetSmdDevices()[devToAdjust.idx]
 	clusterSize := uint64(dev.GetClusterSize())
 	// Calculate MD cluster overhead based on the number of targets allocated to the device
@@ -540,15 +524,21 @@ func (cs *ControlService) getMetaClusterCount(engineCfg *engine.Config, devToAdj
 
 	if dev.GetRoleBits()&storage.BdevRoleMeta != 0 {
 		clusterCount := getClusterCount(dev.GetMetaSize(), devTgtCount, clusterSize)
-		cs.log.Tracef("Removing %d Metadata clusters (cluster size: %d, dev tgts: %d) from the usable size of the SMD device %s (rank %d, ctlr %s): ",
-			clusterCount, clusterSize, devTgtCount, dev.GetUuid(), devToAdjust.rank, devToAdjust.ctlr.GetPciAddr())
+		cs.log.Tracef("Removing %d Metadata clusters (meta_size: %s, cluster size: %s, dev tgts: %d - "+
+			"%s) from the usable size of the SMD device %s (rank %d, ctlr %q): ", clusterCount,
+			humanize.IBytes(dev.GetMetaSize()), humanize.IBytes(clusterSize), devTgtCount,
+			humanize.IBytes(clusterSize*clusterCount), dev.GetUuid(), devToAdjust.rank,
+			devToAdjust.ctlr.GetPciAddr())
 		subtrClusterCount += clusterCount
 	}
 
 	if dev.GetRoleBits()&storage.BdevRoleWAL != 0 {
 		clusterCount := getClusterCount(dev.GetMetaWalSize(), devTgtCount, clusterSize)
-		cs.log.Tracef("Removing %d Metadata WAL clusters (cluster size: %d, dev tgts: %d) from the usable size of the SMD device %s (rank %d, ctlr %s): ",
-			clusterCount, clusterSize, devTgtCount, dev.GetUuid(), devToAdjust.rank, devToAdjust.ctlr.GetPciAddr())
+		cs.log.Tracef("Removing %d Metadata WAL clusters (meta_wal_size: %s, cluster size: %s, "+
+			"dev tgts: %d - %s) from the usable size of the SMD device %s (rank %d, ctlr %q): ",
+			clusterCount, humanize.IBytes(dev.GetMetaWalSize()), humanize.IBytes(clusterSize),
+			devTgtCount, humanize.IBytes(clusterSize*clusterCount), dev.GetUuid(), devToAdjust.rank,
+			devToAdjust.ctlr.GetPciAddr())
 		subtrClusterCount += clusterCount
 	}
 
@@ -558,15 +548,21 @@ func (cs *ControlService) getMetaClusterCount(engineCfg *engine.Config, devToAdj
 
 	if dev.GetRoleBits()&storage.BdevRoleMeta != 0 {
 		clusterCount := getClusterCount(dev.GetRdbSize(), 1, clusterSize)
-		cs.log.Tracef("Removing %d RDB clusters (cluster size: %d) from the usable size of the SMD device %s (rank %d, ctlr %s)",
-			clusterCount, clusterSize, dev.GetUuid(), devToAdjust.rank, devToAdjust.ctlr.GetPciAddr())
+		cs.log.Tracef("Removing %d RDB clusters (rdb_size: %s, cluster size: %s - %s) from the usable "+
+			"size of the SMD device %s (rank %d, ctlr %q): ", clusterCount,
+			humanize.IBytes(dev.GetRdbSize()), humanize.IBytes(clusterSize),
+			humanize.IBytes(clusterSize*clusterCount), dev.GetUuid(), devToAdjust.rank,
+			devToAdjust.ctlr.GetPciAddr())
 		subtrClusterCount += clusterCount
 	}
 
 	if dev.GetRoleBits()&storage.BdevRoleWAL != 0 {
 		clusterCount := getClusterCount(dev.GetRdbWalSize(), 1, clusterSize)
-		cs.log.Tracef("Removing %d RDB WAL clusters (cluster size: %d) from the usable size of the SMD device %s (rank %d, ctlr %s)",
-			clusterCount, clusterSize, dev.GetUuid(), devToAdjust.rank, devToAdjust.ctlr.GetPciAddr())
+		cs.log.Tracef("Removing %d RDB WAL clusters (rdb_size: %s, cluster size: %s - %s) from the usable "+
+			"size of the SMD device %s (rank %d, ctlr %q): ", clusterCount,
+			humanize.IBytes(dev.GetRdbWalSize()), humanize.IBytes(clusterSize),
+			humanize.IBytes(clusterSize*clusterCount), dev.GetUuid(), devToAdjust.rank,
+			devToAdjust.ctlr.GetPciAddr())
 		subtrClusterCount += clusterCount
 	}
 
@@ -578,12 +574,6 @@ func (cs *ControlService) getMetaClusterCount(engineCfg *engine.Config, devToAdj
 func (cs *ControlService) adjustNvmeSize(resp *ctlpb.ScanNvmeResp) {
 	devsStat := make(map[uint32]*deviceSizeStat, 0)
 	for _, ctlr := range resp.GetCtrlrs() {
-		engineCfg, err := cs.getEngineCfgFromNvmeCtl(ctlr)
-		if err != nil {
-			cs.log.Noticef("Skipping NVME controller %s: %s", ctlr.GetPciAddr(), err.Error())
-			continue
-		}
-
 		for idx, dev := range ctlr.GetSmdDevices() {
 			rank := dev.GetRank()
 			devTgtCount := getSmdTgtCount(cs.log, dev)
@@ -612,7 +602,8 @@ func (cs *ControlService) adjustNvmeSize(resp *ctlpb.ScanNvmeResp) {
 			}
 
 			cs.log.Tracef("Initial available size of SMD device %s (rank %d, ctlr %s): %s (%d bytes)",
-				dev.GetUuid(), rank, ctlr.GetPciAddr(), humanize.IBytes(dev.GetAvailBytes()), dev.GetAvailBytes())
+				dev.GetUuid(), rank, ctlr.GetPciAddr(), humanize.IBytes(dev.GetAvailBytes()),
+				dev.GetAvailBytes())
 
 			clusterSize := uint64(dev.GetClusterSize())
 			availBytes := (dev.GetAvailBytes() / clusterSize) * clusterSize
@@ -638,7 +629,7 @@ func (cs *ControlService) adjustNvmeSize(resp *ctlpb.ScanNvmeResp) {
 				continue
 			}
 
-			subtrClusterCount := cs.getMetaClusterCount(engineCfg, devToAdjust)
+			subtrClusterCount := cs.getMetaClusterCount(devToAdjust)
 			if subtrClusterCount >= dataClusterCount {
 				cs.log.Debugf("No more usable space in SMD device %s (rank %d, ctlr %s)",
 					dev.GetUuid(), rank, ctlr.GetPciAddr())
@@ -826,6 +817,7 @@ func checkTmpfsMem(log logging.Logger, scmCfgs map[int]*storage.TierConfig, getM
 type formatScmReq struct {
 	log        logging.Logger
 	reformat   bool
+	replace    bool
 	instances  []Engine
 	getMemInfo func() (*common.MemInfo, error)
 }
@@ -841,10 +833,11 @@ func formatScm(ctx context.Context, req formatScmReq, resp *ctlpb.StorageFormatR
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "detecting if SCM format is needed")
 		}
-		if !needs {
+		if needs {
+			needFormat[idx] = true
+		} else {
 			allNeedFormat = false
 		}
-		needFormat[idx] = needs
 
 		scmCfg, err := ei.GetStorage().GetScmConfig()
 		if err != nil || scmCfg == nil {
@@ -860,6 +853,12 @@ func formatScm(ctx context.Context, req formatScmReq, resp *ctlpb.StorageFormatR
 			}
 			emptyTmpfs[idx] = info.TotalBytes-info.AvailBytes == 0
 		}
+	}
+
+	if req.replace && len(needFormat) == 0 {
+		// Only valid if at least one engine requires format.
+		return nil, nil, errors.New("format replace option only valid if at " +
+			"least one engine requires format but no engines need format")
 	}
 
 	if allNeedFormat {
@@ -1017,6 +1016,9 @@ func (cs *ControlService) StorageFormat(ctx context.Context, req *ctlpb.StorageF
 		return resp, nil
 	}
 
+	// DAOS-15947: control_metadata format is valid in --replace case where multiple engines
+	// require replacement or format on the same host. No need to handle independently for
+	// individual engine as if control_metadata is missing then it needs to be created.
 	mdFormatted, err := cs.formatMetadata(instances, req.Reformat)
 	if err != nil {
 		return nil, err
@@ -1025,6 +1027,7 @@ func (cs *ControlService) StorageFormat(ctx context.Context, req *ctlpb.StorageF
 	fsr := formatScmReq{
 		log:        cs.log,
 		reformat:   req.Reformat,
+		replace:    req.Replace,
 		instances:  instances,
 		getMemInfo: cs.getMemInfo,
 	}
@@ -1067,7 +1070,7 @@ func (cs *ControlService) StorageFormat(ctx context.Context, req *ctlpb.StorageF
 			cs.log.Errorf("instance %d: %s", idx, msg)
 			continue
 		}
-		engine.NotifyStorageReady()
+		engine.NotifyStorageReady(req.Replace)
 	}
 
 	return resp, nil

@@ -1,5 +1,6 @@
 //
 // (C) Copyright 2019-2024 Intel Corporation.
+// (C) Copyright 2025 Hewlett Packard Enterprise Development LP
 //
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 //
@@ -1676,6 +1677,7 @@ func TestServer_CtlSvc_StorageFormat(t *testing.T) {
 		expResp          *ctlpb.StorageFormatResp
 		expErr           error
 		reformat         bool // indicates setting of reformat parameter
+		replace          bool // indicates setting of replace parameter
 	}{
 		"nil request": {
 			nilReq: true,
@@ -1836,12 +1838,13 @@ func TestServer_CtlSvc_StorageFormat(t *testing.T) {
 				},
 			},
 		},
-		"nvme and dcpm": {
+		"nvme and dcpm; replace set": {
 			sMounts: []string{"/mnt/daos"},
 			sClass:  storage.ClassDcpm,
 			sDevs:   []string{"dev/pmem0"},
 			bClass:  storage.ClassNvme,
 			bDevs:   [][]string{{mockNvmeController0.PciAddr}},
+			replace: true,
 			bmbcs: []*bdev.MockBackendConfig{
 				{
 					ScanRes: &storage.BdevScanResponse{
@@ -2063,6 +2066,44 @@ func TestServer_CtlSvc_StorageFormat(t *testing.T) {
 				},
 			},
 		},
+		"dcpm already mounted no reformat; replace fails": {
+			scmMounted: true,
+			sMounts:    []string{"/mnt/daos"},
+			sClass:     storage.ClassDcpm,
+			sDevs:      []string{"/dev/pmem1"},
+			bClass:     storage.ClassNvme,
+			bDevs:      [][]string{{mockNvmeController0.PciAddr}},
+			replace:    true,
+			bmbcs: []*bdev.MockBackendConfig{
+				{
+					ScanRes: &storage.BdevScanResponse{
+						Controllers: storage.NvmeControllers{mockNvmeController0},
+					},
+				},
+			},
+			expErr: errors.New("only valid if at least one engine requires format"),
+			expResp: &ctlpb.StorageFormatResp{
+				Crets: []*ctlpb.NvmeControllerResult{
+					{
+						PciAddr: storage.NilBdevAddress,
+						State: &ctlpb.ResponseState{
+							Status: ctlpb.ResponseStatus_CTL_SUCCESS,
+							Info: fmt.Sprintf(msgNvmeFormatSkipNotDone,
+								0),
+						},
+					},
+				},
+				Mrets: []*ctlpb.ScmMountResult{
+					{
+						Mntpoint: "/mnt/daos",
+						State: &ctlpb.ResponseState{
+							Status: ctlpb.ResponseStatus_CTL_SUCCESS,
+							Info:   "SCM is already formatted",
+						},
+					},
+				},
+			},
+		},
 		"dcpm already mounted and reformat set": {
 			scmMounted: true,
 			reformat:   true,
@@ -2128,7 +2169,7 @@ func TestServer_CtlSvc_StorageFormat(t *testing.T) {
 				},
 			},
 		},
-		"nvme and dcpm success multi-io": {
+		"nvme and dcpm multi-io; replace succeeds": {
 			sMounts: []string{"/mnt/daos0", "/mnt/daos1"},
 			sClass:  storage.ClassDcpm,
 			sDevs:   []string{"/dev/pmem0", "/dev/pmem1"},
@@ -2137,6 +2178,7 @@ func TestServer_CtlSvc_StorageFormat(t *testing.T) {
 				{mockNvmeController0.PciAddr},
 				{mockNvmeController1.PciAddr},
 			},
+			replace: true,
 			// One for each engine.
 			bmbcs: []*bdev.MockBackendConfig{
 				{
@@ -2413,6 +2455,7 @@ func TestServer_CtlSvc_StorageFormat(t *testing.T) {
 			if !tc.nilReq {
 				req = &ctlpb.StorageFormatReq{
 					Reformat: tc.reformat,
+					Replace:  tc.replace,
 				}
 			}
 			if tc.noSrvCfg {
@@ -3970,107 +4013,6 @@ func TestServer_CtlSvc_adjustScmSize(t *testing.T) {
 					strings.Contains(buf.String(), tc.output.message),
 					"missing message: "+tc.output.message)
 			}
-		})
-	}
-}
-
-func TestServer_CtlSvc_getEngineCfgFromNvmeCtl(t *testing.T) {
-	type dataInput struct {
-		tierCfgs storage.TierConfigs
-		nvmeCtlr *ctl.NvmeController
-	}
-	type expectedOutput struct {
-		res bool
-		msg string
-	}
-
-	newTierCfgs := func(tierCfgsSize int32) storage.TierConfigs {
-		tierCfgs := make(storage.TierConfigs, tierCfgsSize)
-		for idx := range tierCfgs {
-			tierCfgs[idx] = storage.NewTierConfig().
-				WithStorageClass(storage.ClassNvme.String()).
-				WithBdevDeviceList(test.MockPCIAddr(int32(idx + 1)))
-		}
-
-		return tierCfgs
-	}
-
-	for name, tc := range map[string]struct {
-		input  dataInput
-		output expectedOutput
-	}{
-		"find NVME Ctlr": {
-			input: dataInput{
-				tierCfgs: newTierCfgs(5),
-				nvmeCtlr: &ctl.NvmeController{
-					PciAddr: test.MockPCIAddr(3),
-				},
-			},
-			output: expectedOutput{res: true},
-		},
-		"not find NVME Ctlr": {
-			input: dataInput{
-				tierCfgs: newTierCfgs(5),
-				nvmeCtlr: &ctl.NvmeController{
-					PciAddr: test.MockPCIAddr(13),
-				},
-			},
-			output: expectedOutput{
-				res: false,
-				msg: "unknown PCI device",
-			},
-		},
-		"find VMD device": {
-			input: dataInput{
-				tierCfgs: storage.TierConfigs{
-					storage.NewTierConfig().
-						WithStorageClass(storage.ClassNvme.String()).
-						WithBdevDeviceList("0000:04:06.3"),
-				},
-				nvmeCtlr: &ctl.NvmeController{
-					PciAddr: "040603:02:00.0",
-				},
-			},
-			output: expectedOutput{res: true},
-		},
-		"Invalid address": {
-			input: dataInput{
-				tierCfgs: storage.TierConfigs{
-					storage.NewTierConfig().
-						WithStorageClass(storage.ClassNvme.String()).
-						WithBdevDeviceList("0000:04:06.3"),
-				},
-				nvmeCtlr: &ctl.NvmeController{
-					PciAddr: "666",
-				},
-			},
-			output: expectedOutput{
-				res: false,
-				msg: "Invalid PCI address",
-			},
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			log, buf := logging.NewTestLogger(t.Name())
-			defer test.ShowBufferOnFailure(t, buf)
-
-			engineCfg := engine.MockConfig().WithStorage(tc.input.tierCfgs...)
-			serverCfg := config.DefaultServer().WithEngines(engineCfg)
-			cs := mockControlService(t, log, serverCfg, nil, nil, nil)
-
-			ec, err := cs.getEngineCfgFromNvmeCtl(tc.input.nvmeCtlr)
-
-			if tc.output.res {
-				test.AssertEqual(t, engineCfg, ec,
-					fmt.Sprintf("Invalid engine config: want=%v got=%v", engineCfg, ec))
-				return
-			}
-
-			test.AssertEqual(t, (*engine.Config)(nil), ec,
-				fmt.Sprintf("Invalid engine config: wait nil"))
-			test.AssertTrue(t,
-				strings.Contains(err.Error(), tc.output.msg),
-				fmt.Sprintf("Invalid error message: %q not contains %q", err, tc.output.msg))
 		})
 	}
 }

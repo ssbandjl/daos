@@ -1,5 +1,6 @@
 /**
  * (C) Copyright 2016-2024 Intel Corporation.
+ * (C) Copyright 2025 Hewlett Packard Enterprise Development LP
  *
  * SPDX-License-Identifier: BSD-2-Clause-Patent
  */
@@ -9,8 +10,8 @@
 
 #include <semaphore.h>
 
-#include <fuse3/fuse.h>
-#include <fuse3/fuse_lowlevel.h>
+#include <fused/fuse.h>
+#include <fused/fuse_lowlevel.h>
 
 #include <gurt/list.h>
 #include <gurt/hash.h>
@@ -34,6 +35,7 @@ struct dfuse_info {
 	bool                 di_multi_user;
 	bool                 di_wb_cache;
 	bool                 di_read_only;
+	bool                 di_local_flock;
 
 	/* Per process spinlock
 	 * This is used to lock readdir against closedir where they share a readdir handle,
@@ -736,7 +738,7 @@ dfuse_loop(struct dfuse_info *dfuse_info);
 		_Static_assert(IS_IE(_ie), "Param is not inode entry");                            \
 		(_ie) = NULL;                                                                      \
 		__rc  = fuse_reply_err(req, 0);                                                    \
-		if (__rc != 0)                                                                     \
+		if (__rc != 0 && __rc != -ENOENT)                                                  \
 			DS_ERROR(-__rc, "fuse_reply_err() error");                                 \
 	} while (0)
 
@@ -748,7 +750,7 @@ dfuse_loop(struct dfuse_info *dfuse_info);
 		_Static_assert(IS_OH(_oh), "Param is not open handle");                            \
 		(_oh)->doh_ie = NULL;                                                              \
 		__rc          = fuse_reply_err(req, 0);                                            \
-		if (__rc != 0)                                                                     \
+		if (__rc != 0 && __rc != -ENOENT)                                                  \
 			DS_ERROR(-__rc, "fuse_reply_err() error");                                 \
 	} while (0)
 
@@ -1198,7 +1200,7 @@ bool
 dfuse_dcache_get_valid(struct dfuse_inode_entry *ie, double max_age);
 
 void
-dfuse_pre_read(struct dfuse_info *dfuse_info, struct dfuse_obj_hdl *oh);
+dfuse_pre_read(struct dfuse_info *dfuse_info, struct dfuse_inode_entry *ie);
 
 int
 check_for_uns_ep(struct dfuse_info *dfuse_info, struct dfuse_inode_entry *ie, char *attr,

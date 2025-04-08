@@ -1,5 +1,6 @@
 //
 // (C) Copyright 2021-2024 Intel Corporation.
+// (C) Copyright 2025 Google LLC
 //
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 //
@@ -7,7 +8,6 @@
 package bdev
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -146,7 +146,7 @@ func TestBackend_writeJSONFile(t *testing.T) {
         },
         {
           "params": {
-            "retry_count": 4,
+            "transport_retry_count": 4,
             "timeout_us": 0,
             "nvme_adminq_poll_period_us": 100000,
             "action_on_timeout": "none",
@@ -202,7 +202,7 @@ func TestBackend_writeJSONFile(t *testing.T) {
         },
         {
           "params": {
-            "retry_count": 4,
+            "transport_retry_count": 4,
             "timeout_us": 0,
             "nvme_adminq_poll_period_us": 100000,
             "action_on_timeout": "none",
@@ -267,7 +267,7 @@ func TestBackend_writeJSONFile(t *testing.T) {
         },
         {
           "params": {
-            "retry_count": 4,
+            "transport_retry_count": 4,
             "timeout_us": 0,
             "nvme_adminq_poll_period_us": 100000,
             "action_on_timeout": "none",
@@ -348,7 +348,7 @@ func TestBackend_writeJSONFile(t *testing.T) {
         },
         {
           "params": {
-            "retry_count": 4,
+            "transport_retry_count": 4,
             "timeout_us": 0,
             "nvme_adminq_poll_period_us": 100000,
             "action_on_timeout": "none",
@@ -420,7 +420,7 @@ func TestBackend_writeJSONFile(t *testing.T) {
         },
         {
           "params": {
-            "retry_count": 4,
+            "transport_retry_count": 4,
             "timeout_us": 0,
             "nvme_adminq_poll_period_us": 100000,
             "action_on_timeout": "none",
@@ -494,7 +494,7 @@ func TestBackend_writeJSONFile(t *testing.T) {
         },
         {
           "params": {
-            "retry_count": 4,
+            "transport_retry_count": 4,
             "timeout_us": 0,
             "nvme_adminq_poll_period_us": 100000,
             "action_on_timeout": "none",
@@ -550,7 +550,7 @@ func TestBackend_writeJSONFile(t *testing.T) {
         },
         {
           "params": {
-            "retry_count": 4,
+            "transport_retry_count": 4,
             "timeout_us": 0,
             "nvme_adminq_poll_period_us": 100000,
             "action_on_timeout": "none",
@@ -606,7 +606,7 @@ func TestBackend_writeJSONFile(t *testing.T) {
         },
         {
           "params": {
-            "retry_count": 4,
+            "transport_retry_count": 4,
             "timeout_us": 0,
             "nvme_adminq_poll_period_us": 100000,
             "action_on_timeout": "none",
@@ -688,7 +688,7 @@ func TestBackend_writeJSONFile(t *testing.T) {
         },
         {
           "params": {
-            "retry_count": 4,
+            "transport_retry_count": 4,
             "timeout_us": 0,
             "nvme_adminq_poll_period_us": 100000,
             "action_on_timeout": "none",
@@ -742,7 +742,7 @@ func TestBackend_writeJSONFile(t *testing.T) {
 				return
 			}
 
-			gotOut, err := ioutil.ReadFile(cfgOutputPath)
+			gotOut, err := os.ReadFile(cfgOutputPath)
 			if err != nil {
 				t.Fatal(err)
 			}
