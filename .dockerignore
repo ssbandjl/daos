@@ -7,8 +7,8 @@
 !src
 !cache
 !cache_tgz
+!deps
 !utils/build.config
-!utils/*.patch
 !utils/certs
 !utils/ci
 !utils/completion
