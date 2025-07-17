@@ -17,8 +17,12 @@ def _scan_go_file(node, env, _path):
     src_dir = os.path.dirname(str(node))
     includes = []
     path_name = str(node)[12:]
+    
+    go_env = os.environ.copy()
+    go_env['GO111MODULE'] = 'on'
+
     rc = subprocess.run([env.d_go_bin, 'list', '--json', '-mod=vendor', path_name],
-                        cwd='src/control', stdout=subprocess.PIPE, check=True)
+                        cwd='src/control', stdout=subprocess.PIPE, check=True, env=go_env)
     data = json.loads(rc.stdout.decode('utf-8'))
     for dep in data['Deps']:
         if not dep.startswith('github.com/daos-stack/daos'):
@@ -74,6 +78,7 @@ def generate(env):
 
     def _check_go_version(context):
         """Check GO Version"""
+        print(f"""env.d_go_bin:{env.d_go_bin}""")
         context.Display('Checking for Go compiler... ')
         if env.d_go_bin:
             context.Display(env.d_go_bin + '\n')
@@ -102,7 +107,15 @@ def generate(env):
         return 1
 
     env.d_go_bin = env.get("GO_BIN", env.WhereIs(GO_COMPILER))
-
+    if(not env.d_go_bin):
+        print("Get os env for go")
+        env.d_go_bin = os.environ.get("GO_BIN")
+    print(f"""go_compiler:{env.WhereIs(GO_COMPILER)}, env.d_go_bin:{env.d_go_bin}""")
+    print("GO_BIN in os.environ?", "GO_BIN" in os.environ)
+    print("GO_BIN(os_env) =", os.environ.get("GO_BIN"))
+    env['ENV']['GO111MODULE'] = 'on'
+    print("GO111MODULE in env:", env['ENV'].get('GO111MODULE'))
+    # print("GO111MODULE in env:", env['ENV'].get('GO111MODULE'))
     if GetOption('help') or GetOption('clean'):
         return
 

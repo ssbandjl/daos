@@ -1420,6 +1420,7 @@ class _Component():
         if build_dep:
 
             if self._has_missing_system_deps(self.prereqs.system_env):
+                print(self.name, self.prereqs.system_env)
                 raise MissingSystemLibs(self.name)
 
             self.get()
