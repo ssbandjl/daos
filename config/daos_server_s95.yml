@@ -14,7 +14,7 @@
 # default: daos_server
 name: daos_server
 
-access_points: ['192.168.100.95', '192.168.100.118', '192.168.100.96']
+access_points: ['192.168.100.95', '192.168.100.96', '192.168.100.118']
 
 # MS replicas
 # Immutable after running "dmg storage format".

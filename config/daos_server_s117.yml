@@ -625,4 +625,3 @@ engines:
 ## file_transfer_exec: /usr/bin/rsync  (example)
 #
 # file_transfer_exec:
-root@hpc117:~/project/stor/daos/install/etc# 

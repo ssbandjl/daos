@@ -1,0 +1,1 @@
+fio --name=global --bs=1M --direct=1 --directory=/tmp/sxb --group_reporting=1 --iodepth=16 --ioengine=libaio --rw=rw --size=10M --thread=1 --verify=crc64 --name=test --numjobs=1
