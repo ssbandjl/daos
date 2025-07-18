@@ -1,0 +1,15 @@
+# http://editorconfig.org
+# .editorconfig 
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = false
+indent_style = tab
+indent_size = 4
+max_line_length = 130
+
+[*.md]
+max_line_length = off
+trim_trailing_whitespace = false
